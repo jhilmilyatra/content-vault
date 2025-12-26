@@ -86,9 +86,14 @@ const FileManager = () => {
   const [shareFile, setShareFile] = useState<{ id: string; name: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [selectionMode, setSelectionMode] = useState(false);
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [deleteFolderConfirmOpen, setDeleteFolderConfirmOpen] = useState(false);
+  const [folderToDelete, setFolderToDelete] = useState<FolderItem | null>(null);
+  const [shareFolderOpen, setShareFolderOpen] = useState(false);
+  const [folderToShare, setFolderToShare] = useState<FolderItem | null>(null);
 
   const { user } = useAuth();
   const { toast } = useToast();
@@ -365,7 +370,10 @@ const FileManager = () => {
               variant={selectionMode ? "secondary" : "outline"}
               onClick={() => {
                 setSelectionMode(!selectionMode);
-                if (selectionMode) setSelectedFiles([]);
+                if (selectionMode) {
+                  setSelectedFiles([]);
+                  setSelectedFolders([]);
+                }
               }}
             >
               <CheckSquare className="w-4 h-4 mr-2" />
@@ -420,15 +428,23 @@ const FileManager = () => {
         {selectionMode && user && (
           <BulkActionsBar
             selectedFiles={selectedFiles}
+            selectedFolders={selectedFolders}
             files={files}
             folders={folders}
             currentFolderId={currentFolderId}
-            onClearSelection={() => setSelectedFiles([])}
-            onSelectAll={() => setSelectedFiles(filteredFiles.map(f => f.id))}
-            totalItems={filteredFiles.length}
+            onClearSelection={() => {
+              setSelectedFiles([]);
+              setSelectedFolders([]);
+            }}
+            onSelectAll={() => {
+              setSelectedFiles(filteredFiles.map(f => f.id));
+              setSelectedFolders(filteredFolders.map(f => f.id));
+            }}
+            totalItems={filteredFiles.length + filteredFolders.length}
             onActionComplete={() => {
               fetchContents();
               setSelectedFiles([]);
+              setSelectedFolders([]);
             }}
             userId={user.id}
           />
@@ -507,70 +523,115 @@ const FileManager = () => {
             }
           >
             {/* Folders */}
-            {filteredFolders.map((folder, index) => (
-              <motion.div
-                key={folder.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.03 }}
-                className={
-                  viewMode === "grid"
-                    ? "p-4 rounded-xl bg-card border border-border hover:border-primary/30 transition-all cursor-pointer group"
-                    : "flex items-center gap-4 p-3 rounded-lg bg-card border border-border hover:border-primary/30 transition-all cursor-pointer group"
-                }
-                onClick={() => handleNavigateToFolder(folder.id, folder.name)}
-              >
-                <div
-                  className={
-                    viewMode === "grid"
-                      ? "w-12 h-12 rounded-lg bg-amber-500/20 flex items-center justify-center mb-3 mx-auto"
-                      : "w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center flex-shrink-0"
+            {filteredFolders.map((folder, index) => {
+              const isFolderSelected = selectedFolders.includes(folder.id);
+              
+              const handleFolderClick = () => {
+                if (selectionMode) {
+                  if (isFolderSelected) {
+                    setSelectedFolders(selectedFolders.filter(id => id !== folder.id));
+                  } else {
+                    setSelectedFolders([...selectedFolders, folder.id]);
                   }
+                } else {
+                  handleNavigateToFolder(folder.id, folder.name);
+                }
+              };
+              
+              return (
+                <motion.div
+                  key={folder.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.03 }}
+                  onClick={handleFolderClick}
+                  className={`relative ${
+                    viewMode === "grid"
+                      ? "p-4 rounded-xl bg-card border transition-all cursor-pointer group"
+                      : "flex items-center gap-4 p-3 rounded-lg bg-card border transition-all cursor-pointer group"
+                  } ${
+                    isFolderSelected 
+                      ? "border-primary bg-primary/5" 
+                      : "border-border hover:border-primary/30"
+                  }`}
                 >
-                  <FolderOpen className="w-6 h-6 text-amber-500" />
-                </div>
-                <div className={viewMode === "grid" ? "text-center" : "flex-1 min-w-0"}>
-                  <p className="font-medium text-foreground truncate">{folder.name}</p>
-                </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={`opacity-0 group-hover:opacity-100 transition-opacity ${
-                        viewMode === "grid" ? "absolute top-2 right-2" : ""
-                      }`}
+                  {/* Selection Checkbox */}
+                  {selectionMode && (
+                    <div 
+                      className={viewMode === "grid" ? "absolute top-2 left-2" : "flex-shrink-0"}
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      <MoreHorizontal className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DropdownMenuItem
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setRenameTarget({ type: "folder", id: folder.id, name: folder.name });
-                        setNewName(folder.name);
-                        setRenameDialogOpen(true);
-                      }}
-                    >
-                      <Edit className="w-4 h-4 mr-2" />
-                      Rename
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-destructive"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteFolder(folder.id);
-                      }}
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </motion.div>
-            ))}
+                      <Checkbox
+                        checked={isFolderSelected}
+                        onCheckedChange={() => handleFolderClick()}
+                      />
+                    </div>
+                  )}
+                  <div
+                    className={
+                      viewMode === "grid"
+                        ? "w-12 h-12 rounded-lg bg-amber-500/20 flex items-center justify-center mb-3 mx-auto"
+                        : "w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center flex-shrink-0"
+                    }
+                  >
+                    <FolderOpen className="w-6 h-6 text-amber-500" />
+                  </div>
+                  <div className={viewMode === "grid" ? "text-center" : "flex-1 min-w-0"}>
+                    <p className="font-medium text-foreground truncate">{folder.name}</p>
+                  </div>
+                  {!selectionMode && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={`opacity-0 group-hover:opacity-100 transition-opacity ${
+                            viewMode === "grid" ? "absolute top-2 right-2" : ""
+                          }`}
+                        >
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFolderToShare(folder);
+                            setShareFolderOpen(true);
+                          }}
+                        >
+                          <Share2 className="w-4 h-4 mr-2" />
+                          Share Folder
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenameTarget({ type: "folder", id: folder.id, name: folder.name });
+                            setNewName(folder.name);
+                            setRenameDialogOpen(true);
+                          }}
+                        >
+                          <Edit className="w-4 h-4 mr-2" />
+                          Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFolderToDelete(folder);
+                            setDeleteFolderConfirmOpen(true);
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </motion.div>
+              );
+            })}
 
             {/* Files */}
             {filteredFiles.map((file, index) => {
@@ -760,6 +821,103 @@ const FileManager = () => {
           open={previewOpen}
           onOpenChange={setPreviewOpen}
         />
+
+        {/* Delete Folder Confirmation Dialog */}
+        <Dialog open={deleteFolderConfirmOpen} onOpenChange={setDeleteFolderConfirmOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Folder</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete "{folderToDelete?.name}"? The folder must be empty to be deleted.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeleteFolderConfirmOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={async () => {
+                  if (folderToDelete) {
+                    await handleDeleteFolder(folderToDelete.id);
+                    setDeleteFolderConfirmOpen(false);
+                    setFolderToDelete(null);
+                  }
+                }}
+              >
+                Delete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Folder Share Dialog - shares all files in folder */}
+        <Dialog open={shareFolderOpen} onOpenChange={setShareFolderOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Share Folder: {folderToShare?.name}</DialogTitle>
+              <DialogDescription>
+                This will create share links for all files in this folder. Links will be copied to your clipboard.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShareFolderOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={async () => {
+                  if (!folderToShare || !user) return;
+                  
+                  try {
+                    // Get all files in the folder
+                    const { data: folderFiles, error } = await supabase
+                      .from("files")
+                      .select("id")
+                      .eq("folder_id", folderToShare.id)
+                      .eq("is_deleted", false);
+                    
+                    if (error) throw error;
+                    
+                    if (!folderFiles || folderFiles.length === 0) {
+                      toast({ title: "Folder is empty", description: "No files to share" });
+                      return;
+                    }
+                    
+                    const links: string[] = [];
+                    
+                    for (const file of folderFiles) {
+                      const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                      let shortCode = '';
+                      for (let i = 0; i < 8; i++) {
+                        shortCode += chars.charAt(Math.floor(Math.random() * chars.length));
+                      }
+                      
+                      await supabase
+                        .from("shared_links")
+                        .insert({
+                          file_id: file.id,
+                          user_id: user.id,
+                          short_code: shortCode,
+                        });
+                      
+                      links.push(`${window.location.origin}/share/${shortCode}`);
+                    }
+                    
+                    await navigator.clipboard.writeText(links.join("\n"));
+                    toast({ title: "Success", description: `${links.length} share link(s) created and copied` });
+                    setShareFolderOpen(false);
+                    setFolderToShare(null);
+                  } catch (error) {
+                    console.error("Error sharing folder:", error);
+                    toast({ title: "Error", description: "Failed to share folder", variant: "destructive" });
+                  }
+                }}
+              >
+                Share All Files
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );
