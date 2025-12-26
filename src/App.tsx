@@ -14,6 +14,9 @@ import UserManagement from "./pages/owner/UserManagement";
 import AuditLogs from "./pages/owner/AuditLogs";
 import SecuritySettings from "./pages/owner/SecuritySettings";
 import BillingOverview from "./pages/owner/BillingOverview";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminUserManagement from "./pages/admin/AdminUserManagement";
+import ReportManagement from "./pages/admin/ReportManagement";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -31,6 +34,9 @@ const App = () => (
             <Route path="/login" element={<Auth />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/dashboard/files" element={<ProtectedRoute><FileManager /></ProtectedRoute>} />
+            {/* Admin routes */}
+            <Route path="/dashboard/admin/users" element={<ProtectedRoute requiredRole="admin"><AdminUserManagement /></ProtectedRoute>} />
+            <Route path="/dashboard/admin/reports" element={<ProtectedRoute requiredRole="admin"><ReportManagement /></ProtectedRoute>} />
             {/* Owner routes */}
             <Route path="/dashboard/users" element={<ProtectedRoute requiredRole="owner"><UserManagement /></ProtectedRoute>} />
             <Route path="/dashboard/security" element={<ProtectedRoute requiredRole="owner"><SecuritySettings /></ProtectedRoute>} />
