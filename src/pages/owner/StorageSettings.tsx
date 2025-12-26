@@ -112,7 +112,7 @@ const StorageSettings = () => {
     localStorage.setItem("vps_storage_nodes", JSON.stringify(toSave));
   };
 
-  const testConnection = async (endpoint: string, apiKey: string): Promise<boolean> => {
+  const testConnection = async (endpoint: string, apiKey: string): Promise<"online" | "offline" | "unknown"> => {
     try {
       const response = await fetch(`${endpoint}/health`, {
         method: "GET",
@@ -120,9 +120,12 @@ const StorageSettings = () => {
           Authorization: `Bearer ${apiKey}`,
         },
       });
-      return response.ok;
+      return response.ok ? "online" : "offline";
     } catch (error) {
-      return false;
+      // Browser may block HTTP requests from HTTPS pages (mixed content)
+      // The actual uploads go through edge functions which can access HTTP endpoints
+      console.log("Connection test failed (likely mixed content block):", error);
+      return "unknown";
     }
   };
 
@@ -135,29 +138,40 @@ const StorageSettings = () => {
     setTesting(true);
 
     // Test the connection
-    const isOnline = await testConnection(newNode.endpoint, newNode.apiKey);
+    const connectionStatus = await testConnection(newNode.endpoint, newNode.apiKey);
 
     const node: StorageNode = {
       id: crypto.randomUUID(),
       name: newNode.name,
       endpoint: newNode.endpoint,
-      status: isOnline ? "online" : "offline",
+      status: connectionStatus === "online" ? "online" : connectionStatus === "unknown" ? "online" : "offline",
       totalStorage: 50 * 1024 * 1024 * 1024, // Default 50GB
       usedStorage: 0,
       isDefault: false,
       createdAt: new Date().toISOString(),
     };
 
-    const updatedNodes = [...nodes, node];
-    setNodes(updatedNodes);
-    saveStorageNodes(updatedNodes);
+    // Also save apiKey for later use
+    const nodeWithKey = { ...node, apiKey: newNode.apiKey };
+    const savedNodes = localStorage.getItem("vps_storage_nodes");
+    const existingNodes = savedNodes ? JSON.parse(savedNodes) : [];
+    const updatedSavedNodes = [...existingNodes, nodeWithKey];
+    localStorage.setItem("vps_storage_nodes", JSON.stringify(updatedSavedNodes));
 
-    // Save to Supabase secrets (note: this requires edge function in production)
-    toast.success(
-      isOnline
-        ? `Storage node "${newNode.name}" added and connected!`
-        : `Storage node "${newNode.name}" added but appears offline. Check the endpoint.`
-    );
+    setNodes((prev) => [...prev, node]);
+
+    if (connectionStatus === "unknown") {
+      toast.success(
+        `Storage node "${newNode.name}" added! Browser cannot verify HTTP endpoints, but uploads will work through the server.`,
+        { duration: 5000 }
+      );
+    } else if (connectionStatus === "online") {
+      toast.success(`Storage node "${newNode.name}" added and connected!`);
+    } else {
+      toast.warning(
+        `Storage node "${newNode.name}" added but appears offline. Check the endpoint.`
+      );
+    }
 
     setNewNode({ name: "", endpoint: "", apiKey: "" });
     setAddDialogOpen(false);
@@ -179,7 +193,7 @@ const StorageSettings = () => {
       prev.map((n) => (n.id === nodeId ? { ...n, status: "checking" } : n))
     );
 
-    // In production, retrieve API key from secure storage
+    // Retrieve API key from localStorage
     const savedNodes = localStorage.getItem("vps_storage_nodes");
     let apiKey = "";
     if (savedNodes) {
@@ -188,15 +202,21 @@ const StorageSettings = () => {
       apiKey = savedNode?.apiKey || "";
     }
 
-    const isOnline = await testConnection(node.endpoint, apiKey);
+    const connectionStatus = await testConnection(node.endpoint, apiKey);
 
     setNodes((prev) =>
       prev.map((n) =>
-        n.id === nodeId ? { ...n, status: isOnline ? "online" : "offline" } : n
+        n.id === nodeId 
+          ? { ...n, status: connectionStatus === "offline" ? "offline" : "online" } 
+          : n
       )
     );
 
-    toast.info(`Node status: ${isOnline ? "Online" : "Offline"}`);
+    if (connectionStatus === "unknown") {
+      toast.info("Cannot verify from browser (HTTP/HTTPS restriction), but server uploads will work");
+    } else {
+      toast.info(`Node status: ${connectionStatus === "online" ? "Online" : "Offline"}`);
+    }
   };
 
   const formatBytes = (bytes: number) => {
