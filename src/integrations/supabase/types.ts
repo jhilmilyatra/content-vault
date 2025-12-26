@@ -14,6 +14,78 @@ export type Database = {
   }
   public: {
     Tables: {
+      audit_logs: {
+        Row: {
+          action: string
+          actor_id: string | null
+          created_at: string
+          details: Json | null
+          entity_id: string | null
+          entity_type: string
+          id: string
+          ip_address: unknown
+          target_user_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          created_at?: string
+          details?: Json | null
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+          ip_address?: unknown
+          target_user_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          created_at?: string
+          details?: Json | null
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+          ip_address?: unknown
+          target_user_id?: string | null
+        }
+        Relationships: []
+      }
+      manual_overrides: {
+        Row: {
+          created_at: string
+          expires_at: string | null
+          granted_by: string
+          id: string
+          new_value: string
+          override_type: string
+          previous_value: string | null
+          reason: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string | null
+          granted_by: string
+          id?: string
+          new_value: string
+          override_type: string
+          previous_value?: string | null
+          reason: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string | null
+          granted_by?: string
+          id?: string
+          new_value?: string
+          override_type?: string
+          previous_value?: string | null
+          reason?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -39,6 +111,87 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      subscriptions: {
+        Row: {
+          bandwidth_limit_gb: number
+          created_at: string
+          id: string
+          is_active: boolean
+          max_active_links: number
+          plan: Database["public"]["Enums"]["subscription_plan"]
+          storage_limit_gb: number
+          updated_at: string
+          user_id: string
+          valid_until: string | null
+        }
+        Insert: {
+          bandwidth_limit_gb?: number
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          max_active_links?: number
+          plan?: Database["public"]["Enums"]["subscription_plan"]
+          storage_limit_gb?: number
+          updated_at?: string
+          user_id: string
+          valid_until?: string | null
+        }
+        Update: {
+          bandwidth_limit_gb?: number
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          max_active_links?: number
+          plan?: Database["public"]["Enums"]["subscription_plan"]
+          storage_limit_gb?: number
+          updated_at?: string
+          user_id?: string
+          valid_until?: string | null
+        }
+        Relationships: []
+      }
+      usage_metrics: {
+        Row: {
+          active_links_count: number
+          bandwidth_used_bytes: number
+          created_at: string
+          id: string
+          period_end: string
+          period_start: string
+          storage_used_bytes: number
+          total_downloads: number
+          total_views: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          active_links_count?: number
+          bandwidth_used_bytes?: number
+          created_at?: string
+          id?: string
+          period_end?: string
+          period_start?: string
+          storage_used_bytes?: number
+          total_downloads?: number
+          total_views?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          active_links_count?: number
+          bandwidth_used_bytes?: number
+          created_at?: string
+          id?: string
+          period_end?: string
+          period_start?: string
+          storage_used_bytes?: number
+          total_downloads?: number
+          total_views?: number
           updated_at?: string
           user_id?: string
         }
@@ -84,6 +237,7 @@ export type Database = {
     }
     Enums: {
       app_role: "owner" | "admin" | "member"
+      subscription_plan: "free" | "premium" | "lifetime"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -212,6 +366,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["owner", "admin", "member"],
+      subscription_plan: ["free", "premium", "lifetime"],
     },
   },
 } as const
