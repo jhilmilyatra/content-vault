@@ -38,11 +38,14 @@ import {
   X,
   Loader2,
   Share2,
+  CheckSquare,
 } from "lucide-react";
 import ShareDialog from "@/components/files/ShareDialog";
+import BulkActionsBar from "@/components/files/BulkActionsBar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -80,6 +83,8 @@ const FileManager = () => {
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [shareFile, setShareFile] = useState<{ id: string; name: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  const [selectionMode, setSelectionMode] = useState(false);
 
   const { user } = useAuth();
   const { toast } = useToast();
@@ -352,6 +357,16 @@ const FileManager = () => {
             <p className="text-muted-foreground">Manage your files and folders</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant={selectionMode ? "secondary" : "outline"}
+              onClick={() => {
+                setSelectionMode(!selectionMode);
+                if (selectionMode) setSelectedFiles([]);
+              }}
+            >
+              <CheckSquare className="w-4 h-4 mr-2" />
+              {selectionMode ? "Cancel" : "Select"}
+            </Button>
             <Button variant="outline" onClick={() => setCreateFolderOpen(true)}>
               <Plus className="w-4 h-4 mr-2" />
               New Folder
@@ -396,6 +411,24 @@ const FileManager = () => {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Bulk Actions Bar */}
+        {selectionMode && user && (
+          <BulkActionsBar
+            selectedFiles={selectedFiles}
+            files={files}
+            folders={folders}
+            currentFolderId={currentFolderId}
+            onClearSelection={() => setSelectedFiles([])}
+            onSelectAll={() => setSelectedFiles(filteredFiles.map(f => f.id))}
+            totalItems={filteredFiles.length}
+            onActionComplete={() => {
+              fetchContents();
+              setSelectedFiles([]);
+            }}
+            userId={user.id}
+          />
+        )}
 
         {/* Breadcrumbs & Search */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -538,18 +571,47 @@ const FileManager = () => {
             {/* Files */}
             {filteredFiles.map((file, index) => {
               const IconComponent = getFileIconComponent(file.mime_type);
+              const isSelected = selectedFiles.includes(file.id);
+              
+              const handleFileClick = () => {
+                if (selectionMode) {
+                  if (isSelected) {
+                    setSelectedFiles(selectedFiles.filter(id => id !== file.id));
+                  } else {
+                    setSelectedFiles([...selectedFiles, file.id]);
+                  }
+                }
+              };
+              
               return (
                 <motion.div
                   key={file.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: (filteredFolders.length + index) * 0.03 }}
-                  className={
+                  onClick={handleFileClick}
+                  className={`${
                     viewMode === "grid"
-                      ? "relative p-4 rounded-xl bg-card border border-border hover:border-primary/30 transition-all group"
-                      : "flex items-center gap-4 p-3 rounded-lg bg-card border border-border hover:border-primary/30 transition-all group"
-                  }
+                      ? "relative p-4 rounded-xl bg-card border transition-all group"
+                      : "flex items-center gap-4 p-3 rounded-lg bg-card border transition-all group"
+                  } ${
+                    isSelected 
+                      ? "border-primary bg-primary/5" 
+                      : "border-border hover:border-primary/30"
+                  } ${selectionMode ? "cursor-pointer" : ""}`}
                 >
+                  {/* Selection Checkbox */}
+                  {selectionMode && (
+                    <div 
+                      className={viewMode === "grid" ? "absolute top-2 left-2" : "flex-shrink-0"}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => handleFileClick()}
+                      />
+                    </div>
+                  )}
                   <div
                     className={
                       viewMode === "grid"
@@ -563,52 +625,54 @@ const FileManager = () => {
                     <p className="font-medium text-foreground truncate text-sm">{file.name}</p>
                     <p className="text-xs text-muted-foreground">{formatFileSize(file.size_bytes)}</p>
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={`opacity-0 group-hover:opacity-100 transition-opacity ${
-                          viewMode === "grid" ? "absolute top-2 right-2" : ""
-                        }`}
-                      >
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      <DropdownMenuItem onClick={() => handleDownload(file)}>
-                        <Download className="w-4 h-4 mr-2" />
-                        Download
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setShareFile({ id: file.id, name: file.original_name });
-                          setShareDialogOpen(true);
-                        }}
-                      >
-                        <Share2 className="w-4 h-4 mr-2" />
-                        Share
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setRenameTarget({ type: "file", id: file.id, name: file.name });
-                          setNewName(file.name);
-                          setRenameDialogOpen(true);
-                        }}
-                      >
-                        <Edit className="w-4 h-4 mr-2" />
-                        Rename
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="text-destructive"
-                        onClick={() => handleDeleteFile(file)}
-                      >
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        Move to Trash
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {!selectionMode && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={`opacity-0 group-hover:opacity-100 transition-opacity ${
+                            viewMode === "grid" ? "absolute top-2 right-2" : ""
+                          }`}
+                        >
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem onClick={() => handleDownload(file)}>
+                          <Download className="w-4 h-4 mr-2" />
+                          Download
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setShareFile({ id: file.id, name: file.original_name });
+                            setShareDialogOpen(true);
+                          }}
+                        >
+                          <Share2 className="w-4 h-4 mr-2" />
+                          Share
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setRenameTarget({ type: "file", id: file.id, name: file.name });
+                            setNewName(file.name);
+                            setRenameDialogOpen(true);
+                          }}
+                        >
+                          <Edit className="w-4 h-4 mr-2" />
+                          Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          onClick={() => handleDeleteFile(file)}
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Move to Trash
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </motion.div>
               );
             })}
