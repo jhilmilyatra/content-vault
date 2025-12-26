@@ -79,8 +79,10 @@ const OwnerUserManagement = () => {
   const [grantPremiumDialogOpen, setGrantPremiumDialogOpen] = useState(false);
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
   const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
+  const [addMemberDialogOpen, setAddMemberDialogOpen] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
+  const [addMemberLoading, setAddMemberLoading] = useState(false);
   
   const [editForm, setEditForm] = useState({
     role: "",
@@ -90,6 +92,18 @@ const OwnerUserManagement = () => {
     maxLinks: "",
     validUntil: "",
     reason: "",
+  });
+
+  const [addMemberForm, setAddMemberForm] = useState({
+    email: "",
+    password: "",
+    fullName: "",
+    role: "member",
+    plan: "free",
+    storageLimit: "5",
+    bandwidthLimit: "50",
+    maxLinks: "10",
+    validUntil: "",
   });
 
   const { user } = useAuth();
@@ -359,6 +373,61 @@ const OwnerUserManagement = () => {
     }
   };
 
+  const handleAddMember = async () => {
+    if (!addMemberForm.email || !addMemberForm.password) {
+      toast({ title: "Error", description: "Email and password are required", variant: "destructive" });
+      return;
+    }
+
+    if (addMemberForm.password.length < 6) {
+      toast({ title: "Error", description: "Password must be at least 6 characters", variant: "destructive" });
+      return;
+    }
+
+    setAddMemberLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      // Call edge function to create user
+      const response = await supabase.functions.invoke('create-user', {
+        body: {
+          email: addMemberForm.email,
+          password: addMemberForm.password,
+          fullName: addMemberForm.fullName,
+          role: addMemberForm.role,
+          plan: addMemberForm.plan,
+          storageLimit: parseInt(addMemberForm.storageLimit),
+          bandwidthLimit: parseInt(addMemberForm.bandwidthLimit),
+          maxLinks: parseInt(addMemberForm.maxLinks),
+          validUntil: addMemberForm.validUntil || null,
+        },
+      });
+
+      if (response.error) throw response.error;
+      if (response.data?.error) throw new Error(response.data.error);
+
+      toast({ title: "Success", description: "User created successfully" });
+      setAddMemberDialogOpen(false);
+      setAddMemberForm({
+        email: "",
+        password: "",
+        fullName: "",
+        role: "member",
+        plan: "free",
+        storageLimit: "5",
+        bandwidthLimit: "50",
+        maxLinks: "10",
+        validUntil: "",
+      });
+      fetchUsers();
+    } catch (error: any) {
+      console.error("Error creating user:", error);
+      toast({ title: "Error", description: error.message || "Failed to create user", variant: "destructive" });
+    } finally {
+      setAddMemberLoading(false);
+    }
+  };
+
   const getRoleIcon = (role: string) => {
     switch (role) {
       case "owner": return <Crown className="w-4 h-4 text-amber-500" />;
@@ -397,6 +466,10 @@ const OwnerUserManagement = () => {
             </h1>
             <p className="text-muted-foreground">Full control over users, roles, and subscriptions</p>
           </div>
+          <Button onClick={() => setAddMemberDialogOpen(true)} className="gap-2">
+            <UserPlus className="w-4 h-4" />
+            Add Member
+          </Button>
         </div>
 
         {/* Search */}
@@ -658,6 +731,128 @@ const OwnerUserManagement = () => {
                   <>
                     <Key className="w-4 h-4 mr-2" />
                     Reset Password
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Add Member Dialog */}
+        <Dialog open={addMemberDialogOpen} onOpenChange={setAddMemberDialogOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <UserPlus className="w-5 h-5" />
+                Add New Member
+              </DialogTitle>
+              <DialogDescription>Create a new user with custom plan settings</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Email *</Label>
+                  <Input
+                    type="email"
+                    placeholder="user@example.com"
+                    value={addMemberForm.email}
+                    onChange={(e) => setAddMemberForm({ ...addMemberForm, email: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Password *</Label>
+                  <Input
+                    type="password"
+                    placeholder="Min 6 characters"
+                    value={addMemberForm.password}
+                    onChange={(e) => setAddMemberForm({ ...addMemberForm, password: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Full Name</Label>
+                <Input
+                  placeholder="John Doe"
+                  value={addMemberForm.fullName}
+                  onChange={(e) => setAddMemberForm({ ...addMemberForm, fullName: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <Select value={addMemberForm.role} onValueChange={(v) => setAddMemberForm({ ...addMemberForm, role: v })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="member">Member</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="owner">Owner</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Plan</Label>
+                  <Select value={addMemberForm.plan} onValueChange={(v) => setAddMemberForm({ ...addMemberForm, plan: v })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="free">Free</SelectItem>
+                      <SelectItem value="premium">Premium</SelectItem>
+                      <SelectItem value="lifetime">Lifetime</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Storage (GB)</Label>
+                  <Input
+                    type="number"
+                    value={addMemberForm.storageLimit}
+                    onChange={(e) => setAddMemberForm({ ...addMemberForm, storageLimit: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Bandwidth (GB)</Label>
+                  <Input
+                    type="number"
+                    value={addMemberForm.bandwidthLimit}
+                    onChange={(e) => setAddMemberForm({ ...addMemberForm, bandwidthLimit: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Max Links</Label>
+                  <Input
+                    type="number"
+                    value={addMemberForm.maxLinks}
+                    onChange={(e) => setAddMemberForm({ ...addMemberForm, maxLinks: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Valid Until (optional)</Label>
+                <Input
+                  type="date"
+                  value={addMemberForm.validUntil}
+                  onChange={(e) => setAddMemberForm({ ...addMemberForm, validUntil: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">Leave empty for no expiration (lifetime)</p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAddMemberDialogOpen(false)}>Cancel</Button>
+              <Button onClick={handleAddMember} disabled={addMemberLoading}>
+                {addMemberLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-4 h-4 mr-2" />
+                    Create User
                   </>
                 )}
               </Button>
