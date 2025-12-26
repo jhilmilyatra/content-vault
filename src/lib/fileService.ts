@@ -28,6 +28,119 @@ export interface FolderItem {
   updated_at: string;
 }
 
+export interface StorageNode {
+  id: string;
+  name: string;
+  endpoint: string;
+  apiKey: string;
+  status: "online" | "offline" | "checking";
+  totalStorage: number;
+  usedStorage: number;
+  isDefault: boolean;
+  priority: number;
+}
+
+const STORAGE_NODES_KEY = "vps_storage_nodes";
+
+/**
+ * Get all configured VPS storage nodes
+ */
+export const getStorageNodes = (): StorageNode[] => {
+  try {
+    const saved = localStorage.getItem(STORAGE_NODES_KEY);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error("Failed to load storage nodes:", e);
+  }
+  return [];
+};
+
+/**
+ * Get the best available VPS node for upload based on capacity
+ */
+export const getBestVPSNode = (fileSize: number): StorageNode | null => {
+  const nodes = getStorageNodes();
+  
+  const availableNodes = nodes
+    .filter((n) => n.status === "online")
+    .filter((n) => n.totalStorage - n.usedStorage > fileSize)
+    .sort((a, b) => {
+      // First by priority (lower is better)
+      if (a.priority !== b.priority) {
+        return a.priority - b.priority;
+      }
+      // Then by available space (more is better)
+      const aFree = a.totalStorage - a.usedStorage;
+      const bFree = b.totalStorage - b.usedStorage;
+      return bFree - aFree;
+    });
+
+  return availableNodes[0] || null;
+};
+
+/**
+ * Check if VPS storage is available
+ */
+export const hasVPSStorage = (): boolean => {
+  const nodes = getStorageNodes();
+  return nodes.some((n) => n.status === "online");
+};
+
+/**
+ * Upload file to VPS storage directly
+ */
+const uploadToVPS = async (
+  node: StorageNode,
+  file: File,
+  userId: string,
+  onProgress?: (progress: number) => void
+): Promise<{ path: string; url: string }> => {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("userId", userId);
+
+  // Use XMLHttpRequest for progress tracking
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable && onProgress) {
+        const progress = Math.round((e.loaded / e.total) * 100);
+        onProgress(progress);
+      }
+    });
+
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const result = JSON.parse(xhr.responseText);
+          resolve({
+            path: result.path,
+            url: `${node.endpoint}/files/${result.path}`,
+          });
+        } catch (e) {
+          reject(new Error("Invalid response from VPS"));
+        }
+      } else {
+        reject(new Error(`VPS upload failed: ${xhr.statusText}`));
+      }
+    });
+
+    xhr.addEventListener("error", () => {
+      reject(new Error("VPS upload failed: Network error"));
+    });
+
+    xhr.open("POST", `${node.endpoint}/upload`);
+    xhr.setRequestHeader("Authorization", `Bearer ${node.apiKey}`);
+    xhr.send(formData);
+  });
+};
+
+/**
+ * Upload file - automatically routes to VPS if available, falls back to Supabase
+ */
 export const uploadFile = async (
   file: File,
   userId: string,
@@ -38,7 +151,46 @@ export const uploadFile = async (
   const fileName = `${crypto.randomUUID()}.${fileExt}`;
   const storagePath = `${userId}/${fileName}`;
 
-  // Upload to storage
+  // Check for VPS storage first
+  const vpsNode = getBestVPSNode(file.size);
+
+  if (vpsNode) {
+    // Upload to VPS
+    console.log(`📦 Uploading to VPS: ${vpsNode.name}`);
+    
+    try {
+      await uploadToVPS(vpsNode, file, userId, onProgress);
+
+      // Create file record in Supabase (metadata only)
+      const { data, error } = await supabase
+        .from("files")
+        .insert({
+          user_id: userId,
+          folder_id: folderId,
+          name: file.name,
+          original_name: file.name,
+          mime_type: file.type,
+          size_bytes: file.size,
+          storage_path: storagePath,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Update node usage
+      updateNodeUsage(vpsNode.id, file.size);
+
+      return data as FileItem;
+    } catch (vpsError) {
+      console.error("VPS upload failed, falling back to cloud:", vpsError);
+      // Fall through to Supabase upload
+    }
+  }
+
+  // Fallback: Upload to Supabase storage
+  console.log("☁️ Uploading to cloud storage");
+  
   const { error: uploadError } = await supabase.storage
     .from("user-files")
     .upload(storagePath, file, {
@@ -68,6 +220,23 @@ export const uploadFile = async (
   if (onProgress) onProgress(100);
 
   return data as FileItem;
+};
+
+/**
+ * Update node usage in localStorage
+ */
+const updateNodeUsage = (nodeId: string, bytesAdded: number) => {
+  try {
+    const nodes = getStorageNodes();
+    const updatedNodes = nodes.map((n) =>
+      n.id === nodeId
+        ? { ...n, usedStorage: n.usedStorage + bytesAdded }
+        : n
+    );
+    localStorage.setItem(STORAGE_NODES_KEY, JSON.stringify(updatedNodes));
+  } catch (e) {
+    console.error("Failed to update node usage:", e);
+  }
 };
 
 export const uploadMultipleFiles = async (
@@ -100,12 +269,33 @@ export const deleteFile = async (fileId: string, storagePath: string): Promise<v
 };
 
 export const permanentDeleteFile = async (fileId: string, storagePath: string): Promise<void> => {
-  // Delete from storage
+  // Try to delete from VPS first
+  const nodes = getStorageNodes();
+  for (const node of nodes) {
+    if (node.status === "online") {
+      try {
+        await fetch(`${node.endpoint}/delete`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${node.apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ path: storagePath }),
+        });
+      } catch (e) {
+        console.error("VPS delete error:", e);
+      }
+    }
+  }
+
+  // Delete from Supabase storage (fallback)
   const { error: storageError } = await supabase.storage
     .from("user-files")
     .remove([storagePath]);
 
-  if (storageError) throw storageError;
+  if (storageError) {
+    console.error("Supabase storage delete error:", storageError);
+  }
 
   // Delete from database
   const { error: dbError } = await supabase
@@ -126,6 +316,24 @@ export const restoreFile = async (fileId: string): Promise<void> => {
 };
 
 export const getFileUrl = async (storagePath: string): Promise<string> => {
+  // Try VPS first
+  const nodes = getStorageNodes();
+  for (const node of nodes) {
+    if (node.status === "online") {
+      // Check if file exists on this node
+      const vpsUrl = `${node.endpoint}/files/${storagePath}`;
+      try {
+        const response = await fetch(vpsUrl, { method: "HEAD" });
+        if (response.ok) {
+          return vpsUrl;
+        }
+      } catch (e) {
+        // Node might be down or file not on this node
+      }
+    }
+  }
+
+  // Fallback to Supabase
   const { data } = await supabase.storage
     .from("user-files")
     .createSignedUrl(storagePath, 3600); // 1 hour expiry

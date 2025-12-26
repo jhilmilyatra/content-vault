@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-vps-endpoint, x-vps-api-key",
   "Access-Control-Allow-Methods": "GET, DELETE, OPTIONS",
 };
 
@@ -15,8 +15,12 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const vpsEndpoint = Deno.env.get("VPS_STORAGE_ENDPOINT");
-    const vpsApiKey = Deno.env.get("VPS_STORAGE_API_KEY");
+    const envVpsEndpoint = Deno.env.get("VPS_STORAGE_ENDPOINT");
+    const envVpsApiKey = Deno.env.get("VPS_STORAGE_API_KEY");
+
+    // Custom VPS from headers
+    const headerVpsEndpoint = req.headers.get("x-vps-endpoint");
+    const headerVpsApiKey = req.headers.get("x-vps-api-key");
 
     const url = new URL(req.url);
     const storagePath = url.searchParams.get("path");
@@ -59,34 +63,47 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Determine which VPS to use
+    const vpsEndpoint = headerVpsEndpoint || envVpsEndpoint;
+    const vpsApiKey = headerVpsApiKey || envVpsApiKey;
+
     if (action === "url") {
-      // Get signed URL for file
+      // Get URL for file
       if (vpsEndpoint && vpsApiKey) {
-        // Get VPS URL
-        const fileUrl = `${vpsEndpoint}/files/${storagePath}`;
-        return new Response(
-          JSON.stringify({ url: fileUrl }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      } else {
-        // Get Supabase signed URL
-        const { data, error } = await supabase.storage
-          .from("user-files")
-          .createSignedUrl(storagePath, 3600);
-        
-        if (error) throw error;
-        
-        return new Response(
-          JSON.stringify({ url: data.signedUrl }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        // Check if file exists on VPS
+        try {
+          const checkResponse = await fetch(`${vpsEndpoint}/files/${storagePath}`, {
+            method: "HEAD",
+            headers: { "Authorization": `Bearer ${vpsApiKey}` },
+          });
+          
+          if (checkResponse.ok) {
+            return new Response(
+              JSON.stringify({ url: `${vpsEndpoint}/files/${storagePath}`, storage: "vps" }),
+              { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+        } catch (e) {
+          console.log("VPS check failed, trying Supabase");
+        }
       }
+      
+      // Fallback to Supabase signed URL
+      const { data, error } = await supabase.storage
+        .from("user-files")
+        .createSignedUrl(storagePath, 3600);
+      
+      if (error) throw error;
+      
+      return new Response(
+        JSON.stringify({ url: data.signedUrl, storage: "cloud" }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     if (action === "delete") {
-      // Delete file
+      // Delete from VPS
       if (vpsEndpoint && vpsApiKey) {
-        // Delete from VPS
         try {
           await fetch(`${vpsEndpoint}/delete`, {
             method: "DELETE",
@@ -96,12 +113,13 @@ Deno.serve(async (req) => {
             },
             body: JSON.stringify({ path: storagePath }),
           });
+          console.log(`✅ Deleted from VPS: ${storagePath}`);
         } catch (e) {
           console.error("VPS delete error:", e);
         }
       }
       
-      // Also try to delete from Supabase storage (in case it exists there)
+      // Also delete from Supabase storage
       await supabase.storage.from("user-files").remove([storagePath]);
       
       return new Response(
@@ -111,14 +129,11 @@ Deno.serve(async (req) => {
     }
 
     if (action === "get") {
-      // Get file content
+      // Try VPS first
       if (vpsEndpoint && vpsApiKey) {
-        // Try VPS first
         try {
           const vpsResponse = await fetch(`${vpsEndpoint}/files/${storagePath}`, {
-            headers: {
-              "Authorization": `Bearer ${vpsApiKey}`,
-            },
+            headers: { "Authorization": `Bearer ${vpsApiKey}` },
           });
           
           if (vpsResponse.ok) {

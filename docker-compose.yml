@@ -1,0 +1,36 @@
+# ============================================
+# FileCloud Docker Compose Configuration
+# ============================================
+# Use this file for easy VPS deployment
+
+version: '3.8'
+
+services:
+  filecloud:
+    build: .
+    container_name: filecloud-app
+    restart: unless-stopped
+    ports:
+      - "80:3000"      # Frontend
+      - "4000:4000"    # Storage API
+    volumes:
+      - filecloud_storage:/app/storage
+      - filecloud_data:/app/data
+    environment:
+      - NODE_ENV=production
+      - VPS_STORAGE_API_KEY=${VPS_STORAGE_API_KEY:-your-secure-api-key-change-this}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - STORAGE_PATH=/app/storage
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  filecloud_storage:
+    driver: local
+  filecloud_data:
+    driver: local

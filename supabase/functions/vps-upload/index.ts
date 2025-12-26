@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-vps-endpoint",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-vps-endpoint, x-vps-api-key",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -12,6 +12,17 @@ interface VPSUploadRequest {
   mimeType: string;
   userId: string;
   folderId?: string;
+  vpsEndpoint?: string;
+  vpsApiKey?: string;
+}
+
+interface StorageNode {
+  id: string;
+  endpoint: string;
+  apiKey: string;
+  priority: number;
+  totalStorage: number;
+  usedStorage: number;
 }
 
 Deno.serve(async (req) => {
@@ -23,8 +34,14 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const vpsEndpoint = Deno.env.get("VPS_STORAGE_ENDPOINT");
-    const vpsApiKey = Deno.env.get("VPS_STORAGE_API_KEY");
+    
+    // Primary VPS storage from environment
+    const envVpsEndpoint = Deno.env.get("VPS_STORAGE_ENDPOINT");
+    const envVpsApiKey = Deno.env.get("VPS_STORAGE_API_KEY");
+    
+    // Custom VPS from headers (for additional nodes)
+    const headerVpsEndpoint = req.headers.get("x-vps-endpoint");
+    const headerVpsApiKey = req.headers.get("x-vps-api-key");
     
     // Verify authorization
     const authHeader = req.headers.get("Authorization");
@@ -54,12 +71,16 @@ Deno.serve(async (req) => {
     let fileData: Uint8Array;
     let mimeType: string;
     let folderId: string | null = null;
+    let customVpsEndpoint: string | null = null;
+    let customVpsApiKey: string | null = null;
 
     if (contentType.includes("multipart/form-data")) {
       // Handle multipart form data
       const formData = await req.formData();
       const file = formData.get("file") as File;
       folderId = formData.get("folderId") as string | null;
+      customVpsEndpoint = formData.get("vpsEndpoint") as string | null;
+      customVpsApiKey = formData.get("vpsApiKey") as string | null;
       
       if (!file) {
         return new Response(
@@ -77,6 +98,8 @@ Deno.serve(async (req) => {
       fileName = body.fileName;
       mimeType = body.mimeType;
       folderId = body.folderId || null;
+      customVpsEndpoint = body.vpsEndpoint || null;
+      customVpsApiKey = body.vpsApiKey || null;
       
       // Decode base64
       const binaryString = atob(body.fileData);
@@ -93,12 +116,18 @@ Deno.serve(async (req) => {
 
     let fileUrl: string;
     let storageType: "vps" | "cloud";
+    let usedNode: string | null = null;
 
-    // Check if VPS storage is configured
+    // Determine which VPS to use (priority: custom > header > env)
+    const vpsEndpoint = customVpsEndpoint || headerVpsEndpoint || envVpsEndpoint;
+    const vpsApiKey = customVpsApiKey || headerVpsApiKey || envVpsApiKey;
+
+    // Try VPS storage first
     if (vpsEndpoint && vpsApiKey) {
-      // Upload to VPS
       try {
-        const vpsResponse = await fetch(`${vpsEndpoint}/upload`, {
+        console.log(`📦 Uploading to VPS: ${vpsEndpoint}`);
+        
+        const vpsResponse = await fetch(`${vpsEndpoint}/upload-base64`, {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${vpsApiKey}`,
@@ -115,14 +144,19 @@ Deno.serve(async (req) => {
         });
 
         if (!vpsResponse.ok) {
-          throw new Error(`VPS upload failed: ${vpsResponse.statusText}`);
+          const errorText = await vpsResponse.text();
+          throw new Error(`VPS upload failed: ${vpsResponse.status} - ${errorText}`);
         }
 
         const vpsResult = await vpsResponse.json();
         fileUrl = vpsResult.url || `${vpsEndpoint}/files/${storagePath}`;
         storageType = "vps";
+        usedNode = vpsEndpoint;
+        
+        console.log(`✅ VPS upload successful: ${storagePath}`);
       } catch (vpsError) {
         console.error("VPS upload error, falling back to cloud:", vpsError);
+        
         // Fallback to Supabase storage
         const { error: uploadError } = await supabase.storage
           .from("user-files")
@@ -141,7 +175,9 @@ Deno.serve(async (req) => {
         storageType = "cloud";
       }
     } else {
-      // Use Supabase storage
+      // Use Supabase storage directly
+      console.log("☁️ Uploading to cloud storage (no VPS configured)");
+      
       const { error: uploadError } = await supabase.storage
         .from("user-files")
         .upload(storagePath, fileData, {
@@ -182,6 +218,7 @@ Deno.serve(async (req) => {
         file: fileRecord,
         storageType,
         url: fileUrl,
+        node: usedNode,
       }),
       { 
         status: 200, 
