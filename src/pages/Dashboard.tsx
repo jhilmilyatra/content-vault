@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
+import { useAuth } from "@/hooks/useAuth";
 import { 
   HardDrive, 
   Download, 
@@ -72,14 +73,18 @@ const getFileIcon = (type: string) => {
 };
 
 const Dashboard = () => {
+  const { profile } = useAuth();
+  
   return (
-    <DashboardLayout role="member">
+    <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-            <p className="text-muted-foreground">Welcome back! Here's what's happening with your content.</p>
+            <p className="text-muted-foreground">
+              Welcome back{profile?.full_name ? `, ${profile.full_name.split(' ')[0]}` : ''}! Here's what's happening with your content.
+            </p>
           </div>
           <Button variant="hero">
             Upload Files
