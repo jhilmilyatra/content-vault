@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
-import { User, Lock, Bell, Palette, Save, Loader2 } from 'lucide-react';
+import { User, Lock, Bell, Palette, Save, Loader2, Key, Copy, RefreshCw, Check } from 'lucide-react';
 
 const Settings = () => {
   const { user, profile } = useAuth();
@@ -29,6 +29,10 @@ const Settings = () => {
   const [downloadNotifications, setDownloadNotifications] = useState(true);
   const [weeklyReports, setWeeklyReports] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+  
+  // API Key state
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [apiKeyCopied, setApiKeyCopied] = useState(false);
 
   const handleUpdateProfile = async () => {
     if (!user) return;
@@ -94,6 +98,22 @@ const Settings = () => {
     toast.success('Preferences saved');
   };
 
+  const generateApiKey = () => {
+    if (!user) return;
+    const secret = crypto.randomUUID().replace(/-/g, '');
+    const key = `${user.id}:${secret}`;
+    setApiKey(key);
+    toast.success('API key generated! Save it securely - it won\'t be shown again.');
+  };
+
+  const copyApiKey = async () => {
+    if (!apiKey) return;
+    await navigator.clipboard.writeText(apiKey);
+    setApiKeyCopied(true);
+    toast.success('API key copied to clipboard');
+    setTimeout(() => setApiKeyCopied(false), 2000);
+  };
+
   const getInitials = (name: string | null) => {
     if (!name) return 'U';
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -107,7 +127,7 @@ const Settings = () => {
       </div>
 
       <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3 lg:w-[400px]">
+        <TabsList className="grid w-full grid-cols-4 lg:w-[500px]">
           <TabsTrigger value="profile" className="gap-2">
             <User className="h-4 w-4" />
             Profile
@@ -115,6 +135,10 @@ const Settings = () => {
           <TabsTrigger value="security" className="gap-2">
             <Lock className="h-4 w-4" />
             Security
+          </TabsTrigger>
+          <TabsTrigger value="api" className="gap-2">
+            <Key className="h-4 w-4" />
+            API
           </TabsTrigger>
           <TabsTrigger value="preferences" className="gap-2">
             <Bell className="h-4 w-4" />
@@ -228,6 +252,102 @@ const Settings = () => {
                   <span className="flex h-2 w-2 rounded-full bg-green-500" />
                   <span className="text-sm text-muted-foreground">Active</span>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="api" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>API Access</CardTitle>
+              <CardDescription>
+                Generate an API key to upload files via Telegram bots or other integrations
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {apiKey ? (
+                <div className="space-y-4">
+                  <div className="p-4 rounded-lg bg-muted border border-border">
+                    <Label className="text-xs text-muted-foreground">Your API Key (save this securely!)</Label>
+                    <div className="flex items-center gap-2 mt-2">
+                      <Input
+                        value={apiKey}
+                        readOnly
+                        className="font-mono text-xs"
+                      />
+                      <Button variant="outline" size="icon" onClick={copyApiKey}>
+                        {apiKeyCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                    <p className="text-sm text-amber-600 dark:text-amber-400">
+                      ⚠️ This key will only be shown once. Store it securely!
+                    </p>
+                  </div>
+                  <Button variant="outline" onClick={generateApiKey} className="gap-2">
+                    <RefreshCw className="h-4 w-4" />
+                    Generate New Key
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    Generate an API key to upload files programmatically. This key can be used with our Telegram bot integration or any HTTP client.
+                  </p>
+                  <Button onClick={generateApiKey} className="gap-2">
+                    <Key className="h-4 w-4" />
+                    Generate API Key
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>API Documentation</CardTitle>
+              <CardDescription>How to use the upload API</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Endpoint</Label>
+                <code className="block p-3 rounded-lg bg-muted text-sm font-mono break-all">
+                  POST https://dgmxndvvsbjjbnoibaid.supabase.co/functions/v1/telegram-upload
+                </code>
+              </div>
+              <div className="space-y-2">
+                <Label>Headers</Label>
+                <code className="block p-3 rounded-lg bg-muted text-sm font-mono">
+                  x-api-key: YOUR_API_KEY<br/>
+                  Content-Type: application/json
+                </code>
+              </div>
+              <div className="space-y-2">
+                <Label>Request Body</Label>
+                <pre className="p-3 rounded-lg bg-muted text-sm font-mono overflow-x-auto">
+{`{
+  "file_name": "document.pdf",
+  "file_data": "BASE64_ENCODED_FILE_DATA",
+  "mime_type": "application/pdf",
+  "folder_id": "optional-folder-uuid"
+}`}
+                </pre>
+              </div>
+              <div className="space-y-2">
+                <Label>Response</Label>
+                <pre className="p-3 rounded-lg bg-muted text-sm font-mono overflow-x-auto">
+{`{
+  "success": true,
+  "file": {
+    "id": "file-uuid",
+    "name": "document.pdf",
+    "size_bytes": 12345,
+    "mime_type": "application/pdf"
+  }
+}`}
+                </pre>
               </div>
             </CardContent>
           </Card>
