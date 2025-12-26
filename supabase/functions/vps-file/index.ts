@@ -15,8 +15,9 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const envVpsEndpoint = Deno.env.get("VPS_STORAGE_ENDPOINT");
-    const envVpsApiKey = Deno.env.get("VPS_STORAGE_API_KEY");
+    // Primary VPS storage - hardcoded
+    const envVpsEndpoint = "http://46.38.232.46:4000";
+    const envVpsApiKey = "kARTOOS007";
 
     // Custom VPS from headers
     const headerVpsEndpoint = req.headers.get("x-vps-endpoint");
