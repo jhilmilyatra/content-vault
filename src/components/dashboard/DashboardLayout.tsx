@@ -16,7 +16,8 @@ import {
   ChevronRight,
   LogOut,
   Bell,
-  Search
+  Search,
+  FileWarning,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,11 +36,20 @@ const memberNavItems = [
   { icon: Settings, label: "Settings", path: "/dashboard/settings" },
 ];
 
+const adminNavItems = [
+  { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
+  { icon: Users, label: "Users", path: "/dashboard/admin/users" },
+  { icon: FileWarning, label: "Reports", path: "/dashboard/admin/reports" },
+  { icon: BarChart3, label: "Analytics", path: "/dashboard/analytics" },
+  { icon: Settings, label: "Settings", path: "/dashboard/settings" },
+];
+
 const ownerNavItems = [
   { icon: LayoutDashboard, label: "Overview", path: "/dashboard" },
   { icon: Users, label: "Users", path: "/dashboard/users" },
   { icon: Shield, label: "Security", path: "/dashboard/security" },
   { icon: CreditCard, label: "Billing", path: "/dashboard/billing" },
+  { icon: FileWarning, label: "Reports", path: "/dashboard/admin/reports" },
   { icon: BarChart3, label: "Analytics", path: "/dashboard/analytics" },
   { icon: FileText, label: "Audit Logs", path: "/dashboard/audit" },
   { icon: Settings, label: "Settings", path: "/dashboard/settings" },
@@ -52,7 +62,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const { profile, role, signOut } = useAuth();
   const { toast } = useToast();
   
-  const navItems = role === "owner" ? ownerNavItems : memberNavItems;
+  const navItems = role === "owner" ? ownerNavItems : role === "admin" ? adminNavItems : memberNavItems;
 
   const handleSignOut = async () => {
     await signOut();
