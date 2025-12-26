@@ -1,8 +1,12 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Shield, Zap, Database } from "lucide-react";
+import { Link } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 const Hero = () => {
+  const { user } = useAuth();
+
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden px-4 py-20">
       {/* Background effects */}
@@ -67,10 +71,12 @@ const Hero = () => {
             transition={{ delay: 0.4, duration: 0.6 }}
             className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16"
           >
-            <Button variant="hero" size="xl" className="group">
-              Get Started
-              <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
-            </Button>
+            <Link to={user ? "/dashboard" : "/auth"}>
+              <Button variant="hero" size="xl" className="group">
+                {user ? "Go to Dashboard" : "Get Started"}
+                <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
+              </Button>
+            </Link>
             <Button variant="glass" size="xl">
               View Documentation
             </Button>
