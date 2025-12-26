@@ -14,6 +14,7 @@ import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import Plans from "./pages/Plans";
 import SharedFile from "./pages/SharedFile";
+import TelegramGuide from "./pages/TelegramGuide";
 import OwnerDashboard from "./pages/owner/OwnerDashboard";
 import UserManagement from "./pages/owner/UserManagement";
 import UserAnalytics from "./pages/owner/UserAnalytics";
@@ -45,7 +46,7 @@ const App = () => (
             <Route path="/dashboard/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
             <Route path="/dashboard/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/dashboard/plans" element={<ProtectedRoute><Plans /></ProtectedRoute>} />
-            {/* Admin routes */}
+            <Route path="/dashboard/telegram-guide" element={<ProtectedRoute><TelegramGuide /></ProtectedRoute>} />
             <Route path="/dashboard/admin/users" element={<ProtectedRoute requiredRole="admin"><AdminUserManagement /></ProtectedRoute>} />
             <Route path="/dashboard/admin/reports" element={<ProtectedRoute requiredRole="admin"><ReportManagement /></ProtectedRoute>} />
             {/* Owner routes */}
