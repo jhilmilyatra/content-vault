@@ -33,6 +33,7 @@ const memberNavItems = [
   { icon: FolderOpen, label: "Files", path: "/dashboard/files" },
   { icon: Link2, label: "Share Links", path: "/dashboard/links" },
   { icon: BarChart3, label: "Analytics", path: "/dashboard/analytics" },
+  { icon: CreditCard, label: "Plans", path: "/dashboard/plans" },
   { icon: Settings, label: "Settings", path: "/dashboard/settings" },
 ];
 
