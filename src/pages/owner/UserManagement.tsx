@@ -22,6 +22,8 @@ import {
   Download,
   Link2,
   Clock,
+  Key,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,6 +78,9 @@ const OwnerUserManagement = () => {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [grantPremiumDialogOpen, setGrantPremiumDialogOpen] = useState(false);
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
+  const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
   
   const [editForm, setEditForm] = useState({
     role: "",
@@ -317,6 +322,43 @@ const OwnerUserManagement = () => {
     }
   };
 
+  const handleResetPassword = async () => {
+    if (!selectedUser || !newPassword) {
+      toast({ title: "Error", description: "Please enter a new password", variant: "destructive" });
+      return;
+    }
+    
+    if (newPassword.length < 6) {
+      toast({ title: "Error", description: "Password must be at least 6 characters", variant: "destructive" });
+      return;
+    }
+
+    setResetPasswordLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await supabase.functions.invoke('reset-user-password', {
+        body: {
+          targetUserId: selectedUser.user_id,
+          newPassword: newPassword,
+        },
+      });
+
+      if (response.error) throw response.error;
+      if (response.data?.error) throw new Error(response.data.error);
+
+      toast({ title: "Success", description: "Password reset successfully" });
+      setResetPasswordDialogOpen(false);
+      setNewPassword("");
+      setSelectedUser(null);
+    } catch (error: any) {
+      console.error("Error resetting password:", error);
+      toast({ title: "Error", description: error.message || "Failed to reset password", variant: "destructive" });
+    } finally {
+      setResetPasswordLoading(false);
+    }
+  };
+
   const getRoleIcon = (role: string) => {
     switch (role) {
       case "owner": return <Crown className="w-4 h-4 text-amber-500" />;
@@ -461,6 +503,14 @@ const OwnerUserManagement = () => {
                                   Revoke to Free
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => {
+                                  setSelectedUser(userItem);
+                                  setNewPassword("");
+                                  setResetPasswordDialogOpen(true);
+                                }}>
+                                  <Key className="w-4 h-4 mr-2" />
+                                  Reset Password
+                                </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => toggleUserStatus(userItem)}>
                                   {userItem.is_active ? (
                                     <>
@@ -569,6 +619,48 @@ const OwnerUserManagement = () => {
             <DialogFooter>
               <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
               <Button onClick={handleSaveChanges}>Save Changes</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Reset Password Dialog */}
+        <Dialog open={resetPasswordDialogOpen} onOpenChange={setResetPasswordDialogOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Reset Password</DialogTitle>
+              <DialogDescription>
+                Set a new password for {selectedUser?.email}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="newPassword">New Password</Label>
+                <Input
+                  id="newPassword"
+                  type="password"
+                  placeholder="Enter new password (min 6 characters)"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setResetPasswordDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleResetPassword} disabled={resetPasswordLoading || !newPassword}>
+                {resetPasswordLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Resetting...
+                  </>
+                ) : (
+                  <>
+                    <Key className="w-4 h-4 mr-2" />
+                    Reset Password
+                  </>
+                )}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
