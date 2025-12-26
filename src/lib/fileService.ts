@@ -40,22 +40,49 @@ export interface StorageNode {
   priority: number;
 }
 
+// Hardcoded primary VPS configuration - always available
+const PRIMARY_VPS_CONFIG = {
+  endpoint: "http://46.38.232.46:4000",
+  apiKey: "kARTOOS007",
+};
+
 const STORAGE_NODES_KEY = "vps_storage_nodes";
 
 /**
- * Get all configured VPS storage nodes
+ * Get all configured VPS storage nodes (includes hardcoded primary)
  */
 export const getStorageNodes = (): StorageNode[] => {
+  // Always include the primary VPS node
+  const primaryNode: StorageNode = {
+    id: "vps-primary",
+    name: "Primary VPS Storage",
+    endpoint: PRIMARY_VPS_CONFIG.endpoint,
+    apiKey: PRIMARY_VPS_CONFIG.apiKey,
+    status: "online",
+    totalStorage: 200 * 1024 * 1024 * 1024, // 200GB
+    usedStorage: 0,
+    isDefault: true,
+    priority: 1,
+  };
+
   try {
     const saved = localStorage.getItem(STORAGE_NODES_KEY);
     if (saved) {
-      return JSON.parse(saved);
+      const additionalNodes = JSON.parse(saved) as StorageNode[];
+      // Filter out any duplicate primary node
+      const filtered = additionalNodes.filter(n => n.id !== "vps-primary");
+      return [primaryNode, ...filtered];
     }
   } catch (e) {
     console.error("Failed to load storage nodes:", e);
   }
-  return [];
+  return [primaryNode];
 };
+
+/**
+ * Get the primary VPS config (hardcoded)
+ */
+export const getPrimaryVPSConfig = () => PRIMARY_VPS_CONFIG;
 
 /**
  * Get the best available VPS node for upload based on capacity
@@ -84,62 +111,61 @@ export const getBestVPSNode = (fileSize: number): StorageNode | null => {
  * Check if VPS storage is available
  */
 export const hasVPSStorage = (): boolean => {
-  const nodes = getStorageNodes();
-  return nodes.some((n) => n.status === "online");
+  // Always true since primary VPS is hardcoded
+  return true;
 };
 
 /**
- * Upload file to VPS storage directly
+ * Upload file to VPS via edge function (avoids mixed content issues)
  */
-const uploadToVPS = async (
-  node: StorageNode,
+const uploadToVPSViaEdge = async (
   file: File,
   userId: string,
+  folderId: string | null,
   onProgress?: (progress: number) => void
-): Promise<{ path: string; url: string }> => {
+): Promise<FileItem> => {
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("userId", userId);
+  if (folderId) {
+    formData.append("folderId", folderId);
+  }
 
-  // Use XMLHttpRequest for progress tracking
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    
-    xhr.upload.addEventListener("progress", (e) => {
-      if (e.lengthComputable && onProgress) {
-        const progress = Math.round((e.loaded / e.total) * 100);
-        onProgress(progress);
-      }
-    });
+  // Get auth session for edge function
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData.session) {
+    throw new Error("Not authenticated");
+  }
 
-    xhr.addEventListener("load", () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const result = JSON.parse(xhr.responseText);
-          resolve({
-            path: result.path,
-            url: `${node.endpoint}/files/${result.path}`,
-          });
-        } catch (e) {
-          reject(new Error("Invalid response from VPS"));
-        }
-      } else {
-        reject(new Error(`VPS upload failed: ${xhr.statusText}`));
-      }
-    });
+  if (onProgress) onProgress(10);
 
-    xhr.addEventListener("error", () => {
-      reject(new Error("VPS upload failed: Network error"));
-    });
+  // Use edge function which has hardcoded VPS config
+  const response = await fetch(
+    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-upload`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${sessionData.session.access_token}`,
+      },
+      body: formData,
+    }
+  );
 
-    xhr.open("POST", `${node.endpoint}/upload`);
-    xhr.setRequestHeader("Authorization", `Bearer ${node.apiKey}`);
-    xhr.send(formData);
-  });
+  if (onProgress) onProgress(90);
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Upload failed: ${response.status}`);
+  }
+
+  const result = await response.json();
+  
+  if (onProgress) onProgress(100);
+
+  return result.file as FileItem;
 };
 
 /**
- * Upload file - automatically routes to VPS if available, falls back to Supabase
+ * Upload file - uses edge function for VPS upload (avoids mixed content)
  */
 export const uploadFile = async (
   file: File,
@@ -147,79 +173,50 @@ export const uploadFile = async (
   folderId: string | null,
   onProgress?: (progress: number) => void
 ): Promise<FileItem> => {
-  const fileExt = file.name.split(".").pop();
-  const fileName = `${crypto.randomUUID()}.${fileExt}`;
-  const storagePath = `${userId}/${fileName}`;
-
-  // Check for VPS storage first
-  const vpsNode = getBestVPSNode(file.size);
-
-  if (vpsNode) {
-    // Upload to VPS
-    console.log(`📦 Uploading to VPS: ${vpsNode.name}`);
-    
-    try {
-      await uploadToVPS(vpsNode, file, userId, onProgress);
-
-      // Create file record in Supabase (metadata only)
-      const { data, error } = await supabase
-        .from("files")
-        .insert({
-          user_id: userId,
-          folder_id: folderId,
-          name: file.name,
-          original_name: file.name,
-          mime_type: file.type,
-          size_bytes: file.size,
-          storage_path: storagePath,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // Update node usage
-      updateNodeUsage(vpsNode.id, file.size);
-
-      return data as FileItem;
-    } catch (vpsError) {
-      console.error("VPS upload failed, falling back to cloud:", vpsError);
-      // Fall through to Supabase upload
-    }
-  }
-
-  // Fallback: Upload to Supabase storage
-  console.log("☁️ Uploading to cloud storage");
+  console.log("📦 Uploading via edge function to VPS");
   
-  const { error: uploadError } = await supabase.storage
-    .from("user-files")
-    .upload(storagePath, file, {
-      cacheControl: "3600",
-      upsert: false,
-    });
+  try {
+    return await uploadToVPSViaEdge(file, userId, folderId, onProgress);
+  } catch (vpsError) {
+    console.error("VPS upload failed, falling back to cloud:", vpsError);
+    
+    // Fallback: Upload to Supabase storage directly
+    console.log("☁️ Uploading to cloud storage");
+    
+    const fileExt = file.name.split(".").pop();
+    const fileName = `${crypto.randomUUID()}.${fileExt}`;
+    const storagePath = `${userId}/${fileName}`;
+    
+    const { error: uploadError } = await supabase.storage
+      .from("user-files")
+      .upload(storagePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
 
-  if (uploadError) throw uploadError;
+    if (uploadError) throw uploadError;
 
-  // Create file record
-  const { data, error } = await supabase
-    .from("files")
-    .insert({
-      user_id: userId,
-      folder_id: folderId,
-      name: file.name,
-      original_name: file.name,
-      mime_type: file.type,
-      size_bytes: file.size,
-      storage_path: storagePath,
-    })
-    .select()
-    .single();
+    // Create file record
+    const { data, error: dbError } = await supabase
+      .from("files")
+      .insert({
+        user_id: userId,
+        folder_id: folderId,
+        name: file.name,
+        original_name: file.name,
+        mime_type: file.type,
+        size_bytes: file.size,
+        storage_path: storagePath,
+      })
+      .select()
+      .single();
 
-  if (error) throw error;
+    if (dbError) throw dbError;
 
-  if (onProgress) onProgress(100);
+    if (onProgress) onProgress(100);
 
-  return data as FileItem;
+    return data as FileItem;
+  }
 };
 
 /**
