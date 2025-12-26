@@ -10,6 +10,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import FileManager from "./pages/FileManager";
 import Analytics from "./pages/Analytics";
+import Settings from "./pages/Settings";
 import OwnerDashboard from "./pages/owner/OwnerDashboard";
 import UserManagement from "./pages/owner/UserManagement";
 import AuditLogs from "./pages/owner/AuditLogs";
@@ -36,6 +37,7 @@ const App = () => (
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/dashboard/files" element={<ProtectedRoute><FileManager /></ProtectedRoute>} />
             <Route path="/dashboard/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+            <Route path="/dashboard/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             {/* Admin routes */}
             <Route path="/dashboard/admin/users" element={<ProtectedRoute requiredRole="admin"><AdminUserManagement /></ProtectedRoute>} />
             <Route path="/dashboard/admin/reports" element={<ProtectedRoute requiredRole="admin"><ReportManagement /></ProtectedRoute>} />
