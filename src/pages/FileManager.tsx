@@ -37,7 +37,9 @@ import {
   List,
   X,
   Loader2,
+  Share2,
 } from "lucide-react";
+import ShareDialog from "@/components/files/ShareDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -75,6 +77,8 @@ const FileManager = () => {
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<{ type: "file" | "folder"; id: string; name: string } | null>(null);
   const [newName, setNewName] = useState("");
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareFile, setShareFile] = useState<{ id: string; name: string } | null>(null);
 
   const { user } = useAuth();
   const { toast } = useToast();
@@ -516,6 +520,15 @@ const FileManager = () => {
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => {
+                          setShareFile({ id: file.id, name: file.original_name });
+                          setShareDialogOpen(true);
+                        }}
+                      >
+                        <Share2 className="w-4 h-4 mr-2" />
+                        Share
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
                           setRenameTarget({ type: "file", id: file.id, name: file.name });
                           setNewName(file.name);
                           setRenameDialogOpen(true);
@@ -590,6 +603,16 @@ const FileManager = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Share Dialog */}
+        {shareFile && (
+          <ShareDialog
+            open={shareDialogOpen}
+            onOpenChange={setShareDialogOpen}
+            fileId={shareFile.id}
+            fileName={shareFile.name}
+          />
+        )}
       </div>
     </DashboardLayout>
   );

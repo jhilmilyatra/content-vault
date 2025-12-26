@@ -12,6 +12,7 @@ import FileManager from "./pages/FileManager";
 import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import Plans from "./pages/Plans";
+import SharedFile from "./pages/SharedFile";
 import OwnerDashboard from "./pages/owner/OwnerDashboard";
 import UserManagement from "./pages/owner/UserManagement";
 import AuditLogs from "./pages/owner/AuditLogs";
@@ -35,6 +36,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/login" element={<Auth />} />
+            <Route path="/share/:shortCode" element={<SharedFile />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/dashboard/files" element={<ProtectedRoute><FileManager /></ProtectedRoute>} />
             <Route path="/dashboard/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
