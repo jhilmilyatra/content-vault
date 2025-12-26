@@ -15,6 +15,7 @@ import Plans from "./pages/Plans";
 import SharedFile from "./pages/SharedFile";
 import OwnerDashboard from "./pages/owner/OwnerDashboard";
 import UserManagement from "./pages/owner/UserManagement";
+import UserAnalytics from "./pages/owner/UserAnalytics";
 import AuditLogs from "./pages/owner/AuditLogs";
 import SecuritySettings from "./pages/owner/SecuritySettings";
 import BillingOverview from "./pages/owner/BillingOverview";
@@ -47,6 +48,7 @@ const App = () => (
             <Route path="/dashboard/admin/reports" element={<ProtectedRoute requiredRole="admin"><ReportManagement /></ProtectedRoute>} />
             {/* Owner routes */}
             <Route path="/dashboard/users" element={<ProtectedRoute requiredRole="owner"><UserManagement /></ProtectedRoute>} />
+            <Route path="/dashboard/user-analytics" element={<ProtectedRoute requiredRole="owner"><UserAnalytics /></ProtectedRoute>} />
             <Route path="/dashboard/security" element={<ProtectedRoute requiredRole="owner"><SecuritySettings /></ProtectedRoute>} />
             <Route path="/dashboard/billing" element={<ProtectedRoute requiredRole="owner"><BillingOverview /></ProtectedRoute>} />
             <Route path="/dashboard/audit" element={<ProtectedRoute requiredRole="owner"><AuditLogs /></ProtectedRoute>} />

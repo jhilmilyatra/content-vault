@@ -52,6 +52,7 @@ const ownerNavItems = [
   { icon: CreditCard, label: "Billing", path: "/dashboard/billing" },
   { icon: FileWarning, label: "Reports", path: "/dashboard/admin/reports" },
   { icon: BarChart3, label: "Analytics", path: "/dashboard/analytics" },
+  { icon: BarChart3, label: "User Stats", path: "/dashboard/user-analytics" },
   { icon: FileText, label: "Audit Logs", path: "/dashboard/audit" },
   { icon: Settings, label: "Settings", path: "/dashboard/settings" },
 ];

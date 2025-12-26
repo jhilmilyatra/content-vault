@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import TrialBanner from "@/components/dashboard/TrialBanner";
 import { useAuth } from "@/hooks/useAuth";
@@ -21,48 +22,43 @@ import { Button } from "@/components/ui/button";
 const stats = [
   {
     label: "Storage Used",
-    value: "24.5 GB",
-    limit: "/ 50 GB",
-    change: "+2.4 GB",
+    value: "0 B",
+    limit: "/ 1 GB",
+    change: "0",
     trend: "up",
     icon: HardDrive,
     color: "from-primary to-cyan-400"
   },
   {
     label: "Bandwidth",
-    value: "156.2 GB",
-    limit: "/ 500 GB",
-    change: "+12.8 GB",
+    value: "0 B",
+    limit: "/ 10 GB",
+    change: "0",
     trend: "up",
     icon: Download,
     color: "from-violet-500 to-purple-400"
   },
   {
     label: "Active Links",
-    value: "47",
-    limit: "/ 100",
-    change: "+5",
+    value: "0",
+    limit: "/ 5",
+    change: "0",
     trend: "up",
     icon: Link2,
     color: "from-amber-500 to-orange-400"
   },
   {
     label: "Total Views",
-    value: "12.4K",
+    value: "0",
     limit: "",
-    change: "+18%",
+    change: "0",
     trend: "up",
     icon: Users,
     color: "from-emerald-500 to-teal-400"
   },
 ];
 
-const recentFiles = [
-  { name: "Product Demo 2024.mp4", type: "video", size: "245 MB", date: "2 hours ago" },
-  { name: "Brand Guidelines.pdf", type: "document", size: "12.4 MB", date: "5 hours ago" },
-  { name: "Marketing Assets", type: "folder", size: "1.2 GB", date: "Yesterday" },
-  { name: "Hero Banner.png", type: "image", size: "4.8 MB", date: "2 days ago" },
-];
+const recentFiles: { name: string; type: string; size: string; date: string }[] = [];
 
 const getFileIcon = (type: string) => {
   switch (type) {
@@ -75,6 +71,7 @@ const getFileIcon = (type: string) => {
 
 const Dashboard = () => {
   const { profile, subscription, daysRemaining } = useAuth();
+  const navigate = useNavigate();
   
   return (
     <DashboardLayout>
@@ -95,7 +92,7 @@ const Dashboard = () => {
               )}
             </p>
           </div>
-          <Button variant="hero">
+          <Button variant="hero" onClick={() => navigate('/dashboard/files')}>
             Upload Files
           </Button>
         </div>
