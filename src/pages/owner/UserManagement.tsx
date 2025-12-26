@@ -68,6 +68,8 @@ interface UserWithDetails {
   max_active_links: number;
   valid_until: string | null;
   is_active: boolean;
+  is_suspended: boolean;
+  suspension_reason: string | null;
 }
 
 const OwnerUserManagement = () => {
@@ -142,6 +144,8 @@ const OwnerUserManagement = () => {
           max_active_links: subscription?.max_active_links || 10,
           valid_until: subscription?.valid_until,
           is_active: subscription?.is_active ?? true,
+          is_suspended: profile.is_suspended ?? false,
+          suspension_reason: profile.suspension_reason,
         };
       }) || [];
 
@@ -318,6 +322,7 @@ const OwnerUserManagement = () => {
 
   const toggleUserStatus = async (userItem: UserWithDetails) => {
     try {
+      // Toggle subscription status
       await supabase.from("subscriptions").update({ is_active: !userItem.is_active }).eq("user_id", userItem.user_id);
 
       await supabase.from("audit_logs").insert({
@@ -333,6 +338,48 @@ const OwnerUserManagement = () => {
     } catch (error) {
       console.error("Error toggling status:", error);
       toast({ title: "Error", description: "Failed to update status", variant: "destructive" });
+    }
+  };
+
+  const liftRestriction = async (userItem: UserWithDetails) => {
+    try {
+      // Unsuspend profile
+      await supabase
+        .from("profiles")
+        .update({
+          is_suspended: false,
+          suspended_at: null,
+          suspended_by: null,
+          suspension_reason: null,
+        })
+        .eq("user_id", userItem.user_id);
+
+      // Reactivate subscription and extend trial by 7 more days
+      const newValidUntil = new Date();
+      newValidUntil.setDate(newValidUntil.getDate() + 7);
+
+      await supabase
+        .from("subscriptions")
+        .update({
+          is_active: true,
+          valid_until: newValidUntil.toISOString(),
+        })
+        .eq("user_id", userItem.user_id);
+
+      // Log the action
+      await supabase.from("audit_logs").insert({
+        actor_id: user?.id,
+        target_user_id: userItem.user_id,
+        action: "restriction_lifted",
+        entity_type: "profiles",
+        details: { new_valid_until: newValidUntil.toISOString() },
+      });
+
+      toast({ title: "Success", description: "Restriction lifted. User has 7 more days." });
+      fetchUsers();
+    } catch (error) {
+      console.error("Error lifting restriction:", error);
+      toast({ title: "Error", description: "Failed to lift restriction", variant: "destructive" });
     }
   };
 
@@ -523,7 +570,8 @@ const OwnerUserManagement = () => {
                               <div className="flex items-center gap-2">
                                 <p className="font-medium text-foreground truncate">{userItem.full_name || "No name"}</p>
                                 {getRoleIcon(userItem.role)}
-                                {!userItem.is_active && <Badge variant="destructive">Suspended</Badge>}
+                                {userItem.is_suspended && <Badge variant="destructive">Suspended</Badge>}
+                                {!userItem.is_active && !userItem.is_suspended && <Badge variant="outline" className="border-amber-500 text-amber-500">Inactive</Badge>}
                               </div>
                               <p className="text-sm text-muted-foreground truncate">{userItem.email}</p>
                             </div>
@@ -588,7 +636,7 @@ const OwnerUserManagement = () => {
                                   {userItem.is_active ? (
                                     <>
                                       <Ban className="w-4 h-4 mr-2" />
-                                      Suspend User
+                                      Deactivate User
                                     </>
                                   ) : (
                                     <>
@@ -597,6 +645,12 @@ const OwnerUserManagement = () => {
                                     </>
                                   )}
                                 </DropdownMenuItem>
+                                {userItem.is_suspended && (
+                                  <DropdownMenuItem onClick={() => liftRestriction(userItem)} className="text-success">
+                                    <CheckCircle className="w-4 h-4 mr-2" />
+                                    Lift Restriction (+7 days)
+                                  </DropdownMenuItem>
+                                )}
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </motion.div>

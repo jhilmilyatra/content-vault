@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
+import TrialBanner from "@/components/dashboard/TrialBanner";
 import { useAuth } from "@/hooks/useAuth";
 import { 
   HardDrive, 
@@ -73,17 +74,25 @@ const getFileIcon = (type: string) => {
 };
 
 const Dashboard = () => {
-  const { profile } = useAuth();
+  const { profile, subscription, daysRemaining } = useAuth();
   
   return (
     <DashboardLayout>
       <div className="space-y-6">
+        {/* Trial Banner */}
+        <TrialBanner />
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
             <p className="text-muted-foreground">
-              Welcome back{profile?.full_name ? `, ${profile.full_name.split(' ')[0]}` : ''}! Here's what's happening with your content.
+              Welcome back{profile?.full_name ? `, ${profile.full_name.split(' ')[0]}` : ''}! 
+              {subscription?.plan === 'free' && daysRemaining !== null && (
+                <span className="ml-2 text-amber-500">
+                  ({daysRemaining} days left in trial)
+                </span>
+              )}
             </p>
           </div>
           <Button variant="hero">
