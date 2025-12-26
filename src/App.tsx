@@ -8,6 +8,7 @@ import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
+import FileManager from "./pages/FileManager";
 import OwnerDashboard from "./pages/owner/OwnerDashboard";
 import UserManagement from "./pages/owner/UserManagement";
 import AuditLogs from "./pages/owner/AuditLogs";
@@ -29,7 +30,7 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/login" element={<Auth />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/dashboard/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/dashboard/files" element={<ProtectedRoute><FileManager /></ProtectedRoute>} />
             {/* Owner routes */}
             <Route path="/dashboard/users" element={<ProtectedRoute requiredRole="owner"><UserManagement /></ProtectedRoute>} />
             <Route path="/dashboard/security" element={<ProtectedRoute requiredRole="owner"><SecuritySettings /></ProtectedRoute>} />

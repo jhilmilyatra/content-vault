@@ -50,6 +50,106 @@ export type Database = {
         }
         Relationships: []
       }
+      files: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          folder_id: string | null
+          id: string
+          is_deleted: boolean
+          mime_type: string
+          name: string
+          original_name: string
+          size_bytes: number
+          storage_path: string
+          thumbnail_url: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          folder_id?: string | null
+          id?: string
+          is_deleted?: boolean
+          mime_type: string
+          name: string
+          original_name: string
+          size_bytes: number
+          storage_path: string
+          thumbnail_url?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          folder_id?: string | null
+          id?: string
+          is_deleted?: boolean
+          mime_type?: string
+          name?: string
+          original_name?: string
+          size_bytes?: number
+          storage_path?: string
+          thumbnail_url?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "files_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      folders: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          parent_id: string | null
+          thumbnail_url: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          parent_id?: string | null
+          thumbnail_url?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          parent_id?: string | null
+          thumbnail_url?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "folders_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       manual_overrides: {
         Row: {
           created_at: string
