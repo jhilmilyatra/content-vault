@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
-import { User, Lock, Bell, Palette, Save, Loader2, Key, Copy, RefreshCw, Check, Bot } from 'lucide-react';
+import { User, Lock, Bell, Palette, Save, Loader2, Key, Copy, RefreshCw, Check, Bot, Server, HardDrive } from 'lucide-react';
 
 const Settings = () => {
   const { user, profile } = useAuth();
@@ -127,7 +127,7 @@ const Settings = () => {
       </div>
 
       <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 lg:w-[500px]">
+        <TabsList className="grid w-full grid-cols-5 lg:w-[600px]">
           <TabsTrigger value="profile" className="gap-2">
             <User className="h-4 w-4" />
             Profile
@@ -139,6 +139,10 @@ const Settings = () => {
           <TabsTrigger value="api" className="gap-2">
             <Key className="h-4 w-4" />
             API
+          </TabsTrigger>
+          <TabsTrigger value="storage" className="gap-2">
+            <Server className="h-4 w-4" />
+            Storage
           </TabsTrigger>
           <TabsTrigger value="preferences" className="gap-2">
             <Bell className="h-4 w-4" />
@@ -355,6 +359,126 @@ const Settings = () => {
                   View Telegram Bot Guide
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="storage" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <HardDrive className="h-5 w-5" />
+                VPS Storage Configuration
+              </CardTitle>
+              <CardDescription>
+                Configure your own VPS/server to store files directly on your infrastructure
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="p-4 rounded-lg bg-primary/10 border border-primary/30">
+                <p className="text-sm text-primary">
+                  To use VPS storage, you need to set up a file server on your VPS that accepts file uploads. 
+                  Contact your system administrator to configure the following secrets in the backend:
+                </p>
+              </div>
+              
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Required Backend Secrets</Label>
+                  <div className="space-y-2 p-4 rounded-lg bg-muted">
+                    <div className="flex items-center justify-between">
+                      <code className="text-sm font-mono">VPS_STORAGE_ENDPOINT</code>
+                      <span className="text-xs text-muted-foreground">Your VPS file server URL</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <code className="text-sm font-mono">VPS_STORAGE_API_KEY</code>
+                      <span className="text-xs text-muted-foreground">Authentication key for VPS</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>VPS Server Requirements</Label>
+                  <div className="p-4 rounded-lg bg-muted text-sm space-y-2">
+                    <p>Your VPS file server should implement these endpoints:</p>
+                    <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                      <li><code>POST /upload</code> - Accept file uploads</li>
+                      <li><code>GET /files/:path</code> - Serve files</li>
+                      <li><code>DELETE /delete</code> - Delete files</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Sample VPS Server (Node.js)</CardTitle>
+              <CardDescription>Example Express.js server for file storage</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <pre className="p-4 rounded-lg bg-muted text-xs font-mono overflow-x-auto max-h-96">
+{`const express = require('express');
+const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
+
+const app = express();
+const API_KEY = process.env.VPS_API_KEY;
+const STORAGE_DIR = '/var/storage/files';
+
+// Auth middleware
+const auth = (req, res, next) => {
+  const key = req.headers.authorization?.replace('Bearer ', '');
+  if (key !== API_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  next();
+};
+
+app.use(express.json({ limit: '100mb' }));
+
+// Upload endpoint
+app.post('/upload', auth, async (req, res) => {
+  try {
+    const { path: filePath, data, originalName } = req.body;
+    const fullPath = path.join(STORAGE_DIR, filePath);
+    
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, Buffer.from(data, 'base64'));
+    
+    res.json({ 
+      success: true, 
+      url: \`\${process.env.PUBLIC_URL}/files/\${filePath}\`
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Serve files
+app.get('/files/*', (req, res) => {
+  const filePath = req.params[0];
+  const fullPath = path.join(STORAGE_DIR, filePath);
+  
+  if (!fs.existsSync(fullPath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+  res.sendFile(fullPath);
+});
+
+// Delete endpoint
+app.delete('/delete', auth, (req, res) => {
+  const { path: filePath } = req.body;
+  const fullPath = path.join(STORAGE_DIR, filePath);
+  
+  if (fs.existsSync(fullPath)) {
+    fs.unlinkSync(fullPath);
+  }
+  res.json({ success: true });
+});
+
+app.listen(3001, () => console.log('VPS Storage running on :3001'));`}
+              </pre>
             </CardContent>
           </Card>
         </TabsContent>
