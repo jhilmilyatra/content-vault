@@ -18,6 +18,7 @@ import {
   Bell,
   Search,
   FileWarning,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ const memberNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: FolderOpen, label: "Files", path: "/dashboard/files" },
   { icon: Link2, label: "Share Links", path: "/dashboard/links" },
+  { icon: Trash2, label: "Trash", path: "/dashboard/trash" },
   { icon: BarChart3, label: "Analytics", path: "/dashboard/analytics" },
   { icon: CreditCard, label: "Plans", path: "/dashboard/plans" },
   { icon: Settings, label: "Settings", path: "/dashboard/settings" },

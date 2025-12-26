@@ -12,6 +12,7 @@ export interface FileItem {
   thumbnail_url: string | null;
   description: string | null;
   is_deleted: boolean;
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
 }
