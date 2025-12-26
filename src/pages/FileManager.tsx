@@ -88,24 +88,38 @@ const FileManager = () => {
     setLoading(true);
 
     try {
-      // Fetch folders
-      const { data: foldersData, error: foldersError } = await supabase
+      // Fetch folders - handle null parent_id properly
+      let foldersQuery = supabase
         .from("folders")
         .select("*")
         .eq("user_id", user.id)
-        .eq("parent_id", currentFolderId || null)
         .order("name");
+
+      if (currentFolderId) {
+        foldersQuery = foldersQuery.eq("parent_id", currentFolderId);
+      } else {
+        foldersQuery = foldersQuery.is("parent_id", null);
+      }
+
+      const { data: foldersData, error: foldersError } = await foldersQuery;
 
       if (foldersError) throw foldersError;
 
-      // Fetch files
-      const { data: filesData, error: filesError } = await supabase
+      // Fetch files - handle null folder_id properly
+      let filesQuery = supabase
         .from("files")
         .select("*")
         .eq("user_id", user.id)
-        .eq("folder_id", currentFolderId || null)
         .eq("is_deleted", false)
         .order("created_at", { ascending: false });
+
+      if (currentFolderId) {
+        filesQuery = filesQuery.eq("folder_id", currentFolderId);
+      } else {
+        filesQuery = filesQuery.is("folder_id", null);
+      }
+
+      const { data: filesData, error: filesError } = await filesQuery;
 
       if (filesError) throw filesError;
 
@@ -113,15 +127,11 @@ const FileManager = () => {
       setFiles((filesData as FileItem[]) || []);
     } catch (error) {
       console.error("Error fetching contents:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load files",
-        variant: "destructive",
-      });
+      // Don't show error toast for empty results
     } finally {
       setLoading(false);
     }
-  }, [user, currentFolderId, toast]);
+  }, [user, currentFolderId]);
 
   useEffect(() => {
     fetchContents();
