@@ -39,9 +39,11 @@ import {
   Loader2,
   Share2,
   CheckSquare,
+  Eye,
 } from "lucide-react";
 import ShareDialog from "@/components/files/ShareDialog";
 import BulkActionsBar from "@/components/files/BulkActionsBar";
+import { FilePreviewModal } from "@/components/files/FilePreviewModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -85,6 +87,8 @@ const FileManager = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [selectionMode, setSelectionMode] = useState(false);
+  const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const { user } = useAuth();
   const { toast } = useToast();
@@ -580,6 +584,9 @@ const FileManager = () => {
                   } else {
                     setSelectedFiles([...selectedFiles, file.id]);
                   }
+                } else {
+                  setPreviewFile(file);
+                  setPreviewOpen(true);
                 }
               };
               
@@ -639,6 +646,13 @@ const FileManager = () => {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
+                        <DropdownMenuItem onClick={() => {
+                          setPreviewFile(file);
+                          setPreviewOpen(true);
+                        }}>
+                          <Eye className="w-4 h-4 mr-2" />
+                          Preview
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleDownload(file)}>
                           <Download className="w-4 h-4 mr-2" />
                           Download
@@ -739,6 +753,13 @@ const FileManager = () => {
             fileName={shareFile.name}
           />
         )}
+
+        {/* File Preview Modal */}
+        <FilePreviewModal
+          file={previewFile}
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
+        />
       </div>
     </DashboardLayout>
   );
