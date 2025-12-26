@@ -25,6 +25,7 @@ import { deleteFile } from "@/lib/fileService";
 
 interface BulkActionsBarProps {
   selectedFiles: string[];
+  selectedFolders: string[];
   files: FileItem[];
   folders: FolderItem[];
   currentFolderId: string | null;
@@ -37,6 +38,7 @@ interface BulkActionsBarProps {
 
 const BulkActionsBar = ({
   selectedFiles,
+  selectedFolders,
   files,
   folders,
   currentFolderId,
@@ -52,25 +54,40 @@ const BulkActionsBar = ({
   const [loading, setLoading] = useState(false);
   const [allFolders, setAllFolders] = useState<FolderItem[]>([]);
 
-  const selectedCount = selectedFiles.length;
+  const selectedFileCount = selectedFiles.length;
+  const selectedFolderCount = selectedFolders.length;
+  const selectedCount = selectedFileCount + selectedFolderCount;
 
   const handleBulkDelete = async () => {
     if (!selectedCount) return;
     
     setLoading(true);
     try {
+      // Delete selected files
       const selectedFileItems = files.filter(f => selectedFiles.includes(f.id));
-      
       for (const file of selectedFileItems) {
         await deleteFile(file.id, file.storage_path);
       }
       
-      toast.success(`${selectedCount} file(s) moved to trash`);
+      // Delete selected folders
+      for (const folderId of selectedFolders) {
+        const { error } = await supabase
+          .from("folders")
+          .delete()
+          .eq("id", folderId);
+        if (error) throw error;
+      }
+      
+      const message = [];
+      if (selectedFileCount > 0) message.push(`${selectedFileCount} file(s) moved to trash`);
+      if (selectedFolderCount > 0) message.push(`${selectedFolderCount} folder(s) deleted`);
+      
+      toast.success(message.join(", "));
       onClearSelection();
       onActionComplete();
     } catch (error) {
       console.error("Bulk delete error:", error);
-      toast.error("Failed to delete some files");
+      toast.error("Failed to delete some items. Folders must be empty to delete.");
     } finally {
       setLoading(false);
     }
