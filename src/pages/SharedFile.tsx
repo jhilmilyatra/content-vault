@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Download, Lock, FileIcon, AlertCircle, Loader2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 interface FileInfo {
@@ -13,6 +12,9 @@ interface FileInfo {
   size: number;
   downloadUrl: string;
 }
+
+const SUPABASE_URL = "https://dgmxndvvsbjjbnoibaid.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnbXhuZHZ2c2JqamJub2liYWlkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY3MjY0MTAsImV4cCI6MjA4MjMwMjQxMH0.kARqZV1kMs_l1NugnVPNN09YUezeXyAUVE1o7x7hMtE";
 
 const SharedFile = () => {
   const { shortCode } = useParams<{ shortCode: string }>();
@@ -24,27 +26,44 @@ const SharedFile = () => {
   const [error, setError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
 
-  const verifyLink = async (pwd?: string) => {
+  const verifyLink = useCallback(async (pwd?: string) => {
+    if (!shortCode) {
+      setError('Invalid share link');
+      setLoading(false);
+      return;
+    }
+
     try {
       setVerifying(true);
       setError(null);
 
-      const { data, error: fnError } = await supabase.functions.invoke('verify-share-link', {
-        body: { shortCode, password: pwd }
+      console.log('Calling verify-share-link with shortCode:', shortCode);
+      
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/verify-share-link`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ shortCode, password: pwd })
       });
 
-      if (fnError) throw fnError;
+      const data = await response.json();
+      console.log('Response from verify-share-link:', data);
+
+      if (!response.ok) {
+        setError(data.error || 'Failed to verify link');
+        return;
+      }
 
       if (data.requiresPassword) {
         setRequiresPassword(true);
         setFileName(data.fileName || 'Protected File');
-        setLoading(false);
         return;
       }
 
       if (data.error) {
         setError(data.error);
-        setLoading(false);
         return;
       }
 
@@ -59,13 +78,11 @@ const SharedFile = () => {
       setLoading(false);
       setVerifying(false);
     }
-  };
+  }, [shortCode]);
 
   useEffect(() => {
-    if (shortCode) {
-      verifyLink();
-    }
-  }, [shortCode]);
+    verifyLink();
+  }, [verifyLink]);
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault();
