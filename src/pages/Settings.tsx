@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
-import { User, Lock, Bell, Palette, Save, Loader2, Key, Copy, RefreshCw, Check } from 'lucide-react';
+import { User, Lock, Bell, Palette, Save, Loader2, Key, Copy, RefreshCw, Check, Bot } from 'lucide-react';
 
 const Settings = () => {
   const { user, profile } = useAuth();
@@ -348,6 +348,12 @@ const Settings = () => {
   }
 }`}
                 </pre>
+              </div>
+              <div className="pt-4 border-t">
+                <Button variant="outline" onClick={() => window.location.href = '/dashboard/telegram-guide'} className="gap-2">
+                  <Bot className="h-4 w-4" />
+                  View Telegram Bot Guide
+                </Button>
               </div>
             </CardContent>
           </Card>

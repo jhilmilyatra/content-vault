@@ -1,4 +1,3 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -11,7 +10,7 @@ interface VerifyRequest {
   password?: string;
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -54,10 +53,19 @@ serve(async (req) => {
       .single();
 
     if (linkError || !link) {
-      console.log('Link not found or inactive');
+      console.log('Link not found or inactive:', linkError?.message);
       return new Response(
         JSON.stringify({ error: 'Link not found or expired' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Check if file exists
+    if (!link.files) {
+      console.log('File not found for link');
+      return new Response(
+        JSON.stringify({ error: 'File not found' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -66,7 +74,7 @@ serve(async (req) => {
       console.log('Link has expired');
       return new Response(
         JSON.stringify({ error: 'This link has expired' }),
-        { status: 410, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -75,7 +83,7 @@ serve(async (req) => {
       console.log('Max downloads reached');
       return new Response(
         JSON.stringify({ error: 'Download limit reached' }),
-        { status: 410, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -88,7 +96,7 @@ serve(async (req) => {
         );
       }
 
-      // Simple password comparison (in production, use bcrypt)
+      // Simple password comparison
       const encoder = new TextEncoder();
       const data = encoder.encode(password);
       const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -99,7 +107,7 @@ serve(async (req) => {
         console.log('Invalid password');
         return new Response(
           JSON.stringify({ error: 'Invalid password' }),
-          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
     }
@@ -110,11 +118,11 @@ serve(async (req) => {
       .from('user-files')
       .createSignedUrl(link.files.storage_path, 3600); // 1 hour expiry
 
-    if (signError) {
+    if (signError || !signedUrl) {
       console.error('Error creating signed URL:', signError);
       return new Response(
         JSON.stringify({ error: 'Failed to generate download link' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -123,15 +131,6 @@ serve(async (req) => {
       .from('shared_links')
       .update({ download_count: link.download_count + 1 })
       .eq('id', link.id);
-
-    // Update bandwidth metrics
-    await supabaseAdmin
-      .from('usage_metrics')
-      .update({ 
-        bandwidth_used_bytes: link.files.size_bytes,
-        total_downloads: 1
-      })
-      .eq('user_id', link.user_id);
 
     console.log('Share link verified successfully');
 
@@ -148,10 +147,11 @@ serve(async (req) => {
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error verifying share link:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
     return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
+      JSON.stringify({ error: 'Internal server error', details: message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
