@@ -281,6 +281,56 @@ export type Database = {
           },
         ]
       }
+      shared_links: {
+        Row: {
+          created_at: string
+          download_count: number
+          expires_at: string | null
+          file_id: string
+          id: string
+          is_active: boolean
+          max_downloads: number | null
+          password_hash: string | null
+          short_code: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          download_count?: number
+          expires_at?: string | null
+          file_id: string
+          id?: string
+          is_active?: boolean
+          max_downloads?: number | null
+          password_hash?: string | null
+          short_code: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          download_count?: number
+          expires_at?: string | null
+          file_id?: string
+          id?: string
+          is_active?: boolean
+          max_downloads?: number | null
+          password_hash?: string | null
+          short_code?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shared_links_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "files"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       subscriptions: {
         Row: {
           bandwidth_limit_gb: number
