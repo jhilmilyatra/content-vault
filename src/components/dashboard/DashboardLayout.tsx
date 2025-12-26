@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { 
   Cloud, 
   LayoutDashboard, 
@@ -20,10 +20,11 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
-  role?: "owner" | "admin" | "member";
 }
 
 const memberNavItems = [
@@ -44,11 +45,38 @@ const ownerNavItems = [
   { icon: Settings, label: "Settings", path: "/dashboard/settings" },
 ];
 
-const DashboardLayout = ({ children, role = "member" }: DashboardLayoutProps) => {
+const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { profile, role, signOut } = useAuth();
+  const { toast } = useToast();
   
   const navItems = role === "owner" ? ownerNavItems : memberNavItems;
+
+  const handleSignOut = async () => {
+    await signOut();
+    toast({
+      title: "Signed out",
+      description: "You have been signed out successfully.",
+    });
+    navigate("/");
+  };
+
+  const getInitials = () => {
+    if (profile?.full_name) {
+      return profile.full_name
+        .split(' ')
+        .map(n => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2);
+    }
+    if (profile?.email) {
+      return profile.email[0].toUpperCase();
+    }
+    return 'U';
+  };
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -151,10 +179,10 @@ const DashboardLayout = ({ children, role = "member" }: DashboardLayoutProps) =>
             </Button>
             
             <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-semibold text-sm">
-              JD
+              {getInitials()}
             </div>
 
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" onClick={handleSignOut}>
               <LogOut className="w-5 h-5" />
             </Button>
           </div>
