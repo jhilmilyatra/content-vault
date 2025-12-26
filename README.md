@@ -202,92 +202,209 @@ docker run -d -p 80:80 filevault
 ## 💾 Storage Configuration
 
 ### Default: Supabase Storage
-By default, files are stored in Supabase Storage. No extra configuration needed!
+By default, files are stored in Supabase Storage (Lovable Cloud). No extra configuration needed!
 
 ### Extend with VPS Storage (For Owners)
 
-Owners can connect additional VPS storage nodes through the dashboard to extend storage capacity.
+You can connect your own VPS as additional storage to extend capacity or have full control over file storage.
 
-1. **Set up a storage server** on your VPS (see below)
-2. Go to **Owner Dashboard → Storage Settings**
-3. Add your VPS endpoint and API key
-4. Files will automatically use the extended storage
+---
 
-#### VPS Storage Server Setup
+### 🔧 Complete VPS Storage Setup Guide
 
-Create a simple Node.js file server on your VPS:
+#### Step 1: Prepare Your VPS
 
-```javascript
-// storage-server.js
-const express = require('express');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-
-const app = express();
-const API_KEY = process.env.VPS_API_KEY || 'your-secret-api-key';
-const STORAGE_PATH = process.env.STORAGE_PATH || './uploads';
-
-// Ensure storage directory exists
-if (!fs.existsSync(STORAGE_PATH)) {
-  fs.mkdirSync(STORAGE_PATH, { recursive: true });
-}
-
-// Auth middleware
-const authenticate = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader !== `Bearer ${API_KEY}`) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  next();
-};
-
-// Multer config
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, STORAGE_PATH),
-  filename: (req, file, cb) => {
-    const uniqueName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}${path.extname(file.originalname)}`;
-    cb(null, uniqueName);
-  }
-});
-const upload = multer({ storage, limits: { fileSize: 500 * 1024 * 1024 } });
-
-// Upload endpoint
-app.post('/upload', authenticate, upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file' });
-  res.json({
-    success: true,
-    filename: req.file.filename,
-    path: req.file.path,
-    url: `/files/${req.file.filename}`
-  });
-});
-
-// Download endpoint
-app.get('/files/:filename', (req, res) => {
-  const filePath = path.join(STORAGE_PATH, req.params.filename);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Not found' });
-  res.sendFile(path.resolve(filePath));
-});
-
-// Delete endpoint
-app.delete('/files/:filename', authenticate, (req, res) => {
-  const filePath = path.join(STORAGE_PATH, req.params.filename);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Not found' });
-  fs.unlinkSync(filePath);
-  res.json({ success: true });
-});
-
-// Health check
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
-
-app.listen(3001, () => console.log('Storage server on port 3001'));
+SSH into your VPS server:
+```bash
+ssh root@46.38.232.46
 ```
 
-Run with PM2:
+Install Node.js if not already installed:
 ```bash
-npm install express multer
-VPS_API_KEY=your-secret-key pm2 start storage-server.js --name storage
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
+```
+
+#### Step 2: Set Up the Storage Server
+
+Create a directory for the storage server:
+```bash
+mkdir -p /opt/filevault-storage
+cd /opt/filevault-storage
+```
+
+Copy the `vps-storage-server` folder from this repository or create the files:
+
+**Create package.json:**
+```bash
+cat > package.json << 'EOF'
+{
+  "name": "filevault-storage-server",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1"
+  }
+}
+EOF
+```
+
+**Create server.js** (copy from `vps-storage-server/server.js` in this repo)
+
+Install dependencies:
+```bash
+npm install
+```
+
+#### Step 3: Generate Your API Key
+
+Create a secure random API key (this is like a password for your storage server):
+```bash
+# Generate a random 32-character API key
+openssl rand -hex 16
+```
+
+This will output something like: `a1b2c3d4e5f6789012345678abcdef12`
+
+**Save this key - you'll need it for both the VPS and the app configuration!**
+
+#### Step 4: Start the Storage Server
+
+Create a startup script:
+```bash
+cat > start.sh << 'EOF'
+#!/bin/bash
+export VPS_STORAGE_API_KEY="YOUR_API_KEY_HERE"
+export STORAGE_PATH="/opt/filevault-storage/uploads"
+export STORAGE_PORT=4000
+node server.js
+EOF
+
+chmod +x start.sh
+```
+
+**Replace `YOUR_API_KEY_HERE` with the key you generated in Step 3.**
+
+Using PM2 (Recommended for production):
+```bash
+npm install -g pm2
+
+# Start with environment variables
+VPS_STORAGE_API_KEY="your-api-key-here" \
+STORAGE_PATH="/opt/filevault-storage/uploads" \
+STORAGE_PORT=4000 \
+pm2 start server.js --name filevault-storage
+
+# Save to start on reboot
+pm2 startup
+pm2 save
+```
+
+#### Step 5: Open the Port
+
+Make sure port 4000 is accessible:
+```bash
+# For UFW firewall
+sudo ufw allow 4000
+
+# For iptables
+sudo iptables -A INPUT -p tcp --dport 4000 -j ACCEPT
+```
+
+#### Step 6: Test the Storage Server
+
+From your local machine, test if the server is running:
+```bash
+curl http://46.38.232.46:4000/health
+```
+
+You should see a JSON response with `"status": "online"`
+
+---
+
+### 🔐 Configure Secrets in Lovable Cloud
+
+Now you need to add these secrets to your Lovable project so the edge functions can connect to your VPS storage.
+
+#### What You Need:
+
+| Secret Name | Value | Example |
+|-------------|-------|---------|
+| `VPS_STORAGE_ENDPOINT` | Full URL to your VPS storage server | `http://46.38.232.46:4000` |
+| `VPS_STORAGE_API_KEY` | The API key you generated in Step 3 | `a1b2c3d4e5f6789012345678abcdef12` |
+
+#### How to Add Secrets:
+
+1. In Lovable, go to **Settings → Secrets**
+2. Add `VPS_STORAGE_ENDPOINT` with value `http://46.38.232.46:4000`
+3. Add `VPS_STORAGE_API_KEY` with the API key from Step 3
+
+**Important:** The `VPS_STORAGE_API_KEY` must match EXACTLY what you set in your VPS server's environment variable.
+
+---
+
+### 📋 Quick Reference for Your Setup
+
+Based on your VPS details:
+
+| Setting | Your Value |
+|---------|------------|
+| VPS IP | `46.38.232.46` |
+| Storage Port | `4000` |
+| VPS_STORAGE_ENDPOINT | `http://46.38.232.46:4000` |
+| VPS_STORAGE_API_KEY | *(generate your own secure key)* |
+
+---
+
+### 🔍 Troubleshooting VPS Storage
+
+#### "Connection refused" error
+- Make sure the storage server is running: `pm2 status`
+- Check if port 4000 is open: `sudo netstat -tlnp | grep 4000`
+- Verify firewall allows port 4000
+
+#### "401 Unauthorized" error  
+- The API key in Lovable secrets doesn't match the one on your VPS
+- Double-check both values are exactly the same
+
+#### "CORS error"
+- The storage server includes CORS headers, but ensure your VPS isn't behind a reverse proxy that strips them
+
+#### Storage server not starting
+- Check logs: `pm2 logs filevault-storage`
+- Ensure Node.js is installed: `node --version`
+- Verify dependencies are installed: `npm install`
+
+---
+
+### 🐳 Docker Deployment (Alternative)
+
+You can also run the storage server with Docker:
+
+```bash
+# Create docker-compose.yml
+cat > docker-compose.yml << 'EOF'
+version: '3.8'
+services:
+  storage:
+    build: .
+    ports:
+      - "4000:4000"
+    environment:
+      - VPS_STORAGE_API_KEY=your-api-key-here
+      - STORAGE_PATH=/data
+      - STORAGE_PORT=4000
+    volumes:
+      - ./uploads:/data
+    restart: unless-stopped
+EOF
+
+docker-compose up -d
 ```
 
 ---
