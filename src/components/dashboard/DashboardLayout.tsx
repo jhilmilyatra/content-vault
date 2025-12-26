@@ -19,6 +19,7 @@ import {
   Search,
   FileWarning,
   Trash2,
+  HardDrive,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,6 +51,7 @@ const adminNavItems = [
 const ownerNavItems = [
   { icon: LayoutDashboard, label: "Overview", path: "/dashboard" },
   { icon: Users, label: "Users", path: "/dashboard/users" },
+  { icon: HardDrive, label: "Storage", path: "/dashboard/storage" },
   { icon: Shield, label: "Security", path: "/dashboard/security" },
   { icon: CreditCard, label: "Billing", path: "/dashboard/billing" },
   { icon: FileWarning, label: "Reports", path: "/dashboard/admin/reports" },
