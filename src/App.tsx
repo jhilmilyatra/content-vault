@@ -9,6 +9,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import FileManager from "./pages/FileManager";
+import SharedLinks from "./pages/SharedLinks";
 import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import Plans from "./pages/Plans";
@@ -40,6 +41,7 @@ const App = () => (
             <Route path="/share/:shortCode" element={<SharedFile />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/dashboard/files" element={<ProtectedRoute><FileManager /></ProtectedRoute>} />
+            <Route path="/dashboard/links" element={<ProtectedRoute><SharedLinks /></ProtectedRoute>} />
             <Route path="/dashboard/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
             <Route path="/dashboard/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/dashboard/plans" element={<ProtectedRoute><Plans /></ProtectedRoute>} />

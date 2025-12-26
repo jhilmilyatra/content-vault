@@ -79,6 +79,7 @@ const FileManager = () => {
   const [newName, setNewName] = useState("");
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [shareFile, setShareFile] = useState<{ id: string; name: string } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const { user } = useAuth();
   const { toast } = useToast();
@@ -140,21 +141,26 @@ const FileManager = () => {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
     if (!selectedFiles || !user) return;
+    await processFileUpload(Array.from(selectedFiles));
+  };
+
+  const processFileUpload = async (fileList: File[]) => {
+    if (!fileList.length || !user) return;
 
     setUploading(true);
     setUploadProgress(0);
 
     try {
-      for (let i = 0; i < selectedFiles.length; i++) {
-        const file = selectedFiles[i];
-        setUploadProgress(((i + 0.5) / selectedFiles.length) * 100);
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        setUploadProgress(((i + 0.5) / fileList.length) * 100);
         await uploadFile(file, user.id, currentFolderId);
-        setUploadProgress(((i + 1) / selectedFiles.length) * 100);
+        setUploadProgress(((i + 1) / fileList.length) * 100);
       }
 
       toast({
         title: "Success",
-        description: `${selectedFiles.length} file(s) uploaded successfully`,
+        description: `${fileList.length} file(s) uploaded successfully`,
       });
 
       fetchContents();
@@ -168,6 +174,29 @@ const FileManager = () => {
     } finally {
       setUploading(false);
       setUploadProgress(0);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    if (droppedFiles.length > 0) {
+      await processFileUpload(droppedFiles);
     }
   };
 
@@ -292,7 +321,30 @@ const FileManager = () => {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <div 
+        className={`space-y-6 min-h-[calc(100vh-8rem)] transition-all ${isDragging ? 'relative' : ''}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {/* Drag Overlay */}
+        <AnimatePresence>
+          {isDragging && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-50 bg-primary/10 border-2 border-dashed border-primary rounded-xl flex items-center justify-center backdrop-blur-sm"
+            >
+              <div className="text-center">
+                <Upload className="w-16 h-16 text-primary mx-auto mb-4" />
+                <p className="text-xl font-semibold text-foreground">Drop files here</p>
+                <p className="text-muted-foreground">Release to upload your files</p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
