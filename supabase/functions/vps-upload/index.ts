@@ -6,6 +6,17 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// Helper function to convert Uint8Array to base64 without stack overflow
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  const CHUNK_SIZE = 0x8000; // 32KB chunks
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+    const chunk = bytes.subarray(i, Math.min(i + CHUNK_SIZE, bytes.length));
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  return btoa(binary);
+}
+
 interface VPSUploadRequest {
   fileName: string;
   fileData: string; // base64 encoded
@@ -119,8 +130,8 @@ Deno.serve(async (req) => {
 
     console.log(`📦 Uploading to VPS: ${vpsEndpoint}`);
     
-    // Convert file data to base64
-    const base64Data = btoa(String.fromCharCode(...fileData));
+    // Convert file data to base64 using chunked approach (avoids stack overflow)
+    const base64Data = uint8ArrayToBase64(fileData);
     
     const vpsResponse = await fetch(`${vpsEndpoint}/upload-base64`, {
       method: "POST",
