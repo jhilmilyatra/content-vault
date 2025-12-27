@@ -2,6 +2,10 @@
 # FileCloud Docker Compose Configuration
 # ============================================
 # Use this file for easy VPS deployment
+# 
+# Required environment variables:
+# - VPS_STORAGE_API_KEY: API key for user authentication
+# - VPS_OWNER_API_KEY: Owner API key for admin operations
 
 version: '3.8'
 
@@ -18,7 +22,8 @@ services:
       - filecloud_data:/app/data
     environment:
       - NODE_ENV=production
-      - VPS_STORAGE_API_KEY=${VPS_STORAGE_API_KEY:-your-secure-api-key-change-this}
+      - VPS_STORAGE_API_KEY=${VPS_STORAGE_API_KEY:-change-this-api-key}
+      - VPS_OWNER_API_KEY=${VPS_OWNER_API_KEY:-change-this-owner-key}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
       - STORAGE_PATH=/app/storage

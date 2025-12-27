@@ -3,7 +3,7 @@
 # ============================================
 # This Dockerfile creates a production-ready image
 # that includes both the frontend app and a built-in
-# storage server for file management.
+# storage server with secure file management.
 
 FROM node:20-alpine AS builder
 
@@ -29,9 +29,9 @@ FROM node:20-alpine AS production
 WORKDIR /app
 
 # Install production dependencies for storage server
-RUN npm install express cors multer bcryptjs uuid
+RUN npm install express cors multer uuid
 
-# Create storage directory
+# Create storage directory with proper structure
 RUN mkdir -p /app/storage /app/data
 
 # Copy built frontend
@@ -45,6 +45,10 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV STORAGE_PATH=/app/storage
 ENV DATA_PATH=/app/data
+
+# Required security keys (must be set at runtime)
+# VPS_STORAGE_API_KEY - API key for authenticated requests
+# VPS_OWNER_API_KEY - Owner API key for admin/owner operations
 
 # Expose ports (3000 for app, 4000 for storage API)
 EXPOSE 3000 4000
