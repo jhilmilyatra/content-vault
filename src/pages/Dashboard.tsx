@@ -18,10 +18,12 @@ import {
   FolderOpen,
   FileVideo,
   FileImage,
-  FileText as FileTextIcon
+  FileText as FileTextIcon,
+  AlertTriangle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface UsageMetrics {
   storage_used_bytes: number;
@@ -165,6 +167,29 @@ const Dashboard = () => {
             Upload Files
           </Button>
         </div>
+
+        {/* Quota alerts */}
+        {isNearStorageLimit && (
+          <div className="mt-4">
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Storage nearly full</AlertTitle>
+              <AlertDescription>
+                You&apos;ve used {Math.round(storagePercentage)}% of your{" "}
+                {subscription?.storage_limit_gb || 1} GB storage limit. New uploads may fail
+                soon. Consider deleting unused files or{" "}
+                <button
+                  type="button"
+                  onClick={() => navigate("/dashboard/plans")}
+                  className="underline font-medium"
+                >
+                  upgrading your plan
+                </button>
+                .
+              </AlertDescription>
+            </Alert>
+          </div>
+        )}
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
