@@ -15,7 +15,6 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
-  Bell,
   Search,
   FileWarning,
   Trash2,
@@ -29,6 +28,8 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import MemberOwnerChat from "./MemberOwnerChat";
+import MemberGuestChat from "./MemberGuestChat";
+import NotificationDropdown from "./NotificationDropdown";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -71,7 +72,8 @@ const ownerNavItems = [
 
 const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const [collapsed, setCollapsed] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
+  const [ownerChatOpen, setOwnerChatOpen] = useState(false);
+  const [guestChatOpen, setGuestChatOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, role, signOut } = useAuth();
@@ -198,10 +200,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           </div>
 
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-destructive" />
-            </Button>
+            <NotificationDropdown />
             
             <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-semibold text-sm">
               {getInitials()}
@@ -219,9 +218,14 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         </main>
       </div>
 
-      {/* Member-Owner Chat for members */}
+      {/* Member Chats */}
       {role === "member" && (
-        <MemberOwnerChat isOpen={chatOpen} onClose={() => setChatOpen(!chatOpen)} />
+        <>
+          <MemberOwnerChat isOpen={ownerChatOpen} onClose={() => setOwnerChatOpen(!ownerChatOpen)} />
+          <div className="fixed bottom-4 right-40 z-50">
+            <MemberGuestChat isOpen={guestChatOpen} onClose={() => setGuestChatOpen(!guestChatOpen)} />
+          </div>
+        </>
       )}
     </div>
   );
