@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useGuestAuth } from '@/contexts/GuestAuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { getFileUrl, formatFileSize } from '@/lib/fileService';
+import { formatFileSize } from '@/lib/fileService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -27,8 +27,16 @@ import {
   Home,
   RefreshCw,
 } from 'lucide-react';
-import { FilePreviewModal } from '@/components/files/FilePreviewModal';
-import { type FileItem } from '@/lib/fileService';
+import { GuestFilePreviewModal } from '@/components/guest/GuestFilePreviewModal';
+
+interface GuestFileItem {
+  id: string;
+  name: string;
+  original_name: string;
+  mime_type: string;
+  size_bytes: number;
+  storage_path: string;
+}
 
 interface FolderItem {
   id: string;
@@ -44,12 +52,12 @@ const GuestFolderView = () => {
   const { toast } = useToast();
 
   const [folder, setFolder] = useState<FolderItem | null>(null);
-  const [files, setFiles] = useState<FileItem[]>([]);
+  const [files, setFiles] = useState<GuestFileItem[]>([]);
   const [subfolders, setSubfolders] = useState<FolderItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
+  const [previewFile, setPreviewFile] = useState<GuestFileItem | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [breadcrumbs, setBreadcrumbs] = useState<{ id: string; name: string }[]>([]);
   const [rootFolderId, setRootFolderId] = useState<string | null>(null);
@@ -168,11 +176,22 @@ const GuestFolderView = () => {
     };
   }, [folderId, guest, fetchFolderContents]);
 
-  const handleDownload = async (file: FileItem) => {
+  const handleDownload = async (file: GuestFileItem) => {
     try {
-      const url = await getFileUrl(file.storage_path);
+      const response = await supabase.functions.invoke('guest-file-stream', {
+        body: {
+          guestId: guest?.id,
+          storagePath: file.storage_path,
+          action: 'download',
+        },
+      });
+
+      if (response.error || !response.data?.url) {
+        throw new Error('Failed to get download URL');
+      }
+
       const a = document.createElement('a');
-      a.href = url;
+      a.href = response.data.url;
       a.download = file.original_name;
       document.body.appendChild(a);
       a.click();
@@ -188,7 +207,7 @@ const GuestFolderView = () => {
     }
   };
 
-  const handlePreview = (file: FileItem) => {
+  const handlePreview = (file: GuestFileItem) => {
     setPreviewFile(file);
     setPreviewOpen(true);
   };
@@ -450,8 +469,9 @@ const GuestFolderView = () => {
       </main>
 
       {/* File Preview Modal */}
-      <FilePreviewModal
+      <GuestFilePreviewModal
         file={previewFile}
+        guestId={guest?.id || ''}
         open={previewOpen}
         onOpenChange={(open) => {
           setPreviewOpen(open);
