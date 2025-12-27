@@ -53,43 +53,18 @@ const GuestPortal = () => {
       if (!guest) return;
 
       try {
-        const { data: accessData, error } = await supabase
-          .from('guest_folder_access')
-          .select(`
-            id,
-            folder_share_id,
-            member_id,
-            added_at,
-            is_restricted,
-            folder_share:folder_shares(
-              folder_id,
-              is_active,
-              folder:folders(name, description)
-            )
-          `)
-          .eq('guest_id', guest.id)
-          .eq('is_restricted', false);
+        // Use edge function to bypass RLS since guests aren't Supabase Auth users
+        const { data, error } = await supabase.functions.invoke('guest-folders', {
+          body: { guestId: guest.id },
+        });
 
         if (error) throw error;
 
-        // Fetch member names
-        const memberIds = [...new Set((accessData || []).map(a => a.member_id))];
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('user_id, full_name')
-          .in('user_id', memberIds);
+        if (data.error) {
+          throw new Error(data.error);
+        }
 
-        const profileMap = new Map(profiles?.map(p => [p.user_id, p.full_name]) || []);
-
-        const processedFolders = (accessData || [])
-          .filter(a => a.folder_share && (a.folder_share as any).is_active && (a.folder_share as any).folder)
-          .map(a => ({
-            ...a,
-            folder_share: a.folder_share as any,
-            member_name: profileMap.get(a.member_id) || 'Unknown',
-          }));
-
-        setFolders(processedFolders);
+        setFolders(data.folders || []);
       } catch (error) {
         console.error('Error fetching folders:', error);
         toast({
