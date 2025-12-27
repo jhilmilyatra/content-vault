@@ -474,10 +474,54 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      api_tokens_safe: {
+        Row: {
+          created_at: string | null
+          expires_at: string | null
+          id: string | null
+          is_active: boolean | null
+          last_used_at: string | null
+          name: string | null
+          token_prefix: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          expires_at?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          last_used_at?: string | null
+          name?: string | null
+          token_prefix?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          expires_at?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          last_used_at?: string | null
+          name?: string | null
+          token_prefix?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       check_expired_subscriptions: { Args: never; Returns: undefined }
+      create_api_token: {
+        Args: {
+          p_expires_at?: string
+          p_name?: string
+          p_token_hash: string
+          p_token_prefix: string
+        }
+        Returns: string
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
@@ -488,6 +532,15 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      validate_api_token: {
+        Args: { p_token_hash: string }
+        Returns: {
+          token_expires_at: string
+          token_id: string
+          token_is_active: boolean
+          token_user_id: string
+        }[]
       }
     }
     Enums: {
