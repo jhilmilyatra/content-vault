@@ -1,9 +1,13 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Cloud, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+// To add your logo: 
+// 1. Add your logo image to src/assets/ folder (e.g., logo.png or logo.svg)
+// 2. Uncomment the import below and update the filename
+// import logo from "@/assets/logo.png";
 
 const Header = () => {
   const { user } = useAuth();
@@ -15,11 +19,12 @@ const Header = () => {
       
       <nav className="container max-w-6xl mx-auto px-4 py-4 relative">
         <div className="flex items-center justify-between">
-          {/* Logo */}
+          {/* Logo - Replace with your own image */}
           <Link to="/" className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-lg gradient-primary flex items-center justify-center shadow-lg">
-              <Cloud className="w-6 h-6 text-primary-foreground" />
-            </div>
+            {/* Option 1: Use an image logo */}
+            {/* <img src={logo} alt="Your Logo" className="w-10 h-10 object-contain" /> */}
+            
+            {/* Option 2: Text-only logo (current) */}
             <span className="text-xl font-bold text-foreground">CloudVault</span>
           </Link>
 
