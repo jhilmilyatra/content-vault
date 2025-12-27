@@ -31,6 +31,8 @@ import ReportManagement from "./pages/admin/ReportManagement";
 import GuestAuth from "./pages/guest/GuestAuth";
 import GuestPortal from "./pages/guest/GuestPortal";
 import GuestFolderView from "./pages/guest/GuestFolderView";
+import GuestHelpDesk from "./pages/guest/GuestHelpDesk";
+import GuestManagement from "./pages/dashboard/GuestManagement";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -52,9 +54,11 @@ const App = () => (
               <Route path="/guest-auth" element={<GuestAuth />} />
               <Route path="/guest-portal" element={<GuestPortal />} />
               <Route path="/guest-portal/folder/:folderId" element={<GuestFolderView />} />
+              <Route path="/guest-portal/help" element={<GuestHelpDesk />} />
               {/* Member Dashboard Routes */}
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/dashboard/files" element={<ProtectedRoute><FileManager /></ProtectedRoute>} />
+              <Route path="/dashboard/guests" element={<ProtectedRoute><GuestManagement /></ProtectedRoute>} />
               <Route path="/dashboard/links" element={<ProtectedRoute><SharedLinks /></ProtectedRoute>} />
               <Route path="/dashboard/trash" element={<ProtectedRoute><TrashBin /></ProtectedRoute>} />
               <Route path="/dashboard/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
