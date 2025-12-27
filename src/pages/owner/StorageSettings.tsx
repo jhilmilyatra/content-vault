@@ -247,6 +247,145 @@ const StorageSettings = () => {
     setExpandedUsers(newExpanded);
   };
 
+  const handlePreviewFile = async (file: { path: string; name: string; size: number }) => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        throw new Error("Not authenticated");
+      }
+
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-owner-file?path=${encodeURIComponent(
+        file.path
+      )}&action=get`;
+
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch file");
+      }
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, "_blank");
+    } catch (error) {
+      console.error("Error previewing file:", error);
+      toast.error("Failed to preview file");
+    }
+  };
+
+  const handleDownloadFile = async (file: { path: string; name: string; size: number }) => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        throw new Error("Not authenticated");
+      }
+
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-owner-file?path=${encodeURIComponent(
+        file.path
+      )}&action=get`;
+
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch file");
+      }
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      URL.revokeObjectURL(blobUrl);
+      toast.success(`Download started for ${file.name}`);
+    } catch (error) {
+      console.error("Error downloading file:", error);
+      toast.error("Failed to download file");
+    }
+  };
+
+  const handleDeleteFile = async (userId: string, file: { path: string; name: string; size: number }) => {
+    const confirmed = window.confirm(
+      `Delete file "${file.name}" for this user? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        throw new Error("Not authenticated");
+      }
+
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-owner-file?path=${encodeURIComponent(
+        file.path
+      )}&action=delete`;
+
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to delete file");
+      }
+
+      // Update local stats to reflect deletion
+      setVpsStats((prev) => {
+        if (!prev) return prev;
+        const users = prev.users.map((u) => {
+          if (u.userId !== userId) return u;
+          const files = (u.files || []).filter((f) => f.path !== file.path);
+          const newTotalBytes = u.totalBytes - file.size;
+          return {
+            ...u,
+            files,
+            totalBytes: newTotalBytes,
+            totalMB: (newTotalBytes / (1024 * 1024)).toFixed(2),
+            fileCount: Math.max(0, u.fileCount - 1),
+          };
+        });
+        const newTotalBytesGlobal = prev.totalBytes - file.size;
+        return {
+          ...prev,
+          users,
+          totalBytes: newTotalBytesGlobal,
+          totalGB: (newTotalBytesGlobal / (1024 * 1024 * 1024)).toFixed(2),
+        };
+      });
+
+      // Update node usage for primary VPS node
+      setNodes((prev) =>
+        prev.map((node) =>
+          node.id === "vps-primary"
+            ? {
+                ...node,
+                usedStorage: Math.max(0, node.usedStorage - file.size),
+              }
+            : node
+        )
+      );
+
+      toast.success("File deleted");
+    } catch (error) {
+      console.error("Error deleting file:", error);
+      toast.error("Failed to delete file");
+    }
+  };
+
   const loadStorageNodes = () => {
     const savedNodes = localStorage.getItem("vps_storage_nodes");
     if (savedNodes) {
@@ -653,11 +792,26 @@ const StorageSettings = () => {
                                         </TableCell>
                                         <TableCell>
                                           <div className="flex gap-2">
-                                            <Button variant="ghost" size="sm">
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => handlePreviewFile(file)}
+                                            >
                                               <Eye className="w-4 h-4" />
                                             </Button>
-                                            <Button variant="ghost" size="sm">
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => handleDownloadFile(file)}
+                                            >
                                               <Download className="w-4 h-4" />
+                                            </Button>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => handleDeleteFile(user.userId, file)}
+                                            >
+                                              <Trash2 className="w-4 h-4" />
                                             </Button>
                                           </div>
                                         </TableCell>

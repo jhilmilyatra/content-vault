@@ -195,52 +195,23 @@ const Dashboard = () => {
         </div>
 
         {/* Quota alerts */}
-        {quotaAlerts.length > 0 && (
+        {isNearStorageLimit && (
           <div className="mt-4">
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Approaching your limits</AlertTitle>
+              <AlertTitle>Storage nearly full</AlertTitle>
               <AlertDescription>
-                <p className="mb-2">
-                  You&apos;re close to hitting one or more of your plan limits. New uploads or
-                  share links may fail soon.
-                </p>
-                <ul className="list-disc list-inside space-y-1">
-                  {quotaAlerts.map((q) => {
-                    if (q.type === "storage") {
-                      return (
-                        <li key="storage">
-                          <span className="font-medium">Storage:</span>{" "}
-                          {Math.round(q.percentage)}% of your{" "}
-                          {subscription?.storage_limit_gb || 1} GB storage used.
-                        </li>
-                      );
-                    }
-                    if (q.type === "bandwidth") {
-                      return (
-                        <li key="bandwidth">
-                          <span className="font-medium">Bandwidth:</span>{" "}
-                          {Math.round(q.percentage)}% of your{" "}
-                          {subscription?.bandwidth_limit_gb || 10} GB bandwidth used.
-                        </li>
-                      );
-                    }
-                    return (
-                      <li key="links">
-                        <span className="font-medium">Active links:</span>{" "}
-                        {activeLinks} of {maxLinks} links in use (
-                        {Math.round(q.percentage)}%).
-                      </li>
-                    );
-                  })}
-                </ul>
+                You&apos;ve used {Math.round(storagePercentage)}% of your{" "}
+                {subscription?.storage_limit_gb || 1} GB storage limit. New uploads may fail
+                soon. Consider deleting unused files or{" "}
                 <button
                   type="button"
                   onClick={() => navigate("/dashboard/plans")}
-                  className="mt-2 underline font-medium"
+                  className="underline font-medium"
                 >
-                  Review or upgrade your plan
+                  upgrading your plan
                 </button>
+                .
               </AlertDescription>
             </Alert>
           </div>
