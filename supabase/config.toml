@@ -11,3 +11,9 @@ verify_jwt = false
 
 [functions.telegram-upload]
 verify_jwt = false
+
+[functions.admin-suspend-user]
+verify_jwt = false
+
+[functions.owner-update-user]
+verify_jwt = false

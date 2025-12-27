@@ -91,37 +91,28 @@ const AdminUserManagement = () => {
     }
 
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          is_suspended: true,
-          suspension_reason: suspensionReason,
-          suspended_at: new Date().toISOString(),
-          suspended_by: user?.id,
-        })
-        .eq("id", selectedUser.id);
-
-      if (error) throw error;
-
-      // Log audit
-      await supabase.from("audit_logs").insert({
-        actor_id: user?.id,
-        target_user_id: selectedUser.user_id,
-        action: "user_suspended",
-        entity_type: "profiles",
-        details: { reason: suspensionReason },
+      const response = await supabase.functions.invoke('admin-suspend-user', {
+        body: {
+          targetUserId: selectedUser.user_id,
+          suspend: true,
+          reason: suspensionReason,
+        },
       });
+
+      if (response.error) throw response.error;
+      if (response.data?.error) throw new Error(response.data.error);
 
       toast({ title: "User suspended successfully" });
       setSuspendDialogOpen(false);
       setSelectedUser(null);
       setSuspensionReason("");
       fetchUsers();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error suspending user:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to suspend user";
       toast({
         title: "Error",
-        description: "Failed to suspend user",
+        description: errorMessage,
         variant: "destructive",
       });
     }
@@ -129,34 +120,24 @@ const AdminUserManagement = () => {
 
   const handleUnsuspendUser = async (userProfile: UserProfile) => {
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          is_suspended: false,
-          suspension_reason: null,
-          suspended_at: null,
-          suspended_by: null,
-        })
-        .eq("id", userProfile.id);
-
-      if (error) throw error;
-
-      // Log audit
-      await supabase.from("audit_logs").insert({
-        actor_id: user?.id,
-        target_user_id: userProfile.user_id,
-        action: "user_activated",
-        entity_type: "profiles",
-        details: { reason: "Unsuspended by admin" },
+      const response = await supabase.functions.invoke('admin-suspend-user', {
+        body: {
+          targetUserId: userProfile.user_id,
+          suspend: false,
+        },
       });
+
+      if (response.error) throw response.error;
+      if (response.data?.error) throw new Error(response.data.error);
 
       toast({ title: "User unsuspended successfully" });
       fetchUsers();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error unsuspending user:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to unsuspend user";
       toast({
         title: "Error",
-        description: "Failed to unsuspend user",
+        description: errorMessage,
         variant: "destructive",
       });
     }

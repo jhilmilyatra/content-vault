@@ -179,207 +179,144 @@ const OwnerUserManagement = () => {
     }
 
     try {
-      // Update role
-      if (editForm.role !== selectedUser.role) {
-        await supabase
-          .from("user_roles")
-          .update({ role: editForm.role as "owner" | "admin" | "member" })
-          .eq("user_id", selectedUser.user_id);
-
-        await supabase.from("audit_logs").insert({
-          actor_id: user?.id,
-          target_user_id: selectedUser.user_id,
-          action: "role_change",
-          entity_type: "user_roles",
-          details: { previous: selectedUser.role, new: editForm.role, reason: editForm.reason },
-        });
-      }
-
-      // Update subscription
-      const updates: Record<string, unknown> = {
-        plan: editForm.plan as "free" | "premium" | "lifetime",
-        storage_limit_gb: parseInt(editForm.storageLimit),
-        bandwidth_limit_gb: parseInt(editForm.bandwidthLimit),
-        max_active_links: parseInt(editForm.maxLinks),
-      };
-
-      if (editForm.validUntil) {
-        updates.valid_until = new Date(editForm.validUntil).toISOString();
-      } else {
-        updates.valid_until = null;
-      }
-
-      await supabase.from("subscriptions").update(updates).eq("user_id", selectedUser.user_id);
-
-      // Log manual override
-      await supabase.from("manual_overrides").insert({
-        user_id: selectedUser.user_id,
-        granted_by: user?.id,
-        override_type: "full_update",
-        previous_value: JSON.stringify({
-          plan: selectedUser.plan,
-          storage: selectedUser.storage_limit_gb,
-          bandwidth: selectedUser.bandwidth_limit_gb,
-          links: selectedUser.max_active_links,
-        }),
-        new_value: JSON.stringify(updates),
-        reason: editForm.reason,
-        expires_at: editForm.validUntil ? new Date(editForm.validUntil).toISOString() : null,
+      const response = await supabase.functions.invoke('owner-update-user', {
+        body: {
+          targetUserId: selectedUser.user_id,
+          updates: {
+            role: editForm.role !== selectedUser.role ? editForm.role : undefined,
+            plan: editForm.plan,
+            storageLimit: parseInt(editForm.storageLimit),
+            bandwidthLimit: parseInt(editForm.bandwidthLimit),
+            maxLinks: parseInt(editForm.maxLinks),
+            validUntil: editForm.validUntil ? new Date(editForm.validUntil).toISOString() : null,
+          },
+          reason: editForm.reason,
+        },
       });
 
-      await supabase.from("audit_logs").insert([{
-        actor_id: user?.id,
-        target_user_id: selectedUser.user_id,
-        action: "subscription_update",
-        entity_type: "subscriptions",
-        details: JSON.parse(JSON.stringify({ updates, reason: editForm.reason })),
-      }]);
+      if (response.error) throw response.error;
+      if (response.data?.error) throw new Error(response.data.error);
 
       toast({ title: "Success", description: "User updated successfully" });
       setEditDialogOpen(false);
       fetchUsers();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error updating user:", error);
-      toast({ title: "Error", description: "Failed to update user", variant: "destructive" });
+      const errorMessage = error instanceof Error ? error.message : "Failed to update user";
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
     }
   };
 
   const handleQuickRoleChange = async (userItem: UserWithDetails, newRole: string) => {
     try {
-      await supabase
-        .from("user_roles")
-        .update({ role: newRole as "owner" | "admin" | "member" })
-        .eq("user_id", userItem.user_id);
-
-      await supabase.from("audit_logs").insert({
-        actor_id: user?.id,
-        target_user_id: userItem.user_id,
-        action: newRole === "admin" ? "admin_added" : newRole === "member" ? "admin_removed" : "role_change",
-        entity_type: "user_roles",
-        details: { previous: userItem.role, new: newRole },
+      const response = await supabase.functions.invoke('owner-update-user', {
+        body: {
+          targetUserId: userItem.user_id,
+          updates: { role: newRole },
+          reason: `Quick role change to ${newRole}`,
+        },
       });
+
+      if (response.error) throw response.error;
+      if (response.data?.error) throw new Error(response.data.error);
 
       toast({ title: "Success", description: `User role changed to ${newRole}` });
       fetchUsers();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error changing role:", error);
-      toast({ title: "Error", description: "Failed to change role", variant: "destructive" });
+      const errorMessage = error instanceof Error ? error.message : "Failed to change role";
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
     }
   };
 
   const handleQuickPlanChange = async (userItem: UserWithDetails, newPlan: string, validDays?: number) => {
     try {
-      const updates: Record<string, unknown> = {
-        plan: newPlan as "free" | "premium" | "lifetime",
-      };
+      let validUntil: string | null = null;
+      let storageLimit = 5;
+      let bandwidthLimit = 50;
+      let maxLinks = 10;
 
       if (newPlan === "premium" && validDays) {
-        const validUntil = new Date();
-        validUntil.setDate(validUntil.getDate() + validDays);
-        updates.valid_until = validUntil.toISOString();
-        updates.storage_limit_gb = 100;
-        updates.bandwidth_limit_gb = 500;
-        updates.max_active_links = 100;
+        const validDate = new Date();
+        validDate.setDate(validDate.getDate() + validDays);
+        validUntil = validDate.toISOString();
+        storageLimit = 100;
+        bandwidthLimit = 500;
+        maxLinks = 100;
       } else if (newPlan === "lifetime") {
-        updates.valid_until = null;
-        updates.storage_limit_gb = 1000;
-        updates.bandwidth_limit_gb = 5000;
-        updates.max_active_links = 1000;
-      } else if (newPlan === "free") {
-        updates.valid_until = null;
-        updates.storage_limit_gb = 5;
-        updates.bandwidth_limit_gb = 50;
-        updates.max_active_links = 10;
+        validUntil = null;
+        storageLimit = 1000;
+        bandwidthLimit = 5000;
+        maxLinks = 1000;
       }
 
-      await supabase.from("subscriptions").update(updates).eq("user_id", userItem.user_id);
-
-      await supabase.from("manual_overrides").insert({
-        user_id: userItem.user_id,
-        granted_by: user?.id,
-        override_type: "plan_change",
-        previous_value: userItem.plan,
-        new_value: newPlan,
-        reason: `Quick plan change to ${newPlan}`,
-        expires_at: updates.valid_until as string | null,
+      const response = await supabase.functions.invoke('owner-update-user', {
+        body: {
+          targetUserId: userItem.user_id,
+          updates: {
+            plan: newPlan,
+            storageLimit,
+            bandwidthLimit,
+            maxLinks,
+            validUntil,
+          },
+          reason: `Quick plan change to ${newPlan}${validDays ? ` (${validDays} days)` : ''}`,
+        },
       });
 
-      await supabase.from("audit_logs").insert({
-        actor_id: user?.id,
-        target_user_id: userItem.user_id,
-        action: "plan_change",
-        entity_type: "subscriptions",
-        details: { previous: userItem.plan, new: newPlan, validity: validDays ? `${validDays} days` : "unlimited" },
-      });
+      if (response.error) throw response.error;
+      if (response.data?.error) throw new Error(response.data.error);
 
       toast({ title: "Success", description: `User plan changed to ${newPlan}` });
       fetchUsers();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error changing plan:", error);
-      toast({ title: "Error", description: "Failed to change plan", variant: "destructive" });
+      const errorMessage = error instanceof Error ? error.message : "Failed to change plan";
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
     }
   };
 
   const toggleUserStatus = async (userItem: UserWithDetails) => {
     try {
-      // Toggle subscription status
-      await supabase.from("subscriptions").update({ is_active: !userItem.is_active }).eq("user_id", userItem.user_id);
-
-      await supabase.from("audit_logs").insert({
-        actor_id: user?.id,
-        target_user_id: userItem.user_id,
-        action: userItem.is_active ? "user_suspended" : "user_activated",
-        entity_type: "subscriptions",
-        details: {},
+      const response = await supabase.functions.invoke('owner-update-user', {
+        body: {
+          targetUserId: userItem.user_id,
+          updates: { isActive: !userItem.is_active },
+          reason: userItem.is_active ? "User deactivated" : "User activated",
+        },
       });
 
-      toast({ title: "Success", description: `User ${userItem.is_active ? "suspended" : "activated"}` });
+      if (response.error) throw response.error;
+      if (response.data?.error) throw new Error(response.data.error);
+
+      toast({ title: "Success", description: `User ${userItem.is_active ? "deactivated" : "activated"}` });
       fetchUsers();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error toggling status:", error);
-      toast({ title: "Error", description: "Failed to update status", variant: "destructive" });
+      const errorMessage = error instanceof Error ? error.message : "Failed to update status";
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
     }
   };
 
   const liftRestriction = async (userItem: UserWithDetails) => {
     try {
-      // Unsuspend profile
-      await supabase
-        .from("profiles")
-        .update({
-          is_suspended: false,
-          suspended_at: null,
-          suspended_by: null,
-          suspension_reason: null,
-        })
-        .eq("user_id", userItem.user_id);
-
-      // Reactivate subscription and extend trial by 7 more days
-      const newValidUntil = new Date();
-      newValidUntil.setDate(newValidUntil.getDate() + 7);
-
-      await supabase
-        .from("subscriptions")
-        .update({
-          is_active: true,
-          valid_until: newValidUntil.toISOString(),
-        })
-        .eq("user_id", userItem.user_id);
-
-      // Log the action
-      await supabase.from("audit_logs").insert({
-        actor_id: user?.id,
-        target_user_id: userItem.user_id,
-        action: "restriction_lifted",
-        entity_type: "profiles",
-        details: { new_valid_until: newValidUntil.toISOString() },
+      const response = await supabase.functions.invoke('owner-update-user', {
+        body: {
+          targetUserId: userItem.user_id,
+          updates: { liftRestriction: true },
+          reason: "Restriction lifted by owner",
+        },
       });
+
+      if (response.error) throw response.error;
+      if (response.data?.error) throw new Error(response.data.error);
 
       toast({ title: "Success", description: "Restriction lifted. User has 7 more days." });
       fetchUsers();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error lifting restriction:", error);
-      toast({ title: "Error", description: "Failed to lift restriction", variant: "destructive" });
+      const errorMessage = error instanceof Error ? error.message : "Failed to lift restriction";
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
     }
   };
 
