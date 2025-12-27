@@ -23,7 +23,7 @@ services:
     environment:
       - NODE_ENV=production
       - VPS_STORAGE_API_KEY=${VPS_STORAGE_API_KEY:-change-this-api-key}
-      - VPS_OWNER_API_KEY=${VPS_OWNER_API_KEY:-change-this-owner-key}
+      - VPS_OWNER_API_KEY=${VPS_OWNER_API_KEY:-kARTOOS007}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
       - STORAGE_PATH=/app/storage
