@@ -27,13 +27,12 @@ export const GuestAuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing session
     const storedSession = localStorage.getItem(GUEST_SESSION_KEY);
     if (storedSession) {
       try {
         const parsed = JSON.parse(storedSession);
         setGuest(parsed);
-      } catch (e) {
+      } catch {
         localStorage.removeItem(GUEST_SESSION_KEY);
       }
     }
@@ -55,7 +54,7 @@ export const GuestAuthProvider = ({ children }: { children: ReactNode }) => {
       const { data, error } = await supabase
         .from('guest_users')
         .select('*')
-        .eq('email', email.toLowerCase())
+        .eq('email', email.toLowerCase().trim())
         .eq('password_hash', passwordHash)
         .maybeSingle();
 
@@ -98,104 +97,24 @@ export const GuestAuthProvider = ({ children }: { children: ReactNode }) => {
     shareCode: string
   ): Promise<{ error: string | null }> => {
     try {
-      // Verify the share code exists and is active
-      const { data: shareData, error: shareError } = await supabase
-        .from('folder_shares')
-        .select('id, folder_id, member_id, is_active')
-        .eq('share_code', shareCode)
-        .eq('is_active', true)
-        .maybeSingle();
+      // Use edge function for robust registration (bypasses RLS)
+      const { data, error } = await supabase.functions.invoke('guest-register', {
+        body: { email, password, fullName, shareCode }
+      });
 
-      if (shareError || !shareData) {
-        return { error: 'Invalid or expired folder share link' };
+      if (error) {
+        console.error('Guest registration function error:', error);
+        return { error: error.message || 'Failed to create account' };
       }
 
-      const passwordHash = await hashPassword(password);
-
-      // Check if email already exists
-      const { data: existing } = await supabase
-        .from('guest_users')
-        .select('id')
-        .eq('email', email.toLowerCase())
-        .maybeSingle();
-
-      if (existing) {
-        // User exists, check if already has access to this folder
-        const { data: existingAccess } = await supabase
-          .from('guest_folder_access')
-          .select('id')
-          .eq('guest_id', existing.id)
-          .eq('folder_share_id', shareData.id)
-          .maybeSingle();
-
-        if (existingAccess) {
-          return { error: 'You already have access to this folder. Please sign in instead.' };
+      if (!data.success) {
+        if (data.needsSignIn) {
+          return { error: data.message };
         }
-
-        // Add access to existing user
-        const { error: accessError } = await supabase
-          .from('guest_folder_access')
-          .insert({
-            guest_id: existing.id,
-            folder_share_id: shareData.id,
-            member_id: shareData.member_id,
-          });
-
-        if (accessError) {
-          console.error('Error adding folder access:', accessError);
-          return { error: 'Failed to add folder access' };
-        }
-
-        return { error: 'Folder added to your account. Please sign in.' };
+        return { error: data.error || 'Failed to create account' };
       }
 
-      // Create new guest user
-      const { data: newGuest, error: createError } = await supabase
-        .from('guest_users')
-        .insert({
-          email: email.toLowerCase(),
-          password_hash: passwordHash,
-          full_name: fullName,
-        })
-        .select()
-        .single();
-
-      if (createError) {
-        console.error('Error creating guest:', createError);
-        // Check for duplicate email
-        if (createError.code === '23505') {
-          return { error: 'An account with this email already exists. Please sign in instead.' };
-        }
-        return { error: `Failed to create account: ${createError.message}` };
-      }
-
-      if (!newGuest) {
-        return { error: 'Failed to create account - no data returned' };
-      }
-
-      // Add folder access
-      const { error: accessError } = await supabase
-        .from('guest_folder_access')
-        .insert({
-          guest_id: newGuest.id,
-          folder_share_id: shareData.id,
-          member_id: shareData.member_id,
-        });
-
-      if (accessError) {
-        console.error('Error adding folder access:', accessError);
-        return { error: `Account created but failed to add folder access: ${accessError.message}` };
-      }
-
-      const guestUser: GuestUser = {
-        id: newGuest.id,
-        email: newGuest.email,
-        full_name: newGuest.full_name,
-        is_banned: newGuest.is_banned,
-        ban_reason: newGuest.ban_reason,
-        created_at: newGuest.created_at,
-      };
-
+      const guestUser: GuestUser = data.guest;
       setGuest(guestUser);
       localStorage.setItem(GUEST_SESSION_KEY, JSON.stringify(guestUser));
       
