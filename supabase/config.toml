@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.vps-file]
 verify_jwt = false
+
+[functions.vps-owner-stats]
+verify_jwt = false

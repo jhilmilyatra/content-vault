@@ -103,24 +103,40 @@ Deno.serve(async (req) => {
     }
 
     if (action === "delete") {
+      // Parse userId and fileName from storagePath
+      const pathParts = storagePath.split("/");
+      if (pathParts.length < 2) {
+        return new Response(
+          JSON.stringify({ error: "Invalid storage path format" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const userId = pathParts[0];
+      const fileName = pathParts.slice(1).join("/");
+
       // Delete from VPS
       if (vpsEndpoint && vpsApiKey) {
         try {
-          await fetch(`${vpsEndpoint}/delete`, {
+          const deleteResponse = await fetch(`${vpsEndpoint}/delete`, {
             method: "DELETE",
             headers: {
               "Authorization": `Bearer ${vpsApiKey}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ path: storagePath }),
+            body: JSON.stringify({ userId, fileName }),
           });
-          console.log(`✅ Deleted from VPS: ${storagePath}`);
+          
+          if (deleteResponse.ok) {
+            console.log(`✅ Deleted from VPS: ${storagePath}`);
+          } else {
+            console.log(`VPS delete returned: ${deleteResponse.status}`);
+          }
         } catch (e) {
           console.error("VPS delete error:", e);
         }
       }
       
-      // Also delete from Supabase storage
+      // Also delete from Supabase storage (if it exists there)
       await supabase.storage.from("user-files").remove([storagePath]);
       
       return new Response(
