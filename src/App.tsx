@@ -23,6 +23,7 @@ import AuditLogs from "./pages/owner/AuditLogs";
 import SecuritySettings from "./pages/owner/SecuritySettings";
 import BillingOverview from "./pages/owner/BillingOverview";
 import StorageSettings from "./pages/owner/StorageSettings";
+import AdminPermissions from "./pages/owner/AdminPermissions";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUserManagement from "./pages/admin/AdminUserManagement";
 import ReportManagement from "./pages/admin/ReportManagement";
@@ -59,6 +60,7 @@ const App = () => (
             <Route path="/dashboard/billing" element={<ProtectedRoute requiredRole="owner"><BillingOverview /></ProtectedRoute>} />
             <Route path="/dashboard/audit" element={<ProtectedRoute requiredRole="owner"><AuditLogs /></ProtectedRoute>} />
             <Route path="/dashboard/storage" element={<ProtectedRoute requiredRole="owner"><StorageSettings /></ProtectedRoute>} />
+            <Route path="/dashboard/admin-permissions" element={<ProtectedRoute requiredRole="owner"><AdminPermissions /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
