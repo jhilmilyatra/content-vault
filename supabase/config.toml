@@ -29,3 +29,15 @@ verify_jwt = false
 
 [functions.vps-owner-stats]
 verify_jwt = false
+
+[functions.guest-register]
+verify_jwt = false
+
+[functions.guest-signin]
+verify_jwt = false
+
+[functions.reset-guest-password]
+verify_jwt = false
+
+[functions.guest-messages]
+verify_jwt = false
