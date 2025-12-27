@@ -1,39 +1,36 @@
 project_id = "dgmxndvvsbjjbnoibaid"
 
-[functions.reset-user-password]
-verify_jwt = false
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
 
-[functions.create-user]
-verify_jwt = false
+[db]
+port = 54322
+major_version = 15
 
-[functions.verify-share-link]
-verify_jwt = false
-
-[functions.shared-download]
-verify_jwt = false
-
-[functions.telegram-upload]
-verify_jwt = false
-
-[functions.admin-suspend-user]
-verify_jwt = false
-
-[functions.owner-update-user]
-verify_jwt = false
-
-[functions.vps-upload]
-verify_jwt = false
-
-[functions.vps-file]
-verify_jwt = false
-
-[functions.vps-owner-stats]
-verify_jwt = false
+[studio]
+enabled = true
+port = 54323
 
 [functions.guest-register]
 verify_jwt = false
 
 [functions.guest-signin]
+verify_jwt = false
+
+[functions.reset-guest-password]
+verify_jwt = false
+
+[functions.guest-messages]
+verify_jwt = false
+
+[functions.guest-folders]
+verify_jwt = false
+
+[functions.guest-folder-contents]
 verify_jwt = false
 
 [functions.reset-guest-password]
