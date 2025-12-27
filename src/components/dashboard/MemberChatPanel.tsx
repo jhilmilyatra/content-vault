@@ -333,27 +333,34 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
 
     setSending(true);
     try {
-      const { data: ownerRole } = await supabase
-        .from("user_roles")
-        .select("user_id")
-        .eq("role", "owner")
-        .limit(1)
-        .single();
+      // Use the security definer function to get owner id
+      const { data: ownerId, error: ownerError } = await supabase
+        .rpc("get_owner_user_id");
 
-      if (!ownerRole) {
-        toast({ title: "Error", description: "No owner found", variant: "destructive" });
+      if (ownerError) {
+        console.error("Error getting owner:", ownerError);
+        toast({ title: "Error", description: "Could not find owner. Please try again.", variant: "destructive" });
         return;
       }
 
-      await supabase.from("owner_member_messages").insert({
-        owner_id: ownerRole.user_id,
+      if (!ownerId) {
+        toast({ title: "Error", description: "No owner configured for this system.", variant: "destructive" });
+        return;
+      }
+
+      const { error: insertError } = await supabase.from("owner_member_messages").insert({
+        owner_id: ownerId,
         member_id: user.id,
         sender_type: "member",
         message: ownerNewMessage.trim(),
       });
+
+      if (insertError) throw insertError;
+
       setOwnerNewMessage("");
     } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      console.error("Error sending message:", error);
+      toast({ title: "Error", description: error.message || "Failed to send message", variant: "destructive" });
     } finally {
       setSending(false);
     }
