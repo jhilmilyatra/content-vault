@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_permissions: {
+        Row: {
+          can_delete_files: boolean
+          can_resolve_reports: boolean
+          can_suspend_users: boolean
+          can_view_emails: boolean
+          can_view_files: boolean
+          can_view_reports: boolean
+          created_at: string
+          granted_by: string | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          can_delete_files?: boolean
+          can_resolve_reports?: boolean
+          can_suspend_users?: boolean
+          can_view_emails?: boolean
+          can_view_files?: boolean
+          can_view_reports?: boolean
+          created_at?: string
+          granted_by?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          can_delete_files?: boolean
+          can_resolve_reports?: boolean
+          can_suspend_users?: boolean
+          can_view_emails?: boolean
+          can_view_files?: boolean
+          can_view_reports?: boolean
+          created_at?: string
+          granted_by?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       api_tokens: {
         Row: {
           created_at: string
@@ -512,6 +554,10 @@ export type Database = {
       }
     }
     Functions: {
+      admin_has_permission: {
+        Args: { _permission: string; _user_id: string }
+        Returns: boolean
+      }
       check_expired_subscriptions: { Args: never; Returns: undefined }
       create_api_token: {
         Args: {
