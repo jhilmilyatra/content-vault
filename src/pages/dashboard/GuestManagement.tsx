@@ -44,6 +44,7 @@ import {
   Check,
   FolderOpen,
   Send,
+  KeyRound,
 } from 'lucide-react';
 
 interface GuestUser {
@@ -80,6 +81,8 @@ const GuestManagement = () => {
   const [banReason, setBanReason] = useState('');
   const [messageDialogOpen, setMessageDialogOpen] = useState(false);
   const [broadcastDialogOpen, setBroadcastDialogOpen] = useState(false);
+  const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
   const [messageContent, setMessageContent] = useState('');
   const [sending, setSending] = useState(false);
 
@@ -349,6 +352,43 @@ const GuestManagement = () => {
     }
   };
 
+  const handleResetPassword = async () => {
+    if (!selectedGuest || !newPassword.trim()) return;
+
+    if (newPassword.length < 6) {
+      toast({
+        title: 'Error',
+        description: 'Password must be at least 6 characters',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSending(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('reset-guest-password', {
+        body: { guestId: selectedGuest.id, newPassword }
+      });
+
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error || 'Failed to reset password');
+
+      toast({ title: 'Password reset successfully' });
+      setResetPasswordDialogOpen(false);
+      setSelectedGuest(null);
+      setNewPassword('');
+    } catch (error: any) {
+      console.error('Error resetting password:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to reset password',
+        variant: 'destructive',
+      });
+    } finally {
+      setSending(false);
+    }
+  };
+
   const markNotificationRead = async (notifId: string) => {
     await supabase
       .from('member_notifications')
@@ -505,6 +545,15 @@ const GuestManagement = () => {
                               >
                                 <MessageCircle className="w-4 h-4 mr-2" />
                                 Send Message
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setSelectedGuest(guest);
+                                  setResetPasswordDialogOpen(true);
+                                }}
+                              >
+                                <KeyRound className="w-4 h-4 mr-2" />
+                                Reset Password
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
@@ -665,6 +714,35 @@ const GuestManagement = () => {
               <Button onClick={handleBroadcastMessage} disabled={sending || !messageContent.trim()}>
                 {sending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Send to All
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Reset Password Dialog */}
+        <Dialog open={resetPasswordDialogOpen} onOpenChange={setResetPasswordDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Reset Guest Password</DialogTitle>
+              <DialogDescription>
+                Set a new password for {selectedGuest?.full_name || selectedGuest?.email}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <Input
+                type="password"
+                placeholder="New password (min 6 characters)"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setResetPasswordDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleResetPassword} disabled={sending || newPassword.length < 6}>
+                {sending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Reset Password
               </Button>
             </DialogFooter>
           </DialogContent>
