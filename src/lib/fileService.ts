@@ -165,7 +165,7 @@ const uploadToVPSViaEdge = async (
 };
 
 /**
- * Upload file - uses edge function for VPS upload (avoids mixed content)
+ * Upload file - uses edge function for VPS upload (VPS only, no cloud fallback)
  */
 export const uploadFile = async (
   file: File,
@@ -175,48 +175,8 @@ export const uploadFile = async (
 ): Promise<FileItem> => {
   console.log("📦 Uploading via edge function to VPS");
   
-  try {
-    return await uploadToVPSViaEdge(file, userId, folderId, onProgress);
-  } catch (vpsError) {
-    console.error("VPS upload failed, falling back to cloud:", vpsError);
-    
-    // Fallback: Upload to Supabase storage directly
-    console.log("☁️ Uploading to cloud storage");
-    
-    const fileExt = file.name.split(".").pop();
-    const fileName = `${crypto.randomUUID()}.${fileExt}`;
-    const storagePath = `${userId}/${fileName}`;
-    
-    const { error: uploadError } = await supabase.storage
-      .from("user-files")
-      .upload(storagePath, file, {
-        cacheControl: "3600",
-        upsert: false,
-      });
-
-    if (uploadError) throw uploadError;
-
-    // Create file record
-    const { data, error: dbError } = await supabase
-      .from("files")
-      .insert({
-        user_id: userId,
-        folder_id: folderId,
-        name: file.name,
-        original_name: file.name,
-        mime_type: file.type,
-        size_bytes: file.size,
-        storage_path: storagePath,
-      })
-      .select()
-      .single();
-
-    if (dbError) throw dbError;
-
-    if (onProgress) onProgress(100);
-
-    return data as FileItem;
-  }
+  // VPS only - no fallback
+  return await uploadToVPSViaEdge(file, userId, folderId, onProgress);
 };
 
 /**

@@ -109,103 +109,49 @@ Deno.serve(async (req) => {
       }
     }
 
-    let fileUrl: string;
-    let storageType: "vps" | "cloud";
-    let usedNode: string | null = null;
-    let storagePath: string;
-
-    // Determine which VPS to use (priority: custom > header > env)
+    // VPS storage only - no cloud fallback
     const vpsEndpoint = customVpsEndpoint || headerVpsEndpoint || envVpsEndpoint;
     const vpsApiKey = customVpsApiKey || headerVpsApiKey || envVpsApiKey;
 
-    // Try VPS storage first
-    if (vpsEndpoint && vpsApiKey) {
-      try {
-        console.log(`📦 Uploading to VPS: ${vpsEndpoint}`);
-        
-        // Convert file data to base64
-        const base64Data = btoa(String.fromCharCode(...fileData));
-        
-        const vpsResponse = await fetch(`${vpsEndpoint}/upload-base64`, {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${vpsApiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            fileName: fileName,
-            originalName: fileName,
-            mimeType: mimeType,
-            data: base64Data,
-            userId: user.id,
-          }),
-        });
-
-        if (!vpsResponse.ok) {
-          const errorText = await vpsResponse.text();
-          console.error(`VPS response error: ${errorText}`);
-          throw new Error(`VPS upload failed: ${vpsResponse.status} - ${errorText}`);
-        }
-
-        const vpsResult = await vpsResponse.json();
-        
-        // Use the path returned by VPS server (it generates the actual filename)
-        storagePath = vpsResult.path;
-        fileUrl = `${vpsEndpoint}${vpsResult.url}`;
-        storageType = "vps";
-        usedNode = vpsEndpoint;
-        
-        console.log(`✅ VPS upload successful: ${storagePath}`);
-      } catch (vpsError) {
-        console.error("VPS upload error, falling back to cloud:", vpsError);
-        
-        // Generate cloud storage path for fallback
-        const fileExt = fileName.split(".").pop();
-        const uniqueFileName = `${crypto.randomUUID()}.${fileExt}`;
-        storagePath = `${user.id}/${uniqueFileName}`;
-        
-        // Fallback to Supabase storage
-        const { error: uploadError } = await supabase.storage
-          .from("user-files")
-          .upload(storagePath, fileData, {
-            contentType: mimeType,
-            cacheControl: "3600",
-          });
-
-        if (uploadError) throw uploadError;
-        
-        const { data: urlData } = supabase.storage
-          .from("user-files")
-          .getPublicUrl(storagePath);
-        
-        fileUrl = urlData.publicUrl;
-        storageType = "cloud";
-      }
-    } else {
-      // Use Supabase storage directly
-      console.log("☁️ Uploading to cloud storage (no VPS configured)");
-      
-      // Generate cloud storage path
-      const fileExt = fileName.split(".").pop();
-      const uniqueFileName = `${crypto.randomUUID()}.${fileExt}`;
-      storagePath = `${user.id}/${uniqueFileName}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from("user-files")
-        .upload(storagePath, fileData, {
-          contentType: mimeType,
-          cacheControl: "3600",
-        });
-
-      if (uploadError) throw uploadError;
-      
-      const { data: urlData } = supabase.storage
-        .from("user-files")
-        .getPublicUrl(storagePath);
-      
-      fileUrl = urlData.publicUrl;
-      storageType = "cloud";
+    if (!vpsEndpoint || !vpsApiKey) {
+      throw new Error("VPS storage not configured");
     }
+
+    console.log(`📦 Uploading to VPS: ${vpsEndpoint}`);
+    
+    // Convert file data to base64
+    const base64Data = btoa(String.fromCharCode(...fileData));
+    
+    const vpsResponse = await fetch(`${vpsEndpoint}/upload-base64`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${vpsApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fileName: fileName,
+        originalName: fileName,
+        mimeType: mimeType,
+        data: base64Data,
+        userId: user.id,
+      }),
+    });
+
+    if (!vpsResponse.ok) {
+      const errorText = await vpsResponse.text();
+      console.error(`VPS response error: ${errorText}`);
+      throw new Error(`VPS upload failed: ${vpsResponse.status} - ${errorText}`);
+    }
+
+    const vpsResult = await vpsResponse.json();
+    
+    // Use the path returned by VPS server
+    const storagePath = vpsResult.path;
+    const fileUrl = `${vpsEndpoint}${vpsResult.url}`;
+    const storageType = "vps";
+    const usedNode = vpsEndpoint;
+    
+    console.log(`✅ VPS upload successful: ${storagePath}`);
 
     // Create file record in database
     const { data: fileRecord, error: dbError } = await supabase
