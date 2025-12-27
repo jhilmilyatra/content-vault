@@ -52,6 +52,20 @@ Deno.serve(async (req) => {
     if (existingUser) {
       ownerId = existingUser.id;
       console.log("Owner user already exists:", ownerId);
+
+      // Ensure email is confirmed and password matches our owner password
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(ownerId, {
+        password: ownerPassword,
+        email_confirm: true,
+      });
+
+      if (updateError) {
+        console.error("Error updating existing owner user:", updateError);
+        return new Response(
+          JSON.stringify({ error: updateError.message || "Failed to update existing owner user" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
     } else {
       console.log("Creating owner user with email:", ownerEmail);
 
