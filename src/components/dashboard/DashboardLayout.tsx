@@ -27,8 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import MemberOwnerChat from "./MemberOwnerChat";
-import MemberGuestChat from "./MemberGuestChat";
+import MemberChatPanel from "./MemberChatPanel";
 import NotificationDropdown from "./NotificationDropdown";
 
 interface DashboardLayoutProps {
@@ -72,8 +71,7 @@ const ownerNavItems = [
 
 const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const [collapsed, setCollapsed] = useState(false);
-  const [ownerChatOpen, setOwnerChatOpen] = useState(false);
-  const [guestChatOpen, setGuestChatOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, role, signOut } = useAuth();
@@ -218,14 +216,9 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         </main>
       </div>
 
-      {/* Member Chats */}
+      {/* Member Chat Panel */}
       {role === "member" && (
-        <>
-          <MemberOwnerChat isOpen={ownerChatOpen} onClose={() => setOwnerChatOpen(!ownerChatOpen)} />
-          <div className="fixed bottom-4 right-40 z-50">
-            <MemberGuestChat isOpen={guestChatOpen} onClose={() => setGuestChatOpen(!guestChatOpen)} />
-          </div>
-        </>
+        <MemberChatPanel isOpen={chatOpen} onClose={() => setChatOpen(!chatOpen)} />
       )}
     </div>
   );
