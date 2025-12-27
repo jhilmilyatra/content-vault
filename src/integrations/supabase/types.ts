@@ -190,6 +190,44 @@ export type Database = {
           },
         ]
       }
+      folder_shares: {
+        Row: {
+          created_at: string
+          folder_id: string
+          id: string
+          is_active: boolean
+          member_id: string
+          share_code: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          folder_id: string
+          id?: string
+          is_active?: boolean
+          member_id: string
+          share_code: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          folder_id?: string
+          id?: string
+          is_active?: boolean
+          member_id?: string
+          share_code?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "folder_shares_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       folders: {
         Row: {
           created_at: string
@@ -230,6 +268,93 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      guest_folder_access: {
+        Row: {
+          added_at: string
+          folder_share_id: string
+          guest_id: string
+          id: string
+          is_restricted: boolean
+          member_id: string
+          restricted_at: string | null
+          restricted_by: string | null
+        }
+        Insert: {
+          added_at?: string
+          folder_share_id: string
+          guest_id: string
+          id?: string
+          is_restricted?: boolean
+          member_id: string
+          restricted_at?: string | null
+          restricted_by?: string | null
+        }
+        Update: {
+          added_at?: string
+          folder_share_id?: string
+          guest_id?: string
+          id?: string
+          is_restricted?: boolean
+          member_id?: string
+          restricted_at?: string | null
+          restricted_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "guest_folder_access_folder_share_id_fkey"
+            columns: ["folder_share_id"]
+            isOneToOne: false
+            referencedRelation: "folder_shares"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "guest_folder_access_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "guest_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      guest_users: {
+        Row: {
+          ban_reason: string | null
+          banned_at: string | null
+          banned_by: string | null
+          created_at: string
+          email: string
+          full_name: string | null
+          id: string
+          is_banned: boolean
+          password_hash: string
+          updated_at: string
+        }
+        Insert: {
+          ban_reason?: string | null
+          banned_at?: string | null
+          banned_by?: string | null
+          created_at?: string
+          email: string
+          full_name?: string | null
+          id?: string
+          is_banned?: boolean
+          password_hash: string
+          updated_at?: string
+        }
+        Update: {
+          ban_reason?: string | null
+          banned_at?: string | null
+          banned_by?: string | null
+          created_at?: string
+          email?: string
+          full_name?: string | null
+          id?: string
+          is_banned?: boolean
+          password_hash?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       manual_overrides: {
         Row: {
