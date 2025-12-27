@@ -47,6 +47,8 @@ interface RecentFile {
   created_at: string;
 }
 
+type QuotaType = "storage" | "bandwidth" | "links";
+
 const getFileIcon = (mimeType: string) => {
   if (mimeType?.startsWith("video/")) return FileVideo;
   if (mimeType?.startsWith("image/")) return FileImage;
@@ -108,6 +110,30 @@ const Dashboard = () => {
 
   const activeLinks = usageMetrics?.active_links_count || 0;
   const maxLinks = subscription?.max_active_links || 5;
+  const activeLinksPercentage = maxLinks > 0 ? Math.min((activeLinks / maxLinks) * 100, 100) : 0;
+
+  const STORAGE_ALERT_THRESHOLD = 80;
+  const BANDWIDTH_ALERT_THRESHOLD = 80;
+  const ACTIVE_LINKS_ALERT_THRESHOLD = 80;
+
+  const isNearStorageLimit = storagePercentage >= STORAGE_ALERT_THRESHOLD;
+  const isNearBandwidthLimit = bandwidthPercentage >= BANDWIDTH_ALERT_THRESHOLD;
+  const isNearActiveLinksLimit =
+    maxLinks > 0 && activeLinksPercentage >= ACTIVE_LINKS_ALERT_THRESHOLD;
+
+  const quotaAlerts: { type: QuotaType; percentage: number }[] = [];
+
+  if (isNearStorageLimit) {
+    quotaAlerts.push({ type: "storage", percentage: storagePercentage });
+  }
+
+  if (isNearBandwidthLimit) {
+    quotaAlerts.push({ type: "bandwidth", percentage: bandwidthPercentage });
+  }
+
+  if (isNearActiveLinksLimit) {
+    quotaAlerts.push({ type: "links", percentage: activeLinksPercentage });
+  }
 
   const stats = [
     {
@@ -130,7 +156,7 @@ const Dashboard = () => {
       label: "Active Links",
       value: String(activeLinks),
       limit: `/ ${maxLinks}`,
-      percentage: (activeLinks / maxLinks) * 100,
+      percentage: activeLinksPercentage,
       icon: Link2,
       color: "from-amber-500 to-orange-400"
     },
@@ -169,23 +195,52 @@ const Dashboard = () => {
         </div>
 
         {/* Quota alerts */}
-        {isNearStorageLimit && (
+        {quotaAlerts.length > 0 && (
           <div className="mt-4">
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Storage nearly full</AlertTitle>
+              <AlertTitle>Approaching your limits</AlertTitle>
               <AlertDescription>
-                You&apos;ve used {Math.round(storagePercentage)}% of your{" "}
-                {subscription?.storage_limit_gb || 1} GB storage limit. New uploads may fail
-                soon. Consider deleting unused files or{" "}
+                <p className="mb-2">
+                  You&apos;re close to hitting one or more of your plan limits. New uploads or
+                  share links may fail soon.
+                </p>
+                <ul className="list-disc list-inside space-y-1">
+                  {quotaAlerts.map((q) => {
+                    if (q.type === "storage") {
+                      return (
+                        <li key="storage">
+                          <span className="font-medium">Storage:</span>{" "}
+                          {Math.round(q.percentage)}% of your{" "}
+                          {subscription?.storage_limit_gb || 1} GB storage used.
+                        </li>
+                      );
+                    }
+                    if (q.type === "bandwidth") {
+                      return (
+                        <li key="bandwidth">
+                          <span className="font-medium">Bandwidth:</span>{" "}
+                          {Math.round(q.percentage)}% of your{" "}
+                          {subscription?.bandwidth_limit_gb || 10} GB bandwidth used.
+                        </li>
+                      );
+                    }
+                    return (
+                      <li key="links">
+                        <span className="font-medium">Active links:</span>{" "}
+                        {activeLinks} of {maxLinks} links in use (
+                        {Math.round(q.percentage)}%).
+                      </li>
+                    );
+                  })}
+                </ul>
                 <button
                   type="button"
                   onClick={() => navigate("/dashboard/plans")}
-                  className="underline font-medium"
+                  className="mt-2 underline font-medium"
                 >
-                  upgrading your plan
+                  Review or upgrade your plan
                 </button>
-                .
               </AlertDescription>
             </Alert>
           </div>
