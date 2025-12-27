@@ -42,6 +42,7 @@ import {
   Eye,
 } from "lucide-react";
 import ShareDialog from "@/components/files/ShareDialog";
+import ShareFolderDialog from "@/components/files/ShareFolderDialog";
 import BulkActionsBar from "@/components/files/BulkActionsBar";
 import { FilePreviewModal } from "@/components/files/FilePreviewModal";
 import { Button } from "@/components/ui/button";
@@ -918,6 +919,16 @@ const FileManager = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Guest Folder Share Dialog */}
+        {user && (
+          <ShareFolderDialog
+            open={shareFolderOpen}
+            onOpenChange={setShareFolderOpen}
+            folder={folderToShare}
+            userId={user.id}
+          />
+        )}
       </div>
     </DashboardLayout>
   );
