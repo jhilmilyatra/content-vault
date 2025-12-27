@@ -1,8 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
 import { FileItem, getFileUrl } from "@/lib/fileService";
-import { Download, X, FileText, File, Loader2, ZoomIn, ZoomOut, RotateCw } from "lucide-react";
+import { 
+  Download, X, FileText, File, Loader2, ZoomIn, ZoomOut, RotateCw,
+  Play, Pause, Volume2, VolumeX, Maximize, SkipBack, SkipForward
+} from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 interface FilePreviewModalProps {
@@ -14,8 +18,18 @@ interface FilePreviewModalProps {
 export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalProps) {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
+
+  // Video player state
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(1);
+  const [showControls, setShowControls] = useState(true);
 
   useEffect(() => {
     if (open && file) {
@@ -24,6 +38,9 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
       setFileUrl(null);
       setZoom(1);
       setRotation(0);
+      setIsPlaying(false);
+      setCurrentTime(0);
+      setDuration(0);
     }
   }, [open, file]);
 
@@ -47,12 +64,40 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
 
   const handleDownload = async () => {
     if (!file || !fileUrl) return;
-    const a = document.createElement("a");
-    a.href = fileUrl;
-    a.download = file.original_name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    
+    setDownloading(true);
+    try {
+      // Fetch the file as a blob for proper download
+      const response = await fetch(fileUrl);
+      if (!response.ok) throw new Error("Failed to fetch file");
+      
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = file.original_name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      
+      // Clean up blob URL
+      URL.revokeObjectURL(blobUrl);
+      
+      toast({
+        title: "Download started",
+        description: `Downloading ${file.original_name}`,
+      });
+    } catch (error) {
+      console.error("Download error:", error);
+      toast({
+        title: "Download failed",
+        description: "Failed to download file. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const getFileType = (mimeType: string): "image" | "video" | "audio" | "pdf" | "other" => {
@@ -61,6 +106,85 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
     if (mimeType.startsWith("audio/")) return "audio";
     if (mimeType === "application/pdf") return "pdf";
     return "other";
+  };
+
+  // Video player controls
+  const togglePlay = () => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause();
+      } else {
+        videoRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const toggleMute = () => {
+    if (videoRef.current) {
+      videoRef.current.muted = !isMuted;
+      setIsMuted(!isMuted);
+    }
+  };
+
+  const handleVolumeChange = (value: number[]) => {
+    if (videoRef.current) {
+      const newVolume = value[0];
+      videoRef.current.volume = newVolume;
+      setVolume(newVolume);
+      setIsMuted(newVolume === 0);
+    }
+  };
+
+  const handleSeek = (value: number[]) => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = value[0];
+      setCurrentTime(value[0]);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (videoRef.current) {
+      setCurrentTime(videoRef.current.currentTime);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (videoRef.current) {
+      setDuration(videoRef.current.duration);
+    }
+  };
+
+  const handleVideoEnded = () => {
+    setIsPlaying(false);
+  };
+
+  const skipForward = () => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = Math.min(videoRef.current.currentTime + 10, duration);
+    }
+  };
+
+  const skipBackward = () => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = Math.max(videoRef.current.currentTime - 10, 0);
+    }
+  };
+
+  const toggleFullscreen = () => {
+    if (videoRef.current) {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        videoRef.current.requestFullscreen();
+      }
+    }
+  };
+
+  const formatTime = (time: number) => {
+    const minutes = Math.floor(time / 60);
+    const seconds = Math.floor(time % 60);
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
 
   const renderPreview = () => {
@@ -85,15 +209,133 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
 
       case "video":
         return (
-          <div className="flex-1 flex items-center justify-center bg-black rounded-lg">
-            <video
-              src={fileUrl}
-              controls
-              className="max-w-full max-h-[70vh]"
-              autoPlay={false}
+          <div 
+            className="flex-1 flex flex-col bg-black rounded-lg overflow-hidden"
+            onMouseEnter={() => setShowControls(true)}
+            onMouseLeave={() => setShowControls(isPlaying ? false : true)}
+          >
+            {/* Video Element */}
+            <div className="relative flex-1 flex items-center justify-center">
+              <video
+                ref={videoRef}
+                src={fileUrl}
+                className="max-w-full max-h-[60vh] object-contain"
+                onTimeUpdate={handleTimeUpdate}
+                onLoadedMetadata={handleLoadedMetadata}
+                onEnded={handleVideoEnded}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                onClick={togglePlay}
+                playsInline
+              />
+              
+              {/* Play overlay button */}
+              {!isPlaying && (
+                <button
+                  onClick={togglePlay}
+                  className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity hover:bg-black/40"
+                >
+                  <div className="w-20 h-20 rounded-full bg-primary/90 flex items-center justify-center">
+                    <Play className="w-10 h-10 text-primary-foreground ml-1" />
+                  </div>
+                </button>
+              )}
+            </div>
+
+            {/* Video Controls */}
+            <div 
+              className={`p-4 bg-gradient-to-t from-black/90 to-transparent transition-opacity ${
+                showControls ? "opacity-100" : "opacity-0"
+              }`}
             >
-              Your browser does not support the video tag.
-            </video>
+              {/* Progress bar */}
+              <div className="mb-3">
+                <Slider
+                  value={[currentTime]}
+                  min={0}
+                  max={duration || 100}
+                  step={0.1}
+                  onValueChange={handleSeek}
+                  className="cursor-pointer"
+                />
+              </div>
+
+              {/* Control buttons */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={skipBackward}
+                    className="text-white hover:bg-white/20"
+                  >
+                    <SkipBack className="w-5 h-5" />
+                  </Button>
+                  
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={togglePlay}
+                    className="text-white hover:bg-white/20"
+                  >
+                    {isPlaying ? (
+                      <Pause className="w-6 h-6" />
+                    ) : (
+                      <Play className="w-6 h-6" />
+                    )}
+                  </Button>
+                  
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={skipForward}
+                    className="text-white hover:bg-white/20"
+                  >
+                    <SkipForward className="w-5 h-5" />
+                  </Button>
+
+                  <span className="text-white text-sm ml-2">
+                    {formatTime(currentTime)} / {formatTime(duration)}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {/* Volume control */}
+                  <div className="flex items-center gap-2 group">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={toggleMute}
+                      className="text-white hover:bg-white/20"
+                    >
+                      {isMuted || volume === 0 ? (
+                        <VolumeX className="w-5 h-5" />
+                      ) : (
+                        <Volume2 className="w-5 h-5" />
+                      )}
+                    </Button>
+                    <div className="w-24 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Slider
+                        value={[isMuted ? 0 : volume]}
+                        min={0}
+                        max={1}
+                        step={0.1}
+                        onValueChange={handleVolumeChange}
+                      />
+                    </div>
+                  </div>
+
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={toggleFullscreen}
+                    className="text-white hover:bg-white/20"
+                  >
+                    <Maximize className="w-5 h-5" />
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
         );
 
@@ -133,8 +375,12 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
                 Preview not available for this file type
               </p>
             </div>
-            <Button onClick={handleDownload} className="mt-4">
-              <Download className="w-4 h-4 mr-2" />
+            <Button onClick={handleDownload} className="mt-4" disabled={downloading}>
+              {downloading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4 mr-2" />
+              )}
               Download to View
             </Button>
           </div>
@@ -187,8 +433,17 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
                 <div className="w-px h-6 bg-border mx-2" />
               </>
             )}
-            <Button variant="ghost" size="icon" onClick={handleDownload} disabled={!fileUrl}>
-              <Download className="w-4 h-4" />
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={handleDownload} 
+              disabled={!fileUrl || downloading}
+            >
+              {downloading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
             </Button>
             <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)}>
               <X className="w-4 h-4" />
