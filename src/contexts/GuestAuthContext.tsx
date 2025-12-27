@@ -162,7 +162,15 @@ export const GuestAuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (createError) {
         console.error('Error creating guest:', createError);
-        return { error: 'Failed to create account' };
+        // Check for duplicate email
+        if (createError.code === '23505') {
+          return { error: 'An account with this email already exists. Please sign in instead.' };
+        }
+        return { error: `Failed to create account: ${createError.message}` };
+      }
+
+      if (!newGuest) {
+        return { error: 'Failed to create account - no data returned' };
       }
 
       // Add folder access
@@ -176,7 +184,7 @@ export const GuestAuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (accessError) {
         console.error('Error adding folder access:', accessError);
-        return { error: 'Account created but failed to add folder access' };
+        return { error: `Account created but failed to add folder access: ${accessError.message}` };
       }
 
       const guestUser: GuestUser = {
