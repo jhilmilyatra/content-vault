@@ -30,6 +30,7 @@ import {
   FolderArchive,
 } from 'lucide-react';
 import { GuestFilePreviewModal } from '@/components/guest/GuestFilePreviewModal';
+import { ZipProgressModal } from '@/components/guest/ZipProgressModal';
 
 interface GuestFileItem {
   id: string;
@@ -65,6 +66,9 @@ const GuestFolderView = () => {
   const [breadcrumbs, setBreadcrumbs] = useState<{ id: string; name: string }[]>([]);
   const [rootFolderId, setRootFolderId] = useState<string | null>(null);
   const [downloadingZip, setDownloadingZip] = useState(false);
+  const [zipModalOpen, setZipModalOpen] = useState(false);
+  const [zipStatus, setZipStatus] = useState<'preparing' | 'processing' | 'complete' | 'error'>('preparing');
+  const [zipError, setZipError] = useState<string | undefined>();
 
   useEffect(() => {
     if (!authLoading && !guest) {
@@ -210,13 +214,23 @@ const GuestFolderView = () => {
     }
   };
 
+  // Calculate total size of files for ZIP modal
+  const totalFilesSize = files.reduce((sum, f) => sum + f.size_bytes, 0);
+
   const handleDownloadFolderAsZip = async () => {
-    if (!guest || !folderId) return;
+    if (!guest || !folderId || files.length === 0) return;
     
+    // Open modal and set initial state
+    setZipModalOpen(true);
+    setZipStatus('preparing');
+    setZipError(undefined);
     setDownloadingZip(true);
+    
+    // Small delay to show preparing state
+    await new Promise(resolve => setTimeout(resolve, 500));
+    setZipStatus('processing');
+    
     try {
-      toast({ title: 'Creating ZIP file...', description: 'This may take a moment' });
-      
       const response = await supabase.functions.invoke('guest-folder-zip', {
         body: { guestId: guest.id, folderId },
       });
@@ -236,17 +250,20 @@ const GuestFolderView = () => {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       
-      toast({ title: 'Download started', description: 'ZIP file is downloading' });
+      setZipStatus('complete');
     } catch (error: any) {
       console.error('ZIP download error:', error);
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to download folder as ZIP',
-        variant: 'destructive',
-      });
+      setZipStatus('error');
+      setZipError(error.message || 'Failed to download folder as ZIP');
     } finally {
       setDownloadingZip(false);
     }
+  };
+
+  const handleZipModalClose = () => {
+    setZipModalOpen(false);
+    setZipStatus('preparing');
+    setZipError(undefined);
   };
 
   const handlePreview = (file: GuestFileItem) => {
@@ -535,6 +552,17 @@ const GuestFolderView = () => {
           setPreviewOpen(open);
           if (!open) setPreviewFile(null);
         }}
+      />
+
+      {/* ZIP Progress Modal */}
+      <ZipProgressModal
+        open={zipModalOpen}
+        onClose={handleZipModalClose}
+        folderName={folder?.name || 'Folder'}
+        totalFiles={files.length}
+        totalSize={totalFilesSize}
+        status={zipStatus}
+        errorMessage={zipError}
       />
     </div>
   );
