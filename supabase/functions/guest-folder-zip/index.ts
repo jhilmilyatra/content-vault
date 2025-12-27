@@ -113,38 +113,18 @@ Deno.serve(async (req) => {
 
     for (const { file, relativePath } of allFiles) {
       try {
-        // Try VPS first
-        let arrayBuffer: ArrayBuffer | null = null;
+        // Fetch from VPS only - no Supabase fallback for large file optimization
+        const vpsResponse = await fetch(`${VPS_CONFIG.endpoint}/files/${file.storage_path}`, {
+          headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` },
+        });
         
-        try {
-          const vpsResponse = await fetch(`${VPS_CONFIG.endpoint}/files/${file.storage_path}`, {
-            headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` },
-          });
-          
-          if (vpsResponse.ok) {
-            arrayBuffer = await vpsResponse.arrayBuffer();
-          }
-        } catch (e) {
-          console.log(`VPS fetch failed for ${file.name}:`, e);
-        }
-
-        // Fallback to Supabase storage
-        if (!arrayBuffer) {
-          const { data, error } = await supabaseAdmin.storage
-            .from("user-files")
-            .download(file.storage_path);
-          
-          if (!error && data) {
-            arrayBuffer = await data.arrayBuffer();
-          }
-        }
-
-        if (arrayBuffer) {
+        if (vpsResponse.ok) {
+          const arrayBuffer = await vpsResponse.arrayBuffer();
           const filePath = relativePath ? `${relativePath}/${file.original_name}` : file.original_name;
           zip.file(filePath, arrayBuffer);
           console.log(`Added to ZIP: ${filePath}`);
         } else {
-          console.warn(`Could not fetch file: ${file.original_name}`);
+          console.warn(`VPS fetch failed for ${file.original_name}: ${vpsResponse.status}`);
         }
       } catch (e) {
         console.error(`Error adding file ${file.name} to ZIP:`, e);
