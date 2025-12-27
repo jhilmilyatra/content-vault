@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo } from "react";
 import { motion } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -134,76 +134,79 @@ const Auth = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center px-4 py-12">
-      {/* Background effects */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,hsl(var(--primary)/0.08),transparent_50%)]" />
+    <div className="min-h-dvh bg-background flex items-center justify-center px-4 py-8 sm:py-12 safe-area-inset">
+      {/* Background effects - optimized for GPU */}
+      <div className="fixed inset-0 bg-gradient-radial pointer-events-none will-change-auto" aria-hidden="true" />
       
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
         className="w-full max-w-md relative z-10"
       >
         {/* Logo */}
-        <Link to="/" className="flex items-center justify-center gap-2 mb-8">
-          <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center shadow-lg">
-            <Cloud className="w-7 h-7 text-primary-foreground" />
+        <Link to="/" className="flex items-center justify-center gap-2 mb-6 sm:mb-8 touch-manipulation">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl gradient-primary flex items-center justify-center shadow-lg">
+            <Cloud className="w-6 h-6 sm:w-7 sm:h-7 text-primary-foreground" />
           </div>
         </Link>
 
-        <div className="p-8 rounded-2xl bg-card border border-border shadow-xl">
-          <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-foreground mb-2">
+        <div className="p-6 sm:p-8 rounded-2xl bg-card border border-border shadow-xl">
+          <div className="text-center mb-6 sm:mb-8">
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground mb-2">
               {isLogin ? "Welcome back" : "Create your account"}
             </h1>
-            <p className="text-muted-foreground">
+            <p className="text-sm sm:text-base text-muted-foreground">
               {isLogin ? "Sign in to your account to continue" : "Get started with CloudVault today"}
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {!isLogin && (
-              <div className="space-y-2">
-                <Label htmlFor="fullName">Full Name</Label>
+              <div className="space-y-1.5 sm:space-y-2">
+                <Label htmlFor="fullName" className="text-sm">Full Name</Label>
                 <Input
                   id="fullName"
                   type="text"
                   placeholder="John Doe"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  className={`h-12 bg-muted border-border ${errors.fullName ? 'border-destructive' : ''}`}
+                  className={`h-11 sm:h-12 bg-muted border-border text-base ${errors.fullName ? 'border-destructive' : ''}`}
                   disabled={isSubmitting}
+                  autoComplete="name"
                 />
                 {errors.fullName && (
-                  <p className="text-sm text-destructive">{errors.fullName}</p>
+                  <p className="text-xs sm:text-sm text-destructive">{errors.fullName}</p>
                 )}
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+            <div className="space-y-1.5 sm:space-y-2">
+              <Label htmlFor="email" className="text-sm">Email</Label>
               <Input
                 id="email"
                 type="email"
+                inputMode="email"
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className={`h-12 bg-muted border-border ${errors.email ? 'border-destructive' : ''}`}
+                className={`h-11 sm:h-12 bg-muted border-border text-base ${errors.email ? 'border-destructive' : ''}`}
                 disabled={isSubmitting}
+                autoComplete="email"
               />
               {errors.email && (
-                <p className="text-sm text-destructive">{errors.email}</p>
+                <p className="text-xs sm:text-sm text-destructive">{errors.email}</p>
               )}
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5 sm:space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password" className="text-sm">Password</Label>
                 {isLogin && (
                   <button
                     type="button"
                     onClick={() => setForgotPasswordOpen(true)}
-                    className="text-sm text-primary hover:underline"
+                    className="text-xs sm:text-sm text-primary hover:underline touch-manipulation"
                   >
                     Forgot password?
                   </button>
@@ -216,19 +219,21 @@ const Auth = () => {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className={`h-12 bg-muted border-border pr-12 ${errors.password ? 'border-destructive' : ''}`}
+                  className={`h-11 sm:h-12 bg-muted border-border pr-12 text-base ${errors.password ? 'border-destructive' : ''}`}
                   disabled={isSubmitting}
+                  autoComplete={isLogin ? "current-password" : "new-password"}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1 touch-manipulation"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
               {errors.password && (
-                <p className="text-sm text-destructive">{errors.password}</p>
+                <p className="text-xs sm:text-sm text-destructive">{errors.password}</p>
               )}
             </div>
 
@@ -236,7 +241,7 @@ const Auth = () => {
               type="submit" 
               variant="hero" 
               size="lg" 
-              className="w-full"
+              className="w-full h-11 sm:h-12 text-base touch-manipulation active:scale-[0.98] transition-transform"
               disabled={isSubmitting}
             >
               {isSubmitting ? (
@@ -250,8 +255,8 @@ const Auth = () => {
             </Button>
           </form>
 
-          <div className="mt-6 text-center">
-            <p className="text-sm text-muted-foreground">
+          <div className="mt-5 sm:mt-6 text-center">
+            <p className="text-xs sm:text-sm text-muted-foreground">
               {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
               <button
                 type="button"
@@ -259,7 +264,7 @@ const Auth = () => {
                   setIsLogin(!isLogin);
                   setErrors({});
                 }}
-                className="text-primary hover:underline font-medium"
+                className="text-primary hover:underline font-medium touch-manipulation"
               >
                 {isLogin ? "Create one" : "Sign in"}
               </button>
