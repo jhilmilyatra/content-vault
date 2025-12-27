@@ -41,3 +41,6 @@ verify_jwt = false
 
 [functions.guest-folder-zip]
 verify_jwt = false
+
+[functions.vps-owner-stats]
+verify_jwt = false
