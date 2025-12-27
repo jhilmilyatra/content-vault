@@ -80,40 +80,25 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch file from VPS
-    console.log(`Proxying file from VPS: ${VPS_CONFIG.endpoint}/files/${storagePath}`);
+    // Fetch file from VPS only - no Supabase fallback for large file optimization
+    console.log(`Fetching file from VPS: ${VPS_CONFIG.endpoint}/files/${storagePath}`);
     
     const vpsResponse = await fetch(`${VPS_CONFIG.endpoint}/files/${storagePath}`, {
       headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` },
     });
 
     if (!vpsResponse.ok) {
-      // Try Supabase storage fallback
-      const { data, error } = await supabaseAdmin.storage
-        .from("user-files")
-        .download(storagePath);
-
-      if (error || !data) {
-        return new Response(
-          JSON.stringify({ error: "File not found in storage" }),
-          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      return new Response(data, {
-        headers: {
-          ...corsHeaders,
-          "Content-Type": fileData.mime_type || "application/octet-stream",
-          "Content-Disposition": `inline; filename="${fileData.original_name}"`,
-        },
-      });
+      console.error(`VPS fetch failed: ${vpsResponse.status} ${vpsResponse.statusText}`);
+      return new Response(
+        JSON.stringify({ error: "File not found on storage server" }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // Stream the VPS response
+    // Stream the VPS response directly
     const contentType = vpsResponse.headers.get("Content-Type") || fileData.mime_type || "application/octet-stream";
-    const blob = await vpsResponse.blob();
-
-    return new Response(blob, {
+    
+    return new Response(vpsResponse.body, {
       headers: {
         ...corsHeaders,
         "Content-Type": contentType,
