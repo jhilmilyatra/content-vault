@@ -471,6 +471,36 @@ export type Database = {
           },
         ]
       }
+      owner_member_messages: {
+        Row: {
+          created_at: string
+          id: string
+          is_read: boolean
+          member_id: string
+          message: string
+          owner_id: string
+          sender_type: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          member_id: string
+          message: string
+          owner_id: string
+          sender_type: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          member_id?: string
+          message?: string
+          owner_id?: string
+          sender_type?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null

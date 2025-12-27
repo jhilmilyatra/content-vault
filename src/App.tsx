@@ -26,6 +26,8 @@ import SecuritySettings from "./pages/owner/SecuritySettings";
 import BillingOverview from "./pages/owner/BillingOverview";
 import StorageSettings from "./pages/owner/StorageSettings";
 import AdminPermissions from "./pages/owner/AdminPermissions";
+import OwnerGuestControls from "./pages/owner/OwnerGuestControls";
+import OwnerMemberChat from "./pages/owner/OwnerMemberChat";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUserManagement from "./pages/admin/AdminUserManagement";
 import ReportManagement from "./pages/admin/ReportManagement";
@@ -77,6 +79,8 @@ function App() {
               <Route path="/dashboard/audit" element={<ProtectedRoute requiredRole="owner"><AuditLogs /></ProtectedRoute>} />
               <Route path="/dashboard/storage" element={<ProtectedRoute requiredRole="owner"><StorageSettings /></ProtectedRoute>} />
               <Route path="/dashboard/admin-permissions" element={<ProtectedRoute requiredRole="owner"><AdminPermissions /></ProtectedRoute>} />
+              <Route path="/dashboard/guest-controls" element={<ProtectedRoute requiredRole="owner"><OwnerGuestControls /></ProtectedRoute>} />
+              <Route path="/dashboard/member-chat" element={<ProtectedRoute requiredRole="owner"><OwnerMemberChat /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </GuestAuthProvider>
