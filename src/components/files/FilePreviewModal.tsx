@@ -3,6 +3,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { FileItem, getFileUrl } from "@/lib/fileService";
+import { supabase } from "@/integrations/supabase/client";
 import { 
   Download, X, FileText, File, Loader2, ZoomIn, ZoomOut, RotateCw,
   Play, Pause, Volume2, VolumeX, Maximize, SkipBack, SkipForward
@@ -35,6 +36,10 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
     if (open && file) {
       loadFileUrl();
     } else {
+      // Clean up blob URL to prevent memory leaks
+      if (fileUrl && fileUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(fileUrl);
+      }
       setFileUrl(null);
       setZoom(1);
       setRotation(0);
@@ -48,8 +53,29 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
     if (!file) return;
     setLoading(true);
     try {
-      const url = await getFileUrl(file.storage_path);
-      setFileUrl(url);
+      // Get auth session for authenticated request
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        throw new Error("Not authenticated");
+      }
+
+      // Fetch file directly via edge function
+      const fileResponse = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`,
+        {
+          headers: {
+            Authorization: `Bearer ${sessionData.session.access_token}`,
+          },
+        }
+      );
+
+      if (!fileResponse.ok) {
+        throw new Error("Failed to fetch file");
+      }
+
+      const blob = await fileResponse.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      setFileUrl(blobUrl);
     } catch (error) {
       console.error("Error loading file:", error);
       toast({
@@ -63,12 +89,25 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
   };
 
   const handleDownload = async () => {
-    if (!file || !fileUrl) return;
+    if (!file) return;
     
     setDownloading(true);
     try {
-      // Fetch the file as a blob for proper download
-      const response = await fetch(fileUrl);
+      // Get auth session for authenticated request
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        throw new Error("Not authenticated");
+      }
+
+      // Get file via edge function
+      const downloadUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`;
+      
+      const response = await fetch(downloadUrl, {
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
+      });
+      
       if (!response.ok) throw new Error("Failed to fetch file");
       
       const blob = await response.blob();
