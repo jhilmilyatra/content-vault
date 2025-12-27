@@ -22,11 +22,13 @@ import {
   HardDrive,
   ShieldCheck,
   UserCheck,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import MemberOwnerChat from "./MemberOwnerChat";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -54,6 +56,8 @@ const adminNavItems = [
 const ownerNavItems = [
   { icon: LayoutDashboard, label: "Overview", path: "/dashboard" },
   { icon: Users, label: "Users", path: "/dashboard/users" },
+  { icon: UserCheck, label: "Guests", path: "/dashboard/guest-controls" },
+  { icon: MessageSquare, label: "Member Chat", path: "/dashboard/member-chat" },
   { icon: ShieldCheck, label: "Admin Permissions", path: "/dashboard/admin-permissions" },
   { icon: HardDrive, label: "Storage", path: "/dashboard/storage" },
   { icon: Shield, label: "Security", path: "/dashboard/security" },
@@ -67,6 +71,7 @@ const ownerNavItems = [
 
 const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const [collapsed, setCollapsed] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, role, signOut } = useAuth();
@@ -213,6 +218,11 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           {children}
         </main>
       </div>
+
+      {/* Member-Owner Chat for members */}
+      {role === "member" && (
+        <MemberOwnerChat isOpen={chatOpen} onClose={() => setChatOpen(!chatOpen)} />
+      )}
     </div>
   );
 };
