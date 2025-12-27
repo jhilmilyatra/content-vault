@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Search, Ban, UserX, MessageSquare, Users, Shield, RefreshCw } from "lucide-react";
+import { Search, Ban, UserX, Users, Shield, RefreshCw, KeyRound, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 
 interface GuestWithAccess {
@@ -33,7 +33,10 @@ const OwnerGuestControls = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedGuest, setSelectedGuest] = useState<GuestWithAccess | null>(null);
   const [banDialogOpen, setBanDialogOpen] = useState(false);
+  const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
   const [banReason, setBanReason] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [resetting, setResetting] = useState(false);
   const { toast } = useToast();
 
   const fetchGuests = async () => {
@@ -183,6 +186,46 @@ const OwnerGuestControls = () => {
     }
   };
 
+  const handleResetPassword = async () => {
+    if (!selectedGuest || !newPassword.trim()) return;
+
+    if (newPassword.length < 6) {
+      toast({
+        title: "Error",
+        description: "Password must be at least 6 characters",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setResetting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("reset-guest-password", {
+        body: { guestId: selectedGuest.id, newPassword }
+      });
+
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error || "Failed to reset password");
+
+      toast({
+        title: "Password Reset",
+        description: `Password for ${selectedGuest.email} has been reset.`,
+      });
+
+      setResetPasswordDialogOpen(false);
+      setNewPassword("");
+      setSelectedGuest(null);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to reset password",
+        variant: "destructive",
+      });
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const uniqueGuests = [...new Map(guests.map(g => [g.id, g])).values()];
   const bannedCount = uniqueGuests.filter(g => g.is_banned).length;
   const restrictedCount = guests.filter(g => g.is_restricted).length;
@@ -327,6 +370,17 @@ const OwnerGuestControls = () => {
                             <Button
                               variant="outline"
                               size="sm"
+                              onClick={() => {
+                                setSelectedGuest(guest);
+                                setResetPasswordDialogOpen(true);
+                              }}
+                            >
+                              <KeyRound className="h-4 w-4 mr-1" />
+                              Reset PW
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
                               onClick={() => handleRemoveAccess(guest)}
                             >
                               <UserX className="h-4 w-4 mr-1" />
@@ -376,6 +430,36 @@ const OwnerGuestControls = () => {
               onClick={handleBanGuest}
             >
               {selectedGuest?.is_banned ? "Unban" : "Ban"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset Password Dialog */}
+      <Dialog open={resetPasswordDialogOpen} onOpenChange={setResetPasswordDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset Guest Password</DialogTitle>
+            <DialogDescription>
+              Set a new password for {selectedGuest?.email}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">New Password</label>
+            <Input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Enter new password (min 6 characters)"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetPasswordDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleResetPassword} disabled={resetting || newPassword.length < 6}>
+              {resetting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Reset Password
             </Button>
           </DialogFooter>
         </DialogContent>

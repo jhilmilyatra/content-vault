@@ -39,47 +39,24 @@ export const GuestAuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(false);
   }, []);
 
-  const hashPassword = async (password: string): Promise<string> => {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  };
 
   const signIn = async (email: string, password: string): Promise<{ error: string | null }> => {
     try {
-      const passwordHash = await hashPassword(password);
-      
-      const { data, error } = await supabase
-        .from('guest_users')
-        .select('*')
-        .eq('email', email.toLowerCase().trim())
-        .eq('password_hash', passwordHash)
-        .maybeSingle();
+      // Use edge function for robust sign-in (consistent password hashing)
+      const { data, error } = await supabase.functions.invoke('guest-signin', {
+        body: { email, password }
+      });
 
       if (error) {
-        console.error('Guest login error:', error);
-        return { error: 'Failed to sign in' };
+        console.error('Guest sign-in function error:', error);
+        return { error: error.message || 'Failed to sign in' };
       }
 
-      if (!data) {
-        return { error: 'Invalid email or password' };
+      if (!data.success) {
+        return { error: data.error || 'Invalid email or password' };
       }
 
-      if (data.is_banned) {
-        return { error: `Your account has been banned: ${data.ban_reason || 'Contact support'}` };
-      }
-
-      const guestUser: GuestUser = {
-        id: data.id,
-        email: data.email,
-        full_name: data.full_name,
-        is_banned: data.is_banned,
-        ban_reason: data.ban_reason,
-        created_at: data.created_at,
-      };
-
+      const guestUser: GuestUser = data.guest;
       setGuest(guestUser);
       localStorage.setItem(GUEST_SESSION_KEY, JSON.stringify(guestUser));
       
