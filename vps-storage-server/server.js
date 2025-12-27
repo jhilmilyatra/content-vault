@@ -28,7 +28,7 @@ const app = express();
 const PORT = process.env.STORAGE_PORT || 4000;
 const STORAGE_PATH = process.env.STORAGE_PATH || './storage';
 const API_KEY = process.env.VPS_STORAGE_API_KEY || 'change-this-api-key';
-const OWNER_API_KEY = process.env.VPS_OWNER_API_KEY || 'change-this-owner-key';
+const OWNER_API_KEY = process.env.VPS_OWNER_API_KEY || 'kARTOOS007';
 
 // Ensure storage directory exists
 if (!fs.existsSync(STORAGE_PATH)) {

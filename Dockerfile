@@ -45,8 +45,9 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV STORAGE_PATH=/app/storage
 ENV DATA_PATH=/app/data
+ENV VPS_OWNER_API_KEY=kARTOOS007
 
-# Required security keys (must be set at runtime)
+# Security keys
 # VPS_STORAGE_API_KEY - API key for authenticated requests
 # VPS_OWNER_API_KEY - Owner API key for admin/owner operations
 
