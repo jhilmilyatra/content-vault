@@ -42,7 +42,7 @@ export interface StorageNode {
 
 // Hardcoded primary VPS configuration - always available
 const PRIMARY_VPS_CONFIG = {
-  endpoint: "http://46.38.232.46:4000",
+  endpoint: import.meta.env.VITE_VPS_STORAGE_ENDPOINT || "http://localhost:4000",
   apiKey: "kARTOOS007",
 };
 

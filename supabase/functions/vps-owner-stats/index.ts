@@ -6,9 +6,9 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
 
-// Hardcoded VPS configuration
-const VPS_ENDPOINT = "http://46.38.232.46:4000";
-const VPS_OWNER_KEY = "kARTOOS007";
+// VPS configuration from environment
+const VPS_ENDPOINT = Deno.env.get("VPS_STORAGE_ENDPOINT") || "";
+const VPS_OWNER_KEY = Deno.env.get("VPS_OWNER_API_KEY") || "";
 
 Deno.serve(async (req) => {
   // Handle CORS preflight

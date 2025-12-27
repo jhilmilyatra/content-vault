@@ -17,9 +17,9 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    // Primary VPS storage - hardcoded owner access
-    const envVpsEndpoint = "http://46.38.232.46:4000";
-    const envVpsOwnerKey = "kARTOOS007";
+    // Primary VPS storage - configured via environment
+    const envVpsEndpoint = Deno.env.get("VPS_STORAGE_ENDPOINT") || "";
+    const envVpsOwnerKey = Deno.env.get("VPS_OWNER_API_KEY") || "";
 
     const url = new URL(req.url);
     const storagePath = url.searchParams.get("path");
