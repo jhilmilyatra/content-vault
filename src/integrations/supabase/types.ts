@@ -325,6 +325,7 @@ export type Database = {
           is_read: boolean
           member_id: string
           message: string
+          read_at: string | null
           sender_type: string
         }
         Insert: {
@@ -334,6 +335,7 @@ export type Database = {
           is_read?: boolean
           member_id: string
           message: string
+          read_at?: string | null
           sender_type: string
         }
         Update: {
@@ -343,6 +345,7 @@ export type Database = {
           is_read?: boolean
           member_id?: string
           message?: string
+          read_at?: string | null
           sender_type?: string
         }
         Relationships: [
@@ -479,6 +482,7 @@ export type Database = {
           member_id: string
           message: string
           owner_id: string
+          read_at: string | null
           sender_type: string
         }
         Insert: {
@@ -488,6 +492,7 @@ export type Database = {
           member_id: string
           message: string
           owner_id: string
+          read_at?: string | null
           sender_type: string
         }
         Update: {
@@ -497,6 +502,7 @@ export type Database = {
           member_id?: string
           message?: string
           owner_id?: string
+          read_at?: string | null
           sender_type?: string
         }
         Relationships: []
@@ -682,6 +688,33 @@ export type Database = {
           updated_at?: string
           user_id?: string
           valid_until?: string | null
+        }
+        Relationships: []
+      }
+      typing_indicators: {
+        Row: {
+          chat_type: string
+          id: string
+          is_typing: boolean
+          target_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          chat_type: string
+          id?: string
+          is_typing?: boolean
+          target_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          chat_type?: string
+          id?: string
+          is_typing?: boolean
+          target_id?: string
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
