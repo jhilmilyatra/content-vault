@@ -137,10 +137,35 @@ const SharedLinks = () => {
 
   const copyLink = async (link: SharedLink) => {
     const url = `${window.location.origin}/share/${link.short_code}`;
-    await navigator.clipboard.writeText(url);
-    setCopiedId(link.id);
-    toast({ title: "Link copied to clipboard" });
-    setTimeout(() => setCopiedId(null), 2000);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(link.id);
+      toast({ title: "Link copied to clipboard" });
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (err) {
+      // Fallback for browsers that don't support clipboard API
+      const textArea = document.createElement('textarea');
+      textArea.value = url;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopiedId(link.id);
+        toast({ title: "Link copied to clipboard" });
+        setTimeout(() => setCopiedId(null), 2000);
+      } catch (e) {
+        toast({
+          title: "Failed to copy",
+          description: "Please copy the link manually",
+          variant: "destructive",
+        });
+      }
+      document.body.removeChild(textArea);
+    }
   };
 
   const openEditDialog = (link: SharedLink) => {

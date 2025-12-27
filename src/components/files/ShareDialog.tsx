@@ -102,10 +102,31 @@ const ShareDialog = ({ open, onOpenChange, fileId, fileName }: ShareDialogProps)
 
   const handleCopy = async () => {
     if (shareUrl) {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      toast.success('Link copied to clipboard!');
-      setTimeout(() => setCopied(false), 2000);
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        setCopied(true);
+        toast.success('Link copied to clipboard!');
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        // Fallback for browsers that don't support clipboard API
+        const textArea = document.createElement('textarea');
+        textArea.value = shareUrl;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          setCopied(true);
+          toast.success('Link copied to clipboard!');
+          setTimeout(() => setCopied(false), 2000);
+        } catch (e) {
+          toast.error('Failed to copy link. Please copy manually.');
+        }
+        document.body.removeChild(textArea);
+      }
     }
   };
 
