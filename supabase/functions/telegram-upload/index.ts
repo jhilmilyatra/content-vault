@@ -12,6 +12,15 @@ interface TelegramUploadRequest {
   folder_id?: string;
 }
 
+// Hash token using SHA-256
+async function hashToken(token: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(token);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -22,13 +31,22 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     
-    // Get API key from header
-    const apiKey = req.headers.get("x-api-key");
+    // Get API token from header
+    const apiToken = req.headers.get("x-api-key");
     
-    if (!apiKey) {
-      console.log("Missing API key");
+    if (!apiToken) {
+      console.log("Missing API token");
       return new Response(
-        JSON.stringify({ error: "Missing API key. Include x-api-key header." }),
+        JSON.stringify({ error: "Missing API token. Include x-api-key header." }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate token format (should be at least 32 chars for security)
+    if (apiToken.length < 32) {
+      console.log("Invalid API token format - too short");
+      return new Response(
+        JSON.stringify({ error: "Invalid API token format" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -36,32 +54,49 @@ Deno.serve(async (req) => {
     // Create admin client
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Verify API key by finding the user
-    // API key format: user_id:secret (we'll use first part as user_id)
-    const [userId, secret] = apiKey.split(":");
+    // Hash the provided token and look it up in the database
+    const tokenHash = await hashToken(apiToken);
     
-    if (!userId || !secret) {
-      console.log("Invalid API key format");
-      return new Response(
-        JSON.stringify({ error: "Invalid API key format. Use format: user_id:secret" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Verify user exists
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("user_id")
-      .eq("user_id", userId)
+    const { data: tokenRecord, error: tokenError } = await supabase
+      .from("api_tokens")
+      .select("id, user_id, is_active, expires_at")
+      .eq("token_hash", tokenHash)
       .single();
 
-    if (profileError || !profile) {
-      console.log("Invalid user ID:", profileError);
+    if (tokenError || !tokenRecord) {
+      console.log("Invalid API token - not found in database");
       return new Response(
-        JSON.stringify({ error: "Invalid API key - user not found" }),
+        JSON.stringify({ error: "Invalid API token" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Check if token is active
+    if (!tokenRecord.is_active) {
+      console.log("API token is deactivated");
+      return new Response(
+        JSON.stringify({ error: "API token has been deactivated" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Check if token has expired
+    if (tokenRecord.expires_at && new Date(tokenRecord.expires_at) < new Date()) {
+      console.log("API token has expired");
+      return new Response(
+        JSON.stringify({ error: "API token has expired" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const userId = tokenRecord.user_id;
+
+    // Update last_used_at for the token (non-blocking)
+    supabase
+      .from("api_tokens")
+      .update({ last_used_at: new Date().toISOString() })
+      .eq("id", tokenRecord.id)
+      .then(() => console.log("Updated token last_used_at"));
 
     // Parse request body
     const body: TelegramUploadRequest = await req.json();
@@ -74,17 +109,50 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Validate file_name (prevent path traversal)
+    if (file_name.includes("..") || file_name.includes("/") || file_name.includes("\\")) {
+      return new Response(
+        JSON.stringify({ error: "Invalid file name" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Limit file name length
+    if (file_name.length > 255) {
+      return new Response(
+        JSON.stringify({ error: "File name too long (max 255 characters)" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     console.log(`Processing upload for user ${userId}: ${file_name}`);
 
     // Decode base64 file data
-    const binaryString = atob(file_data);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
+    let bytes: Uint8Array;
+    try {
+      const binaryString = atob(file_data);
+      bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+    } catch (e) {
+      return new Response(
+        JSON.stringify({ error: "Invalid base64 file data" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Limit file size (50MB)
+    const maxFileSize = 50 * 1024 * 1024;
+    if (bytes.length > maxFileSize) {
+      return new Response(
+        JSON.stringify({ error: "File too large (max 50MB)" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Generate unique filename
-    const fileExt = file_name.split(".").pop() || "bin";
+    const fileExt = file_name.split(".").pop()?.toLowerCase() || "bin";
     const storageName = `${crypto.randomUUID()}.${fileExt}`;
     const storagePath = `${userId}/${storageName}`;
 
@@ -151,7 +219,7 @@ Deno.serve(async (req) => {
     console.error("Telegram upload error:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
     return new Response(
-      JSON.stringify({ error: "Internal server error", details: message }),
+      JSON.stringify({ error: "Internal server error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
