@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -11,6 +11,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Send, MessageSquare, X, Search, Crown, Users } from "lucide-react";
 import { format } from "date-fns";
+import TypingIndicator from "@/components/chat/TypingIndicator";
+import ReadReceipt from "@/components/chat/ReadReceipt";
 
 interface Guest {
   id: string;
@@ -28,6 +30,7 @@ interface GuestMessage {
   sender_type: "guest" | "member";
   message: string;
   is_read: boolean;
+  read_at?: string | null;
   created_at: string;
 }
 
@@ -38,6 +41,7 @@ interface OwnerMessage {
   sender_type: "owner" | "member";
   message: string;
   is_read: boolean;
+  read_at?: string | null;
   created_at: string;
 }
 
@@ -65,6 +69,11 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
   const [ownerNewMessage, setOwnerNewMessage] = useState("");
   const [ownerUnreadCount, setOwnerUnreadCount] = useState(0);
   
+  // Typing indicators
+  const [guestTyping, setGuestTyping] = useState(false);
+  const [ownerTyping, setOwnerTyping] = useState(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -74,7 +83,49 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [guestMessages, ownerMessages]);
+  }, [guestMessages, ownerMessages, guestTyping, ownerTyping]);
+
+  // Update typing indicator
+  const updateTypingStatus = async (chatType: string, targetId: string, typing: boolean) => {
+    if (!user) return;
+    try {
+      await supabase.from("typing_indicators").upsert(
+        {
+          user_id: user.id,
+          chat_type: chatType,
+          target_id: targetId,
+          is_typing: typing,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,chat_type,target_id" }
+      );
+    } catch (error) {
+      console.error("Typing status error:", error);
+    }
+  };
+
+  const handleGuestInputChange = (value: string) => {
+    setGuestNewMessage(value);
+    if (selectedGuest) {
+      updateTypingStatus("guest_member", selectedGuest.id, true);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        updateTypingStatus("guest_member", selectedGuest.id, false);
+      }, 2000);
+    }
+  };
+
+  const handleOwnerInputChange = async (value: string) => {
+    setOwnerNewMessage(value);
+    const { data: ownerId } = await supabase.rpc("get_owner_user_id");
+    if (ownerId) {
+      updateTypingStatus("owner_member", ownerId, true);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        updateTypingStatus("owner_member", ownerId, false);
+      }, 2000);
+    }
+  };
 
   // Fetch guests
   const fetchGuests = async () => {
@@ -83,10 +134,7 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
     try {
       const { data: guestAccess } = await supabase
         .from("guest_folder_access")
-        .select(`
-          guest_id,
-          guest_users!inner (id, email, full_name)
-        `)
+        .select(`guest_id, guest_users!inner (id, email, full_name)`)
         .eq("member_id", user.id);
 
       const uniqueGuests = new Map<string, Guest>();
@@ -161,7 +209,7 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
         .eq("guest_id", guestId)
         .order("created_at", { ascending: true });
 
-      setGuestMessages(data as GuestMessage[]);
+      setGuestMessages((data || []) as GuestMessage[]);
 
       await supabase
         .from("guest_messages")
@@ -193,7 +241,7 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
         .eq("member_id", user.id)
         .order("created_at", { ascending: true });
 
-      setOwnerMessages(data as OwnerMessage[]);
+      setOwnerMessages((data || []) as OwnerMessage[]);
 
       if (isOpen && activeTab === "owner") {
         await supabase
@@ -273,6 +321,14 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
           }
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "guest_messages", filter: `member_id=eq.${user.id}` },
+        (payload) => {
+          const updated = payload.new as GuestMessage;
+          setGuestMessages(prev => prev.map(m => m.id === updated.id ? updated : m));
+        }
+      )
       .subscribe();
 
     const ownerChannel = supabase
@@ -290,11 +346,49 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
           }
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "owner_member_messages", filter: `member_id=eq.${user.id}` },
+        (payload) => {
+          const updated = payload.new as OwnerMessage;
+          setOwnerMessages(prev => prev.map(m => m.id === updated.id ? updated : m));
+        }
+      )
+      .subscribe();
+
+    // Typing indicators subscription
+    const typingChannel = supabase
+      .channel("typing-indicators-member")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "typing_indicators" },
+        (payload: any) => {
+          const data = payload.new;
+          if (!data) return;
+          
+          // Check if it's for current guest chat
+          if (selectedGuest && data.target_id === user.id && data.chat_type === "guest_member") {
+            setGuestTyping(data.is_typing);
+            if (data.is_typing) {
+              setTimeout(() => setGuestTyping(false), 3000);
+            }
+          }
+          
+          // Check if it's owner typing
+          if (data.target_id === user.id && data.chat_type === "owner_member") {
+            setOwnerTyping(data.is_typing);
+            if (data.is_typing) {
+              setTimeout(() => setOwnerTyping(false), 3000);
+            }
+          }
+        }
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(guestChannel);
       supabase.removeChannel(ownerChannel);
+      supabase.removeChannel(typingChannel);
     };
   }, [user, selectedGuest, isOpen, activeTab]);
 
@@ -314,6 +408,9 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
 
     setSending(true);
     try {
+      if (selectedGuest) {
+        updateTypingStatus("guest_member", selectedGuest.id, false);
+      }
       await supabase.from("guest_messages").insert({
         member_id: user.id,
         guest_id: selectedGuest.id,
@@ -333,9 +430,7 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
 
     setSending(true);
     try {
-      // Use the security definer function to get owner id
-      const { data: ownerId, error: ownerError } = await supabase
-        .rpc("get_owner_user_id");
+      const { data: ownerId, error: ownerError } = await supabase.rpc("get_owner_user_id");
 
       if (ownerError) {
         console.error("Error getting owner:", ownerError);
@@ -347,6 +442,8 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
         toast({ title: "Error", description: "No owner configured for this system.", variant: "destructive" });
         return;
       }
+
+      updateTypingStatus("owner_member", ownerId, false);
 
       const { error: insertError } = await supabase.from("owner_member_messages").insert({
         owner_id: ownerId,
@@ -493,6 +590,7 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
                     </Avatar>
                     <div className="min-w-0">
                       <div className="font-medium text-xs truncate">{selectedGuest.full_name || selectedGuest.email}</div>
+                      {guestTyping && <TypingIndicator compact />}
                     </div>
                   </div>
                 </div>
@@ -507,12 +605,22 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
                             msg.sender_type === "member" ? "bg-primary text-primary-foreground" : "bg-muted"
                           }`}>
                             <p className="text-xs leading-relaxed">{msg.message}</p>
-                            <p className={`text-[10px] mt-1 ${msg.sender_type === "member" ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                              {format(new Date(msg.created_at), "h:mm a")}
-                            </p>
+                            <div className={`flex items-center justify-end gap-1 mt-1 ${msg.sender_type === "member" ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                              <span className="text-[10px]">{format(new Date(msg.created_at), "h:mm a")}</span>
+                              {msg.sender_type === "member" && (
+                                <ReadReceipt isRead={msg.is_read} readAt={msg.read_at} size="sm" />
+                              )}
+                            </div>
                           </div>
                         </div>
                       ))
+                    )}
+                    {guestTyping && (
+                      <div className="flex justify-start">
+                        <div className="bg-muted rounded-xl px-3 py-2">
+                          <TypingIndicator compact />
+                        </div>
+                      </div>
                     )}
                     <div ref={messagesEndRef} />
                   </div>
@@ -521,7 +629,7 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
                   <div className="flex gap-2">
                     <Input
                       value={guestNewMessage}
-                      onChange={(e) => setGuestNewMessage(e.target.value)}
+                      onChange={(e) => handleGuestInputChange(e.target.value)}
                       placeholder="Type a message..."
                       className="text-xs h-9"
                       onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendGuestMessage(); }}}
@@ -546,6 +654,19 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
 
         {/* Owner Chat Tab */}
         <TabsContent value="owner" className="flex-1 flex flex-col overflow-hidden m-0 data-[state=inactive]:hidden">
+          <div className="p-2 border-b bg-muted/20">
+            <div className="flex items-center gap-2">
+              <Avatar className="h-7 w-7">
+                <AvatarFallback className="text-xs bg-amber-500/20 text-amber-600">
+                  <Crown className="h-4 w-4" />
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <div className="font-medium text-xs">Owner Support</div>
+                {ownerTyping && <TypingIndicator compact />}
+              </div>
+            </div>
+          </div>
           <ScrollArea className="flex-1 p-3">
             <div className="space-y-2">
               {ownerMessages.length === 0 ? (
@@ -561,12 +682,22 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
                       msg.sender_type === "member" ? "bg-primary text-primary-foreground" : "bg-muted"
                     }`}>
                       <p className="text-xs leading-relaxed">{msg.message}</p>
-                      <p className={`text-[10px] mt-1 ${msg.sender_type === "member" ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                        {format(new Date(msg.created_at), "MMM d, h:mm a")}
-                      </p>
+                      <div className={`flex items-center justify-end gap-1 mt-1 ${msg.sender_type === "member" ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                        <span className="text-[10px]">{format(new Date(msg.created_at), "MMM d, h:mm a")}</span>
+                        {msg.sender_type === "member" && (
+                          <ReadReceipt isRead={msg.is_read} readAt={msg.read_at} size="sm" />
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))
+              )}
+              {ownerTyping && (
+                <div className="flex justify-start">
+                  <div className="bg-muted rounded-xl px-3 py-2">
+                    <TypingIndicator compact />
+                  </div>
+                </div>
               )}
               <div ref={messagesEndRef} />
             </div>
@@ -575,7 +706,7 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
             <div className="flex gap-2">
               <Input
                 value={ownerNewMessage}
-                onChange={(e) => setOwnerNewMessage(e.target.value)}
+                onChange={(e) => handleOwnerInputChange(e.target.value)}
                 placeholder="Message the owner..."
                 className="text-xs h-9"
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendOwnerMessage(); }}}
