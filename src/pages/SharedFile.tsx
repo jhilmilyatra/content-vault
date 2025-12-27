@@ -13,8 +13,8 @@ interface FileInfo {
   downloadUrl: string;
 }
 
-const SUPABASE_URL = "https://dgmxndvvsbjjbnoibaid.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnbXhuZHZ2c2JqamJub2liYWlkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY3MjY0MTAsImV4cCI6MjA4MjMwMjQxMH0.kARqZV1kMs_l1NugnVPNN09YUezeXyAUVE1o7x7hMtE";
+const SUPABASE_URL = "https://tdkxjulqprvppliwtvwb.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_Mo7TTw0d0vwjQUDGimwauQ_MiendM3Q";
 
 const SharedFile = () => {
   const { shortCode } = useParams<{ shortCode: string }>();

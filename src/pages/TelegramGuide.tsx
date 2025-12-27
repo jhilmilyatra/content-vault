@@ -23,7 +23,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 # Configuration
 API_KEY = "YOUR_API_KEY_HERE"  # Get from Settings -> API tab
-API_URL = "https://dgmxndvvsbjjbnoibaid.supabase.co/functions/v1/telegram-upload"
+API_URL = "https://tdkxjulqprvppliwtvwb.supabase.co/functions/v1/telegram-upload"
 TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -116,7 +116,7 @@ const fs = require('fs');
 
 // Configuration
 const API_KEY = 'YOUR_API_KEY_HERE'; // Get from Settings -> API tab
-const API_URL = 'https://dgmxndvvsbjjbnoibaid.supabase.co/functions/v1/telegram-upload';
+const API_URL = 'https://tdkxjulqprvppliwtvwb.supabase.co/functions/v1/telegram-upload';
 const TELEGRAM_BOT_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN';
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });

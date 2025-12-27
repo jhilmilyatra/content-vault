@@ -318,7 +318,7 @@ const Settings = () => {
               <div className="space-y-2">
                 <Label>Endpoint</Label>
                 <code className="block p-3 rounded-lg bg-muted text-sm font-mono break-all">
-                  POST https://dgmxndvvsbjjbnoibaid.supabase.co/functions/v1/telegram-upload
+                  POST https://tdkxjulqprvppliwtvwb.supabase.co/functions/v1/telegram-upload
                 </code>
               </div>
               <div className="space-y-2">
