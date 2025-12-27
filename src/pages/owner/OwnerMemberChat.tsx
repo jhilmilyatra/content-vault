@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Send, MessageSquare, Users, Search } from "lucide-react";
 import { format } from "date-fns";
+import TypingIndicator from "@/components/chat/TypingIndicator";
+import ReadReceipt from "@/components/chat/ReadReceipt";
 
 interface Member {
   user_id: string;
@@ -28,6 +30,7 @@ interface Message {
   sender_type: "owner" | "member";
   message: string;
   is_read: boolean;
+  read_at?: string | null;
   created_at: string;
 }
 
@@ -42,6 +45,8 @@ const OwnerMemberChat = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [memberTyping, setMemberTyping] = useState(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -50,12 +55,41 @@ const OwnerMemberChat = () => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, memberTyping]);
+
+  // Update typing indicator
+  const updateTypingStatus = async (memberId: string, typing: boolean) => {
+    if (!user) return;
+    try {
+      await supabase.from("typing_indicators").upsert(
+        {
+          user_id: user.id,
+          chat_type: "owner_member",
+          target_id: memberId,
+          is_typing: typing,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,chat_type,target_id" }
+      );
+    } catch (error) {
+      console.error("Typing status error:", error);
+    }
+  };
+
+  const handleInputChange = (value: string) => {
+    setNewMessage(value);
+    if (selectedMember) {
+      updateTypingStatus(selectedMember.user_id, true);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        updateTypingStatus(selectedMember.user_id, false);
+      }, 2000);
+    }
+  };
 
   const fetchMembers = async () => {
     setLoading(true);
     try {
-      // Get all members (users with member role)
       const { data: memberRoles, error: rolesError } = await supabase
         .from("user_roles")
         .select("user_id")
@@ -72,7 +106,6 @@ const OwnerMemberChat = () => {
         return;
       }
 
-      // Get member profiles
       const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
         .select("user_id, email, full_name")
@@ -80,7 +113,6 @@ const OwnerMemberChat = () => {
 
       if (profilesError) throw profilesError;
 
-      // Get unread message counts per member
       const { data: unreadMessages, error: unreadError } = await supabase
         .from("owner_member_messages")
         .select("member_id")
@@ -94,7 +126,6 @@ const OwnerMemberChat = () => {
         unreadCounts.set(msg.member_id, (unreadCounts.get(msg.member_id) || 0) + 1);
       });
 
-      // Get last messages for each member
       const { data: lastMessages, error: lastError } = await supabase
         .from("owner_member_messages")
         .select("member_id, message, created_at")
@@ -118,7 +149,6 @@ const OwnerMemberChat = () => {
         last_message_time: lastMessageMap.get(p.user_id)?.time,
       }));
 
-      // Sort by unread count, then by last message time
       formattedMembers.sort((a, b) => {
         if (b.unread_count !== a.unread_count) return b.unread_count - a.unread_count;
         if (a.last_message_time && b.last_message_time) {
@@ -150,9 +180,8 @@ const OwnerMemberChat = () => {
 
       if (error) throw error;
 
-      setMessages(data as Message[]);
+      setMessages((data || []) as Message[]);
 
-      // Mark messages as read
       await supabase
         .from("owner_member_messages")
         .update({ is_read: true })
@@ -160,7 +189,6 @@ const OwnerMemberChat = () => {
         .eq("sender_type", "member")
         .eq("is_read", false);
 
-      // Update unread count in local state
       setMembers(prev =>
         prev.map(m =>
           m.user_id === memberId ? { ...m, unread_count: 0 } : m
@@ -192,20 +220,17 @@ const OwnerMemberChat = () => {
 
   // Real-time subscription
   useEffect(() => {
+    if (!user) return;
+
     const channel = supabase
       .channel("owner-member-messages")
       .on(
         "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "owner_member_messages",
-        },
+        { event: "INSERT", schema: "public", table: "owner_member_messages" },
         (payload) => {
           const newMsg = payload.new as Message;
           if (selectedMember && newMsg.member_id === selectedMember.user_id) {
             setMessages(prev => [...prev, newMsg]);
-            // Mark as read if from member
             if (newMsg.sender_type === "member") {
               supabase
                 .from("owner_member_messages")
@@ -213,7 +238,6 @@ const OwnerMemberChat = () => {
                 .eq("id", newMsg.id);
             }
           } else if (newMsg.sender_type === "member") {
-            // Update unread count for other members
             setMembers(prev =>
               prev.map(m =>
                 m.user_id === newMsg.member_id
@@ -231,12 +255,41 @@ const OwnerMemberChat = () => {
           }
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "owner_member_messages" },
+        (payload) => {
+          const updated = payload.new as Message;
+          setMessages(prev => prev.map(m => m.id === updated.id ? updated : m));
+        }
+      )
+      .subscribe();
+
+    // Typing indicator subscription
+    const typingChannel = supabase
+      .channel("owner-typing-indicators")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "typing_indicators" },
+        (payload: any) => {
+          const data = payload.new;
+          if (!data || !selectedMember) return;
+          
+          if (data.target_id === user.id && data.chat_type === "owner_member") {
+            setMemberTyping(data.is_typing);
+            if (data.is_typing) {
+              setTimeout(() => setMemberTyping(false), 3000);
+            }
+          }
+        }
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(typingChannel);
     };
-  }, [selectedMember]);
+  }, [selectedMember, user]);
 
   useEffect(() => {
     if (searchQuery) {
@@ -258,6 +311,10 @@ const OwnerMemberChat = () => {
 
     setSending(true);
     try {
+      if (selectedMember) {
+        updateTypingStatus(selectedMember.user_id, false);
+      }
+
       const { error } = await supabase.from("owner_member_messages").insert({
         owner_id: user.id,
         member_id: selectedMember.user_id,
@@ -396,7 +453,7 @@ const OwnerMemberChat = () => {
                           {selectedMember.full_name || selectedMember.email}
                         </div>
                         <div className="text-sm text-muted-foreground">
-                          {selectedMember.email}
+                          {memberTyping ? <TypingIndicator /> : selectedMember.email}
                         </div>
                       </div>
                     </div>
@@ -418,18 +475,28 @@ const OwnerMemberChat = () => {
                             }`}
                           >
                             <p>{msg.message}</p>
-                            <p
-                              className={`text-xs mt-1 ${
+                            <div
+                              className={`flex items-center justify-end gap-1 text-xs mt-1 ${
                                 msg.sender_type === "owner"
                                   ? "text-primary-foreground/70"
                                   : "text-muted-foreground"
                               }`}
                             >
-                              {format(new Date(msg.created_at), "MMM d, h:mm a")}
-                            </p>
+                              <span>{format(new Date(msg.created_at), "MMM d, h:mm a")}</span>
+                              {msg.sender_type === "owner" && (
+                                <ReadReceipt isRead={msg.is_read} readAt={msg.read_at} />
+                              )}
+                            </div>
                           </div>
                         </div>
                       ))}
+                      {memberTyping && (
+                        <div className="flex justify-start">
+                          <div className="bg-muted rounded-lg px-4 py-2">
+                            <TypingIndicator name={selectedMember.full_name || selectedMember.email.split("@")[0]} />
+                          </div>
+                        </div>
+                      )}
                       <div ref={messagesEndRef} />
                     </div>
                   </ScrollArea>
@@ -437,7 +504,7 @@ const OwnerMemberChat = () => {
                     <div className="flex gap-2">
                       <Input
                         value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
+                        onChange={(e) => handleInputChange(e.target.value)}
                         placeholder="Type a message..."
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && !e.shiftKey) {
