@@ -21,6 +21,7 @@ import {
   Trash2,
   HardDrive,
   ShieldCheck,
+  UserCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +35,7 @@ interface DashboardLayoutProps {
 const memberNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: FolderOpen, label: "Files", path: "/dashboard/files" },
+  { icon: UserCheck, label: "Guests", path: "/dashboard/guests" },
   { icon: Link2, label: "Share Links", path: "/dashboard/links" },
   { icon: Trash2, label: "Trash", path: "/dashboard/trash" },
   { icon: BarChart3, label: "Analytics", path: "/dashboard/analytics" },

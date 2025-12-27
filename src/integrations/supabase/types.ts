@@ -317,6 +317,44 @@ export type Database = {
           },
         ]
       }
+      guest_messages: {
+        Row: {
+          created_at: string
+          guest_id: string
+          id: string
+          is_read: boolean
+          member_id: string
+          message: string
+          sender_type: string
+        }
+        Insert: {
+          created_at?: string
+          guest_id: string
+          id?: string
+          is_read?: boolean
+          member_id: string
+          message: string
+          sender_type: string
+        }
+        Update: {
+          created_at?: string
+          guest_id?: string
+          id?: string
+          is_read?: boolean
+          member_id?: string
+          message?: string
+          sender_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "guest_messages_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "guest_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       guest_users: {
         Row: {
           ban_reason: string | null
@@ -391,6 +429,47 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      member_notifications: {
+        Row: {
+          created_at: string
+          id: string
+          is_read: boolean
+          member_id: string
+          message: string | null
+          related_guest_id: string | null
+          title: string
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          member_id: string
+          message?: string | null
+          related_guest_id?: string | null
+          title: string
+          type: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          member_id?: string
+          message?: string | null
+          related_guest_id?: string | null
+          title?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "member_notifications_related_guest_id_fkey"
+            columns: ["related_guest_id"]
+            isOneToOne: false
+            referencedRelation: "guest_users"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
