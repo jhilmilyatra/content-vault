@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import { useIsMobile } from '@/hooks/use-mobile';
 import {
   FolderOpen,
   Loader2,
@@ -26,6 +27,7 @@ import {
   ChevronRight,
   Home,
   RefreshCw,
+  FolderArchive,
 } from 'lucide-react';
 import { GuestFilePreviewModal } from '@/components/guest/GuestFilePreviewModal';
 
@@ -50,6 +52,7 @@ const GuestFolderView = () => {
   const navigate = useNavigate();
   const { guest, loading: authLoading } = useGuestAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
 
   const [folder, setFolder] = useState<FolderItem | null>(null);
   const [files, setFiles] = useState<GuestFileItem[]>([]);
@@ -61,6 +64,7 @@ const GuestFolderView = () => {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [breadcrumbs, setBreadcrumbs] = useState<{ id: string; name: string }[]>([]);
   const [rootFolderId, setRootFolderId] = useState<string | null>(null);
+  const [downloadingZip, setDownloadingZip] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !guest) {
@@ -134,7 +138,6 @@ const GuestFolderView = () => {
   useEffect(() => {
     if (!folderId || !guest) return;
 
-    // Subscribe to file changes in this folder
     const filesChannel = supabase
       .channel(`guest-files-${folderId}`)
       .on(
@@ -146,13 +149,11 @@ const GuestFolderView = () => {
           filter: `folder_id=eq.${folderId}`,
         },
         () => {
-          // Refetch folder contents on any file change
           fetchFolderContents();
         }
       )
       .subscribe();
 
-    // Subscribe to subfolder changes
     const foldersChannel = supabase
       .channel(`guest-subfolders-${folderId}`)
       .on(
@@ -164,7 +165,6 @@ const GuestFolderView = () => {
           filter: `parent_id=eq.${folderId}`,
         },
         () => {
-          // Refetch folder contents on any folder change
           fetchFolderContents();
         }
       )
@@ -178,6 +178,8 @@ const GuestFolderView = () => {
 
   const handleDownload = async (file: GuestFileItem) => {
     try {
+      toast({ title: 'Preparing download...' });
+      
       const response = await supabase.functions.invoke('guest-file-stream', {
         body: {
           guestId: guest?.id,
@@ -193,6 +195,7 @@ const GuestFolderView = () => {
       const a = document.createElement('a');
       a.href = response.data.url;
       a.download = file.original_name;
+      a.target = '_blank';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -204,6 +207,45 @@ const GuestFolderView = () => {
         description: 'Failed to download file',
         variant: 'destructive',
       });
+    }
+  };
+
+  const handleDownloadFolderAsZip = async () => {
+    if (!guest || !folderId) return;
+    
+    setDownloadingZip(true);
+    try {
+      toast({ title: 'Creating ZIP file...', description: 'This may take a moment' });
+      
+      const response = await supabase.functions.invoke('guest-folder-zip', {
+        body: { guestId: guest.id, folderId },
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message || 'Failed to create ZIP');
+      }
+
+      // The response should be a blob
+      const blob = new Blob([response.data], { type: 'application/zip' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${folder?.name || 'folder'}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast({ title: 'Download started', description: 'ZIP file is downloading' });
+    } catch (error: any) {
+      console.error('ZIP download error:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to download folder as ZIP',
+        variant: 'destructive',
+      });
+    } finally {
+      setDownloadingZip(false);
     }
   };
 
@@ -242,14 +284,28 @@ const GuestFolderView = () => {
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => navigate('/guest-portal')}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 sm:py-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Button variant="ghost" size="sm" onClick={() => navigate('/guest-portal')} className="shrink-0">
+              <ArrowLeft className="w-4 h-4" />
+              <span className="hidden sm:inline ml-2">Back</span>
             </Button>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadFolderAsZip}
+              disabled={downloadingZip || files.length === 0}
+              className="text-xs sm:text-sm"
+            >
+              {downloadingZip ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <FolderArchive className="w-4 h-4" />
+              )}
+              <span className="hidden sm:inline ml-2">Download ZIP</span>
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -261,7 +317,7 @@ const GuestFolderView = () => {
             <div className="flex items-center border border-border rounded-lg overflow-hidden">
               <button
                 onClick={() => setViewMode('grid')}
-                className={`p-2 transition-colors ${
+                className={`p-1.5 sm:p-2 transition-colors ${
                   viewMode === 'grid' ? 'bg-muted text-foreground' : 'text-muted-foreground'
                 }`}
               >
@@ -269,7 +325,7 @@ const GuestFolderView = () => {
               </button>
               <button
                 onClick={() => setViewMode('list')}
-                className={`p-2 transition-colors ${
+                className={`p-1.5 sm:p-2 transition-colors ${
                   viewMode === 'list' ? 'bg-muted text-foreground' : 'text-muted-foreground'
                 }`}
               >
@@ -281,22 +337,22 @@ const GuestFolderView = () => {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
         {/* Breadcrumbs */}
-        <div className="flex items-center gap-1 text-sm mb-6 overflow-x-auto">
+        <div className="flex items-center gap-1 text-xs sm:text-sm mb-4 sm:mb-6 overflow-x-auto pb-2">
           <button
             onClick={() => navigate('/guest-portal')}
-            className="flex items-center gap-1 px-2 py-1 rounded hover:bg-muted transition-colors text-muted-foreground"
+            className="flex items-center gap-1 px-2 py-1 rounded hover:bg-muted transition-colors text-muted-foreground shrink-0"
           >
-            <Home className="w-4 h-4" />
-            Folders
+            <Home className="w-3 h-3 sm:w-4 sm:h-4" />
+            <span className="hidden sm:inline">Folders</span>
           </button>
           {breadcrumbs.map((crumb, index) => (
-            <div key={crumb.id} className="flex items-center">
-              <ChevronRight className="w-4 h-4 text-muted-foreground mx-1" />
+            <div key={crumb.id} className="flex items-center shrink-0">
+              <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4 text-muted-foreground mx-1" />
               <button
                 onClick={() => navigate(`/guest-portal/folder/${crumb.id}`)}
-                className={`px-2 py-1 rounded hover:bg-muted transition-colors ${
+                className={`px-2 py-1 rounded hover:bg-muted transition-colors truncate max-w-[100px] sm:max-w-none ${
                   index === breadcrumbs.length - 1
                     ? 'text-foreground font-medium'
                     : 'text-muted-foreground'
@@ -309,15 +365,15 @@ const GuestFolderView = () => {
         </div>
 
         {/* Folder Header */}
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-foreground mb-2">{folder.name}</h2>
+        <div className="mb-6 sm:mb-8">
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground mb-1 sm:mb-2">{folder.name}</h2>
           {folder.description && (
-            <p className="text-muted-foreground">{folder.description}</p>
+            <p className="text-sm text-muted-foreground">{folder.description}</p>
           )}
         </div>
 
         {/* Search */}
-        <div className="mb-6">
+        <div className="mb-4 sm:mb-6">
           <div className="relative max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -331,9 +387,9 @@ const GuestFolderView = () => {
 
         {/* Subfolders */}
         {filteredSubfolders.length > 0 && (
-          <div className="mb-8">
-            <h3 className="text-lg font-semibold text-foreground mb-4">Folders</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          <div className="mb-6 sm:mb-8">
+            <h3 className="text-base sm:text-lg font-semibold text-foreground mb-3 sm:mb-4">Folders</h3>
+            <div className={`grid gap-3 sm:gap-4 ${isMobile ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6'}`}>
               {filteredSubfolders.map((subfolder, index) => (
                 <motion.div
                   key={subfolder.id}
@@ -342,12 +398,12 @@ const GuestFolderView = () => {
                   transition={{ delay: index * 0.03 }}
                 >
                   <Card
-                    className="cursor-pointer hover:border-primary/50 hover:shadow-md transition-all group"
+                    className="cursor-pointer hover:border-primary/50 hover:shadow-md transition-all group touch-manipulation"
                     onClick={() => navigate(`/guest-portal/folder/${subfolder.id}`)}
                   >
-                    <CardContent className="p-4 text-center">
-                      <FolderOpen className="w-10 h-10 text-primary mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                      <p className="text-sm font-medium truncate">{subfolder.name}</p>
+                    <CardContent className="p-3 sm:p-4 text-center">
+                      <FolderOpen className="w-8 h-8 sm:w-10 sm:h-10 text-primary mx-auto mb-2 group-hover:scale-110 transition-transform" />
+                      <p className="text-xs sm:text-sm font-medium truncate">{subfolder.name}</p>
                     </CardContent>
                   </Card>
                 </motion.div>
@@ -359,9 +415,9 @@ const GuestFolderView = () => {
         {/* Files */}
         {filteredFiles.length > 0 && (
           <div>
-            <h3 className="text-lg font-semibold text-foreground mb-4">Files</h3>
+            <h3 className="text-base sm:text-lg font-semibold text-foreground mb-3 sm:mb-4">Files</h3>
             {viewMode === 'grid' ? (
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              <div className={`grid gap-3 sm:gap-4 ${isMobile ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6'}`}>
                 {filteredFiles.map((file, index) => {
                   const IconComponent = getFileIconComponent(file.mime_type);
                   return (
@@ -372,19 +428,19 @@ const GuestFolderView = () => {
                       transition={{ delay: index * 0.03 }}
                     >
                       <Card className="hover:border-primary/50 hover:shadow-md transition-all group">
-                        <CardContent className="p-4">
-                          <div className="text-center mb-3">
-                            <IconComponent className="w-10 h-10 text-muted-foreground mx-auto group-hover:text-primary transition-colors" />
+                        <CardContent className="p-3 sm:p-4">
+                          <div className="text-center mb-2 sm:mb-3">
+                            <IconComponent className="w-8 h-8 sm:w-10 sm:h-10 text-muted-foreground mx-auto group-hover:text-primary transition-colors" />
                           </div>
-                          <p className="text-sm font-medium truncate mb-1">{file.name}</p>
-                          <p className="text-xs text-muted-foreground mb-3">
+                          <p className="text-xs sm:text-sm font-medium truncate mb-1">{file.name}</p>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground mb-2 sm:mb-3">
                             {formatFileSize(file.size_bytes)}
                           </p>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 sm:gap-2">
                             <Button
                               variant="outline"
                               size="sm"
-                              className="flex-1"
+                              className="flex-1 h-8 touch-manipulation"
                               onClick={() => handlePreview(file)}
                             >
                               <Eye className="w-3 h-3" />
@@ -392,7 +448,7 @@ const GuestFolderView = () => {
                             <Button
                               variant="outline"
                               size="sm"
-                              className="flex-1"
+                              className="flex-1 h-8 touch-manipulation"
                               onClick={() => handleDownload(file)}
                             >
                               <Download className="w-3 h-3" />
@@ -413,21 +469,22 @@ const GuestFolderView = () => {
                       return (
                         <div
                           key={file.id}
-                          className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
+                          className="flex items-center justify-between p-3 sm:p-4 hover:bg-muted/50 transition-colors"
                         >
-                          <div className="flex items-center gap-3 min-w-0 flex-1">
-                            <IconComponent className="w-8 h-8 text-muted-foreground flex-shrink-0" />
+                          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                            <IconComponent className="w-6 h-6 sm:w-8 sm:h-8 text-muted-foreground flex-shrink-0" />
                             <div className="min-w-0">
-                              <p className="font-medium truncate">{file.name}</p>
-                              <p className="text-sm text-muted-foreground">
+                              <p className="font-medium text-sm truncate">{file.name}</p>
+                              <p className="text-xs text-muted-foreground">
                                 {formatFileSize(file.size_bytes)}
                               </p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
                             <Button
                               variant="ghost"
                               size="sm"
+                              className="h-8 w-8 p-0 touch-manipulation"
                               onClick={() => handlePreview(file)}
                             >
                               <Eye className="w-4 h-4" />
@@ -435,6 +492,7 @@ const GuestFolderView = () => {
                             <Button
                               variant="ghost"
                               size="sm"
+                              className="h-8 w-8 p-0 touch-manipulation"
                               onClick={() => handleDownload(file)}
                             >
                               <Download className="w-4 h-4" />
@@ -453,12 +511,12 @@ const GuestFolderView = () => {
         {/* Empty State */}
         {filteredSubfolders.length === 0 && filteredFiles.length === 0 && (
           <Card className="border-dashed">
-            <CardContent className="py-12 text-center">
-              <FolderOpen className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">
+            <CardContent className="py-8 sm:py-12 text-center">
+              <FolderOpen className="w-10 h-10 sm:w-12 sm:h-12 text-muted-foreground mx-auto mb-3 sm:mb-4" />
+              <h3 className="text-base sm:text-lg font-medium text-foreground mb-2">
                 {searchQuery ? 'No results found' : 'This folder is empty'}
               </h3>
-              <p className="text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 {searchQuery
                   ? 'Try a different search term'
                   : 'No files or folders here yet'}

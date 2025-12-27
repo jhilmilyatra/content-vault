@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
 
 // Primary VPS storage - hardcoded same as fileService
@@ -17,13 +18,13 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { guestId, storagePath, action } = await req.json();
-
-    console.log(`Guest file stream request: guestId=${guestId}, path=${storagePath}, action=${action}`);
+    const url = new URL(req.url);
+    const guestId = url.searchParams.get("guestId");
+    const storagePath = url.searchParams.get("path");
 
     if (!guestId || !storagePath) {
       return new Response(
-        JSON.stringify({ error: "Guest ID and storage path are required" }),
+        JSON.stringify({ error: "Missing parameters" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -42,7 +43,6 @@ Deno.serve(async (req) => {
       .single();
 
     if (guestError || !guestData) {
-      console.error("Guest not found:", guestError);
       return new Response(
         JSON.stringify({ error: "Guest not found" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -65,7 +65,6 @@ Deno.serve(async (req) => {
       .single();
 
     if (fileError || !fileData) {
-      console.error("File not found in DB:", fileError);
       return new Response(
         JSON.stringify({ error: "File not found" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -81,64 +80,51 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Try to get file from VPS first
-    console.log(`Fetching file from VPS: ${VPS_CONFIG.endpoint}/files/${storagePath}`);
+    // Fetch file from VPS
+    console.log(`Proxying file from VPS: ${VPS_CONFIG.endpoint}/files/${storagePath}`);
     
-    try {
-      const vpsResponse = await fetch(`${VPS_CONFIG.endpoint}/files/${storagePath}`, {
-        headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` },
-      });
-      
-      if (vpsResponse.ok) {
-        // VPS has the file - create a proxy URL through this edge function
-        // For get-url or download action, return the direct VPS URL wrapped in our proxy
-        const proxyUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/guest-file-proxy?guestId=${encodeURIComponent(guestId)}&path=${encodeURIComponent(storagePath)}`;
-        
-        console.log(`VPS file found, returning proxy URL`);
+    const vpsResponse = await fetch(`${VPS_CONFIG.endpoint}/files/${storagePath}`, {
+      headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` },
+    });
+
+    if (!vpsResponse.ok) {
+      // Try Supabase storage fallback
+      const { data, error } = await supabaseAdmin.storage
+        .from("user-files")
+        .download(storagePath);
+
+      if (error || !data) {
         return new Response(
-          JSON.stringify({ 
-            url: proxyUrl,
-            fileName: fileData.original_name,
-            mimeType: fileData.mime_type,
-            source: "vps"
-          }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: "File not found in storage" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
-      } else {
-        console.log(`VPS returned ${vpsResponse.status}, trying Supabase storage`);
       }
-    } catch (vpsError) {
-      console.error("VPS fetch error:", vpsError);
+
+      return new Response(data, {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": fileData.mime_type || "application/octet-stream",
+          "Content-Disposition": `inline; filename="${fileData.original_name}"`,
+        },
+      });
     }
 
-    // Fallback: Try Supabase storage
-    console.log("Trying Supabase storage fallback...");
-    const { data: signedUrlData, error: signedUrlError } = await supabaseAdmin
-      .storage
-      .from("user-files")
-      .createSignedUrl(storagePath, 3600);
+    // Stream the VPS response
+    const contentType = vpsResponse.headers.get("Content-Type") || fileData.mime_type || "application/octet-stream";
+    const blob = await vpsResponse.blob();
 
-    if (signedUrlError || !signedUrlData?.signedUrl) {
-      console.error("Supabase signed URL error:", signedUrlError);
-      return new Response(
-        JSON.stringify({ error: "File not found in storage" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    return new Response(
-      JSON.stringify({ 
-        url: signedUrlData.signedUrl,
-        fileName: fileData.original_name,
-        mimeType: fileData.mime_type,
-        source: "supabase"
-      }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return new Response(blob, {
+      headers: {
+        ...corsHeaders,
+        "Content-Type": contentType,
+        "Content-Disposition": `inline; filename="${fileData.original_name}"`,
+        "Cache-Control": "public, max-age=3600",
+      },
+    });
   } catch (error) {
-    console.error("Guest file stream error:", error);
+    console.error("Guest file proxy error:", error);
     return new Response(
-      JSON.stringify({ error: "An unexpected error occurred" }),
+      JSON.stringify({ error: "Failed to fetch file" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
@@ -151,7 +137,6 @@ async function verifyGuestFileAccess(
 ): Promise<boolean> {
   if (!folderId) return false;
 
-  // Get all shared folder IDs the guest has access to
   const { data: accessData } = await supabase
     .from("guest_folder_access")
     .select("folder_share_id")
@@ -164,7 +149,6 @@ async function verifyGuestFileAccess(
 
   const folderShareIds = accessData.map((a: any) => a.folder_share_id);
 
-  // Get folder_ids from folder_shares
   const { data: sharesData } = await supabase
     .from("folder_shares")
     .select("folder_id")
@@ -177,12 +161,10 @@ async function verifyGuestFileAccess(
     return false;
   }
 
-  // Check if file's folder is one of the shared folders
   if (sharedFolderIds.includes(folderId)) {
     return true;
   }
 
-  // Check if file's folder is a subfolder of any shared folder
   let currentId = folderId;
   const visited = new Set<string>();
 
