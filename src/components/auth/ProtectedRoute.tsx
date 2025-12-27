@@ -7,6 +7,22 @@ interface ProtectedRouteProps {
   requiredRole?: 'owner' | 'admin' | 'member';
 }
 
+/**
+ * ProtectedRoute - Client-side route protection component
+ * 
+ * SECURITY NOTE: This component provides client-side role checks for UX purposes only.
+ * It prevents unauthorized users from seeing restricted UI, but it is NOT a security boundary.
+ * 
+ * All sensitive operations are protected server-side through:
+ * 1. Database RLS (Row Level Security) policies that validate user roles
+ * 2. Edge functions (admin-suspend-user, owner-update-user, create-user, reset-user-password)
+ *    that validate roles server-side before performing any operations
+ * 3. The has_role() SECURITY DEFINER function for role verification in RLS policies
+ * 
+ * Client-side checks can be bypassed by determined attackers, so we never rely on them
+ * for actual security - only for improving user experience by hiding inaccessible UI.
+ */
+
 const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) => {
   const { user, role, loading } = useAuth();
   const location = useLocation();
