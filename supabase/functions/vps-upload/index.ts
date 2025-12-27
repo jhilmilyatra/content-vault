@@ -109,14 +109,10 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Generate unique file path
-    const fileExt = fileName.split(".").pop();
-    const uniqueFileName = `${crypto.randomUUID()}.${fileExt}`;
-    const storagePath = `${user.id}/${uniqueFileName}`;
-
     let fileUrl: string;
     let storageType: "vps" | "cloud";
     let usedNode: string | null = null;
+    let storagePath: string;
 
     // Determine which VPS to use (priority: custom > header > env)
     const vpsEndpoint = customVpsEndpoint || headerVpsEndpoint || envVpsEndpoint;
@@ -127,6 +123,9 @@ Deno.serve(async (req) => {
       try {
         console.log(`📦 Uploading to VPS: ${vpsEndpoint}`);
         
+        // Convert file data to base64
+        const base64Data = btoa(String.fromCharCode(...fileData));
+        
         const vpsResponse = await fetch(`${vpsEndpoint}/upload-base64`, {
           method: "POST",
           headers: {
@@ -134,28 +133,36 @@ Deno.serve(async (req) => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            path: storagePath,
-            fileName: uniqueFileName,
+            fileName: fileName,
             originalName: fileName,
             mimeType: mimeType,
-            data: btoa(String.fromCharCode(...fileData)),
+            data: base64Data,
             userId: user.id,
           }),
         });
 
         if (!vpsResponse.ok) {
           const errorText = await vpsResponse.text();
+          console.error(`VPS response error: ${errorText}`);
           throw new Error(`VPS upload failed: ${vpsResponse.status} - ${errorText}`);
         }
 
         const vpsResult = await vpsResponse.json();
-        fileUrl = vpsResult.url || `${vpsEndpoint}/files/${storagePath}`;
+        
+        // Use the path returned by VPS server (it generates the actual filename)
+        storagePath = vpsResult.path;
+        fileUrl = `${vpsEndpoint}${vpsResult.url}`;
         storageType = "vps";
         usedNode = vpsEndpoint;
         
         console.log(`✅ VPS upload successful: ${storagePath}`);
       } catch (vpsError) {
         console.error("VPS upload error, falling back to cloud:", vpsError);
+        
+        // Generate cloud storage path for fallback
+        const fileExt = fileName.split(".").pop();
+        const uniqueFileName = `${crypto.randomUUID()}.${fileExt}`;
+        storagePath = `${user.id}/${uniqueFileName}`;
         
         // Fallback to Supabase storage
         const { error: uploadError } = await supabase.storage
@@ -177,6 +184,11 @@ Deno.serve(async (req) => {
     } else {
       // Use Supabase storage directly
       console.log("☁️ Uploading to cloud storage (no VPS configured)");
+      
+      // Generate cloud storage path
+      const fileExt = fileName.split(".").pop();
+      const uniqueFileName = `${crypto.randomUUID()}.${fileExt}`;
+      storagePath = `${user.id}/${uniqueFileName}`;
       
       const { error: uploadError } = await supabase.storage
         .from("user-files")
