@@ -33,11 +33,5 @@ verify_jwt = false
 [functions.guest-folder-contents]
 verify_jwt = false
 
-[functions.reset-guest-password]
-verify_jwt = false
-
-[functions.guest-messages]
-verify_jwt = false
-
-[functions.guest-folders]
+[functions.guest-file-stream]
 verify_jwt = false
