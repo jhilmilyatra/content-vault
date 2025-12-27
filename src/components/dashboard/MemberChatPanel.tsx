@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Send, MessageSquare, X, Search, Crown, Users } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { Send, MessageSquare, X, Search, Crown, Users, ChevronLeft } from "lucide-react";
 import { format } from "date-fns";
 import TypingIndicator from "@/components/chat/TypingIndicator";
 import ReadReceipt from "@/components/chat/ReadReceipt";
@@ -53,7 +54,9 @@ interface MemberChatPanelProps {
 const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<"guests" | "owner">("guests");
+  const [showGuestChat, setShowGuestChat] = useState(false);
   
   // Guest chat state
   const [guests, setGuests] = useState<Guest[]>([]);
@@ -76,6 +79,18 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
   
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Handle selecting a guest on mobile
+  const handleSelectGuest = useCallback((guest: Guest) => {
+    setSelectedGuest(guest);
+    if (isMobile) {
+      setShowGuestChat(true);
+    }
+  }, [isMobile]);
+
+  const handleBackToList = useCallback(() => {
+    setShowGuestChat(false);
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -463,23 +478,24 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
     }
   };
 
-  const getInitials = (name: string | null, email: string) => {
+  const getInitials = useCallback((name: string | null, email: string) => {
     if (name) return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
     return email[0].toUpperCase();
-  };
+  }, []);
 
   const totalUnread = guestTotalUnread + ownerUnreadCount;
 
+  // Closed state - floating button
   if (!isOpen) {
     return (
       <Button
         onClick={onClose}
-        className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full shadow-lg"
+        className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 h-12 w-12 sm:h-14 sm:w-14 rounded-full shadow-lg touch-manipulation active:scale-95 transition-transform"
         size="icon"
       >
-        <MessageSquare className="h-6 w-6" />
+        <MessageSquare className="h-5 w-5 sm:h-6 sm:w-6" />
         {totalUnread > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-[22px] h-[22px] rounded-full bg-destructive text-destructive-foreground text-xs font-bold flex items-center justify-center px-1">
+          <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] sm:min-w-[22px] sm:h-[22px] rounded-full bg-destructive text-destructive-foreground text-[10px] sm:text-xs font-bold flex items-center justify-center px-1">
             {totalUnread > 99 ? "99+" : totalUnread}
           </span>
         )}
@@ -487,11 +503,245 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
     );
   }
 
+  // Mobile full-screen layout
+  if (isMobile) {
+    return (
+      <div className="fixed inset-0 z-50 bg-background flex flex-col safe-area-inset">
+        <div className="flex items-center justify-between h-14 px-4 border-b bg-muted/30">
+          <h2 className="text-base font-semibold">Messages</h2>
+          <Button variant="ghost" size="icon" className="h-10 w-10 touch-manipulation" onClick={onClose}>
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
+
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "guests" | "owner")} className="flex-1 flex flex-col overflow-hidden">
+          <TabsList className="w-full rounded-none border-b bg-transparent h-12 p-0">
+            <TabsTrigger
+              value="guests"
+              className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent h-full gap-2 touch-manipulation"
+            >
+              <Users className="h-4 w-4" />
+              Guests
+              {guestTotalUnread > 0 && (
+                <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
+                  {guestTotalUnread}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger
+              value="owner"
+              className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent h-full gap-2 touch-manipulation"
+            >
+              <Crown className="h-4 w-4" />
+              Owner
+              {ownerUnreadCount > 0 && (
+                <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
+                  {ownerUnreadCount}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Mobile Guest Chat Tab */}
+          <TabsContent value="guests" className="flex-1 flex flex-col overflow-hidden m-0 data-[state=inactive]:hidden">
+            {!showGuestChat ? (
+              // Guest list view
+              <div className="flex-1 flex flex-col">
+                <div className="p-3 border-b">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search guests..."
+                      value={guestSearchQuery}
+                      onChange={(e) => setGuestSearchQuery(e.target.value)}
+                      className="pl-10 h-10 text-sm"
+                    />
+                  </div>
+                </div>
+                <ScrollArea className="flex-1">
+                  {filteredGuests.length === 0 ? (
+                    <div className="p-6 text-center text-muted-foreground">No guests</div>
+                  ) : (
+                    filteredGuests.map((guest) => (
+                      <div
+                        key={guest.id}
+                        className="p-3 border-b cursor-pointer hover:bg-muted/50 active:bg-muted transition-colors touch-manipulation"
+                        onClick={() => handleSelectGuest(guest)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-10 w-10">
+                            <AvatarFallback className="text-sm bg-primary/10 text-primary">
+                              {getInitials(guest.full_name, guest.email)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-sm truncate">
+                                {guest.full_name || guest.email.split("@")[0]}
+                              </span>
+                              {guest.unread_count > 0 && (
+                                <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
+                                  {guest.unread_count}
+                                </Badge>
+                              )}
+                            </div>
+                            {guest.last_message && (
+                              <p className="text-xs text-muted-foreground truncate mt-0.5">{guest.last_message}</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </ScrollArea>
+              </div>
+            ) : selectedGuest && (
+              // Guest chat view
+              <div className="flex-1 flex flex-col">
+                <div className="p-3 border-b bg-muted/20 flex items-center gap-3">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 flex-shrink-0 touch-manipulation"
+                    onClick={handleBackToList}
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Avatar className="h-9 w-9">
+                    <AvatarFallback className="text-sm bg-primary/10 text-primary">
+                      {getInitials(selectedGuest.full_name, selectedGuest.email)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-sm truncate">{selectedGuest.full_name || selectedGuest.email}</div>
+                    {guestTyping && <TypingIndicator compact />}
+                  </div>
+                </div>
+                <ScrollArea className="flex-1 p-3">
+                  <div className="space-y-2">
+                    {guestMessages.length === 0 ? (
+                      <div className="text-center text-muted-foreground py-12 text-sm">No messages yet</div>
+                    ) : (
+                      guestMessages.map((msg) => (
+                        <div key={msg.id} className={`flex ${msg.sender_type === "member" ? "justify-end" : "justify-start"}`}>
+                          <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
+                            msg.sender_type === "member" ? "bg-primary text-primary-foreground" : "bg-muted"
+                          }`}>
+                            <p className="text-sm leading-relaxed">{msg.message}</p>
+                            <div className={`flex items-center justify-end gap-1 mt-1 ${msg.sender_type === "member" ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                              <span className="text-[10px]">{format(new Date(msg.created_at), "h:mm a")}</span>
+                              {msg.sender_type === "member" && (
+                                <ReadReceipt isRead={msg.is_read} readAt={msg.read_at} size="sm" />
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                    {guestTyping && (
+                      <div className="flex justify-start">
+                        <div className="bg-muted rounded-2xl px-4 py-2.5">
+                          <TypingIndicator compact />
+                        </div>
+                      </div>
+                    )}
+                    <div ref={messagesEndRef} />
+                  </div>
+                </ScrollArea>
+                <div className="p-3 border-t bg-muted/20">
+                  <div className="flex gap-2">
+                    <Input
+                      value={guestNewMessage}
+                      onChange={(e) => handleGuestInputChange(e.target.value)}
+                      placeholder="Type a message..."
+                      className="text-base h-11"
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendGuestMessage(); }}}
+                    />
+                    <Button size="icon" className="h-11 w-11 flex-shrink-0 touch-manipulation" onClick={handleSendGuestMessage} disabled={sending || !guestNewMessage.trim()}>
+                      <Send className="h-5 w-5" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Mobile Owner Chat Tab */}
+          <TabsContent value="owner" className="flex-1 flex flex-col overflow-hidden m-0 data-[state=inactive]:hidden">
+            <div className="p-3 border-b bg-muted/20">
+              <div className="flex items-center gap-3">
+                <Avatar className="h-10 w-10">
+                  <AvatarFallback className="text-sm bg-amber-500/20 text-amber-600">
+                    <Crown className="h-5 w-5" />
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0">
+                  <div className="font-medium text-sm">Owner Support</div>
+                  {ownerTyping && <TypingIndicator compact />}
+                </div>
+              </div>
+            </div>
+            <ScrollArea className="flex-1 p-3">
+              <div className="space-y-2">
+                {ownerMessages.length === 0 ? (
+                  <div className="text-center text-muted-foreground py-12">
+                    <Crown className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                    <p className="text-base font-medium">Contact the Owner</p>
+                    <p className="text-sm text-muted-foreground mt-1">Send a message to get help or support</p>
+                  </div>
+                ) : (
+                  ownerMessages.map((msg) => (
+                    <div key={msg.id} className={`flex ${msg.sender_type === "member" ? "justify-end" : "justify-start"}`}>
+                      <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
+                        msg.sender_type === "member" ? "bg-primary text-primary-foreground" : "bg-muted"
+                      }`}>
+                        <p className="text-sm leading-relaxed">{msg.message}</p>
+                        <div className={`flex items-center justify-end gap-1 mt-1 ${msg.sender_type === "member" ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                          <span className="text-[10px]">{format(new Date(msg.created_at), "MMM d, h:mm a")}</span>
+                          {msg.sender_type === "member" && (
+                            <ReadReceipt isRead={msg.is_read} readAt={msg.read_at} size="sm" />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+                {ownerTyping && (
+                  <div className="flex justify-start">
+                    <div className="bg-muted rounded-2xl px-4 py-2.5">
+                      <TypingIndicator compact />
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+            </ScrollArea>
+            <div className="p-3 border-t bg-muted/20">
+              <div className="flex gap-2">
+                <Input
+                  value={ownerNewMessage}
+                  onChange={(e) => handleOwnerInputChange(e.target.value)}
+                  placeholder="Message the owner..."
+                  className="text-base h-11"
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendOwnerMessage(); }}}
+                />
+                <Button size="icon" className="h-11 w-11 flex-shrink-0 touch-manipulation" onClick={handleSendOwnerMessage} disabled={sending || !ownerNewMessage.trim()}>
+                  <Send className="h-5 w-5" />
+                </Button>
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
+    );
+  }
+
+  // Desktop layout
   return (
     <Card className="fixed bottom-6 right-6 w-[420px] h-[520px] z-50 flex flex-col shadow-2xl border-2">
       <CardHeader className="flex flex-row items-center justify-between py-3 px-4 border-b bg-muted/30">
         <CardTitle className="text-base font-semibold">Messages</CardTitle>
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
+        <Button variant="ghost" size="icon" className="h-8 w-8 touch-manipulation" onClick={onClose}>
           <X className="h-4 w-4" />
         </Button>
       </CardHeader>
