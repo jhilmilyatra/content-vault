@@ -44,9 +44,14 @@ const Auth = () => {
   const validateForm = () => {
     const newErrors: { email?: string; password?: string; fullName?: string } = {};
     
-    const emailResult = emailSchema.safeParse(email);
+    // Normalize email (trim spaces) before validation
+    const normalizedEmail = email.trim();
+    const emailResult = emailSchema.safeParse(normalizedEmail);
     if (!emailResult.success) {
       newErrors.email = emailResult.error.errors[0].message;
+    } else if (normalizedEmail !== email) {
+      // Update state to cleaned email so subsequent submits use the normalized value
+      setEmail(normalizedEmail);
     }
 
     const passwordResult = passwordSchema.safeParse(password);
@@ -73,8 +78,10 @@ const Auth = () => {
     setIsSubmitting(true);
 
     try {
+      const normalizedEmail = email.trim();
+
       if (isLogin) {
-        const { error } = await signIn(email, password);
+        const { error } = await signIn(normalizedEmail, password);
         if (error) {
           if (error.message.includes("Invalid login credentials")) {
             toast({
@@ -97,7 +104,7 @@ const Auth = () => {
           navigate("/dashboard");
         }
       } else {
-        const { error } = await signUp(email, password, fullName);
+        const { error } = await signUp(normalizedEmail, password, fullName);
         if (error) {
           if (error.message.includes("already registered")) {
             toast({
