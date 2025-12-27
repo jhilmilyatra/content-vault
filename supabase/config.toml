@@ -35,3 +35,9 @@ verify_jwt = false
 
 [functions.guest-file-stream]
 verify_jwt = false
+
+[functions.guest-file-proxy]
+verify_jwt = false
+
+[functions.guest-folder-zip]
+verify_jwt = false

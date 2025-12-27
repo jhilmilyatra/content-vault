@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
+import { useIsMobile } from '@/hooks/use-mobile';
 import {
   ArrowLeft,
   Loader2,
@@ -16,7 +17,6 @@ import {
   User,
   ChevronLeft,
 } from 'lucide-react';
-import { useIsMobile } from '@/hooks/use-mobile';
 
 interface Message {
   id: string;
@@ -50,6 +50,7 @@ const GuestHelpDesk = () => {
   const [sending, setSending] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!authLoading && !guest) {
@@ -57,7 +58,6 @@ const GuestHelpDesk = () => {
     }
   }, [guest, authLoading, navigate]);
 
-  // Fetch conversations via edge function
   const fetchConversations = async () => {
     if (!guest) return;
 
@@ -87,7 +87,6 @@ const GuestHelpDesk = () => {
     fetchConversations();
   }, [guest]);
 
-  // Fetch messages via edge function
   const fetchMessages = async (memberId: string) => {
     if (!guest) return;
 
@@ -109,7 +108,6 @@ const GuestHelpDesk = () => {
           sender_type: m.sender_type as 'guest' | 'member'
         })));
         
-        // Update unread count in conversations
         setConversations(prev => prev.map(c => 
           c.member_id === memberId ? { ...c, unread_count: 0 } : c
         ));
@@ -129,7 +127,6 @@ const GuestHelpDesk = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Real-time subscription for new messages
   useEffect(() => {
     if (!guest) return;
 
@@ -148,7 +145,6 @@ const GuestHelpDesk = () => {
           
           if (selectedMember && newMsg.member_id === selectedMember) {
             setMessages((prev) => [...prev, newMsg]);
-            // Mark as read via edge function
             if (newMsg.sender_type === 'member') {
               supabase.functions.invoke('guest-messages', {
                 body: { 
@@ -160,7 +156,6 @@ const GuestHelpDesk = () => {
               });
             }
           } else if (newMsg.sender_type === 'member') {
-            // Update unread count
             setConversations(prev => prev.map(c => 
               c.member_id === newMsg.member_id 
                 ? { ...c, unread_count: c.unread_count + 1, last_message: newMsg.message, last_message_at: newMsg.created_at }
@@ -185,6 +180,7 @@ const GuestHelpDesk = () => {
 
   const handleBackToList = () => {
     setShowChat(false);
+    setSelectedMember(null);
   };
 
   const handleSendMessage = async () => {
@@ -204,8 +200,8 @@ const GuestHelpDesk = () => {
       if (error) throw error;
 
       if (data?.success) {
-        // Message will appear via realtime subscription
         setNewMessage('');
+        inputRef.current?.focus();
       } else {
         throw new Error(data?.error || 'Failed to send message');
       }
@@ -249,34 +245,39 @@ const GuestHelpDesk = () => {
 
   if (!guest) return null;
 
-  // Mobile chat view
+  // Mobile: Full screen chat view
   if (isMobile && showChat && selectedMember) {
     const selectedConversation = conversations.find(c => c.member_id === selectedMember);
     
     return (
-      <div className="h-screen flex flex-col bg-background">
+      <div className="h-[100dvh] flex flex-col bg-background">
         {/* Mobile Chat Header */}
-        <header className="border-b border-border bg-card p-4 flex items-center gap-3">
+        <header className="border-b border-border bg-card px-3 py-3 flex items-center gap-3 shrink-0 safe-area-inset-top">
           <Button 
             variant="ghost" 
             size="icon" 
             onClick={handleBackToList}
-            className="touch-manipulation"
+            className="touch-manipulation h-10 w-10"
           >
             <ChevronLeft className="w-5 h-5" />
           </Button>
-          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-            <User className="w-5 h-5 text-primary" />
+          <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+            <User className="w-4 h-4 text-primary" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-medium truncate">{selectedConversation?.member_name}</p>
+            <p className="font-medium truncate text-sm">{selectedConversation?.member_name}</p>
             <p className="text-xs text-muted-foreground">Folder Owner</p>
           </div>
         </header>
 
-        {/* Messages */}
-        <ScrollArea className="flex-1 p-4">
-          <div className="space-y-4">
+        {/* Messages - Scrollable area */}
+        <div className="flex-1 overflow-y-auto overscroll-contain">
+          <div className="px-3 py-4 space-y-3">
+            {messages.length === 0 && (
+              <div className="text-center text-muted-foreground text-sm py-8">
+                No messages yet. Start the conversation!
+              </div>
+            )}
             {messages.map((msg, index) => {
               const showDate =
                 index === 0 ||
@@ -292,18 +293,19 @@ const GuestHelpDesk = () => {
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2 }}
                     className={`flex ${msg.sender_type === 'guest' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                      className={`max-w-[85%] rounded-2xl px-4 py-2.5 ${
                         msg.sender_type === 'guest'
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-muted'
+                          ? 'bg-primary text-primary-foreground rounded-br-md'
+                          : 'bg-muted rounded-bl-md'
                       }`}
                     >
-                      <p className="text-sm">{msg.message}</p>
+                      <p className="text-sm leading-relaxed break-words">{msg.message}</p>
                       <p
-                        className={`text-xs mt-1 ${
+                        className={`text-[10px] mt-1 ${
                           msg.sender_type === 'guest'
                             ? 'text-primary-foreground/70'
                             : 'text-muted-foreground'
@@ -318,30 +320,33 @@ const GuestHelpDesk = () => {
             })}
             <div ref={messagesEndRef} />
           </div>
-        </ScrollArea>
+        </div>
 
-        {/* Message Input */}
-        <div className="p-4 border-t border-border bg-card">
+        {/* Message Input - Fixed at bottom */}
+        <div className="border-t border-border bg-card px-3 py-3 shrink-0 safe-area-inset-bottom">
           <form
             onSubmit={(e) => {
               e.preventDefault();
               handleSendMessage();
             }}
-            className="flex gap-2"
+            className="flex gap-2 items-end"
           >
             <Input
-              placeholder="Type your message..."
+              ref={inputRef}
+              placeholder="Type a message..."
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               disabled={sending}
-              className="touch-manipulation"
+              className="touch-manipulation min-h-[44px] text-base rounded-full px-4"
+              autoComplete="off"
             />
             <Button 
               type="submit" 
+              size="icon"
               disabled={sending || !newMessage.trim()}
-              className="touch-manipulation"
+              className="touch-manipulation h-11 w-11 rounded-full shrink-0"
             >
-              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
             </Button>
           </form>
         </div>
@@ -349,6 +354,67 @@ const GuestHelpDesk = () => {
     );
   }
 
+  // Mobile: Conversations list
+  if (isMobile) {
+    return (
+      <div className="min-h-[100dvh] bg-background flex flex-col">
+        {/* Header */}
+        <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50 safe-area-inset-top">
+          <div className="px-4 py-4 flex items-center gap-3">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => navigate('/guest-portal')}
+              className="touch-manipulation"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <h1 className="font-semibold text-foreground text-lg">Help Desk</h1>
+          </div>
+        </header>
+
+        {/* Conversations List */}
+        <div className="flex-1 overflow-y-auto">
+          {conversations.length === 0 ? (
+            <div className="p-6 text-center text-muted-foreground">
+              <MessageCircle className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p className="text-sm">No conversations yet</p>
+              <p className="text-xs mt-1">You'll be able to chat with folder owners here.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {conversations.map((conv) => (
+                <button
+                  key={conv.member_id}
+                  onClick={() => handleSelectMember(conv.member_id)}
+                  className="w-full p-4 text-left hover:bg-muted/50 active:bg-muted transition-colors touch-manipulation flex items-center gap-3"
+                >
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    <User className="w-6 h-6 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-medium truncate">{conv.member_name}</p>
+                      {conv.unread_count > 0 && (
+                        <span className="bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-full shrink-0">
+                          {conv.unread_count}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground truncate mt-0.5">
+                      {conv.last_message || 'No messages yet'}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Desktop layout
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       {/* Header */}
@@ -417,101 +483,96 @@ const GuestHelpDesk = () => {
             </CardContent>
           </Card>
 
-          {/* Messages - Desktop Only */}
-          {!isMobile && (
-            <Card className="md:col-span-2 flex flex-col">
-              {selectedMember ? (
-                <>
-                  <CardHeader className="pb-3 border-b">
-                    <CardTitle className="text-lg">
-                      {conversations.find((c) => c.member_id === selectedMember)?.member_name}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="flex-1 p-0 flex flex-col">
-                    <ScrollArea className="flex-1 p-4">
-                      <div className="space-y-4">
-                        {messages.map((msg, index) => {
-                          const showDate =
-                            index === 0 ||
-                            formatDate(messages[index - 1].created_at) !==
-                              formatDate(msg.created_at);
+          {/* Messages - Desktop */}
+          <Card className="md:col-span-2 flex flex-col">
+            {selectedMember ? (
+              <>
+                <CardHeader className="pb-3 border-b">
+                  <CardTitle className="text-lg">
+                    {conversations.find((c) => c.member_id === selectedMember)?.member_name}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="flex-1 p-0 flex flex-col">
+                  <ScrollArea className="flex-1 p-4">
+                    <div className="space-y-4">
+                      {messages.map((msg, index) => {
+                        const showDate =
+                          index === 0 ||
+                          formatDate(messages[index - 1].created_at) !==
+                            formatDate(msg.created_at);
 
-                          return (
-                            <div key={msg.id}>
-                              {showDate && (
-                                <div className="text-center text-xs text-muted-foreground my-4">
-                                  {formatDate(msg.created_at)}
-                                </div>
-                              )}
-                              <motion.div
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className={`flex ${
-                                  msg.sender_type === 'guest' ? 'justify-end' : 'justify-start'
+                        return (
+                          <div key={msg.id}>
+                            {showDate && (
+                              <div className="text-center text-xs text-muted-foreground my-4">
+                                {formatDate(msg.created_at)}
+                              </div>
+                            )}
+                            <motion.div
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className={`flex ${
+                                msg.sender_type === 'guest' ? 'justify-end' : 'justify-start'
+                              }`}
+                            >
+                              <div
+                                className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                                  msg.sender_type === 'guest'
+                                    ? 'bg-primary text-primary-foreground'
+                                    : 'bg-muted'
                                 }`}
                               >
-                                <div
-                                  className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                                <p className="text-sm">{msg.message}</p>
+                                <p
+                                  className={`text-xs mt-1 ${
                                     msg.sender_type === 'guest'
-                                      ? 'bg-primary text-primary-foreground'
-                                      : 'bg-muted'
+                                      ? 'text-primary-foreground/70'
+                                      : 'text-muted-foreground'
                                   }`}
                                 >
-                                  <p className="text-sm">{msg.message}</p>
-                                  <p
-                                    className={`text-xs mt-1 ${
-                                      msg.sender_type === 'guest'
-                                        ? 'text-primary-foreground/70'
-                                        : 'text-muted-foreground'
-                                    }`}
-                                  >
-                                    {formatTime(msg.created_at)}
-                                  </p>
-                                </div>
-                              </motion.div>
-                            </div>
-                          );
-                        })}
-                        <div ref={messagesEndRef} />
-                      </div>
-                    </ScrollArea>
-
-                    {/* Message Input */}
-                    <div className="p-4 border-t">
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          handleSendMessage();
-                        }}
-                        className="flex gap-2"
-                      >
-                        <Input
-                          placeholder="Type your message..."
-                          value={newMessage}
-                          onChange={(e) => setNewMessage(e.target.value)}
-                          disabled={sending}
-                        />
-                        <Button type="submit" disabled={sending || !newMessage.trim()}>
-                          {sending ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Send className="w-4 h-4" />
-                          )}
-                        </Button>
-                      </form>
+                                  {formatTime(msg.created_at)}
+                                </p>
+                              </div>
+                            </motion.div>
+                          </div>
+                        );
+                      })}
+                      <div ref={messagesEndRef} />
                     </div>
-                  </CardContent>
-                </>
-              ) : (
-                <CardContent className="flex-1 flex items-center justify-center">
-                  <div className="text-center text-muted-foreground">
-                    <MessageCircle className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p>Select a conversation to start messaging</p>
+                  </ScrollArea>
+
+                  {/* Message Input */}
+                  <div className="p-4 border-t">
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }}
+                      className="flex gap-2"
+                    >
+                      <Input
+                        ref={inputRef}
+                        placeholder="Type your message..."
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        disabled={sending}
+                      />
+                      <Button type="submit" disabled={sending || !newMessage.trim()}>
+                        {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                      </Button>
+                    </form>
                   </div>
                 </CardContent>
-              )}
-            </Card>
-          )}
+              </>
+            ) : (
+              <CardContent className="flex-1 flex items-center justify-center">
+                <div className="text-center text-muted-foreground">
+                  <MessageCircle className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>Select a conversation to start chatting</p>
+                </div>
+              </CardContent>
+            )}
+          </Card>
         </div>
       </main>
     </div>
