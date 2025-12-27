@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useGuestAuth } from '@/contexts/GuestAuthContext';
@@ -25,6 +25,7 @@ import {
   List,
   ChevronRight,
   Home,
+  RefreshCw,
 } from 'lucide-react';
 import { FilePreviewModal } from '@/components/files/FilePreviewModal';
 import { type FileItem } from '@/lib/fileService';
@@ -59,174 +60,113 @@ const GuestFolderView = () => {
     }
   }, [guest, authLoading, navigate]);
 
-  useEffect(() => {
-    const fetchFolderContents = async () => {
-      if (!guest || !folderId) return;
+  const fetchFolderContents = useCallback(async () => {
+    if (!guest || !folderId) return;
 
-      try {
-        // Verify guest has access to this folder (check if it's the root shared folder or a subfolder)
-        const hasAccess = await verifyAccess(folderId);
-        if (!hasAccess) {
-          toast({
-            title: 'Access Denied',
-            description: 'You don\'t have permission to view this folder',
-            variant: 'destructive',
-          });
-          navigate('/guest-portal');
-          return;
-        }
+    try {
+      setLoading(true);
+      
+      const response = await supabase.functions.invoke('guest-folder-contents', {
+        body: {
+          guestId: guest.id,
+          folderId,
+          action: 'get-contents',
+        },
+      });
 
-        // Fetch folder details
-        const { data: folderData, error: folderError } = await supabase
-          .from('folders')
-          .select('*')
-          .eq('id', folderId)
-          .maybeSingle();
+      if (response.error) {
+        throw new Error(response.error.message || 'Failed to fetch folder');
+      }
 
-        if (folderError || !folderData) {
-          throw new Error('Folder not found');
-        }
+      const data = response.data;
 
-        setFolder(folderData);
-
-        // Build breadcrumbs
-        await buildBreadcrumbs(folderId, folderData);
-
-        // Fetch subfolders
-        const { data: subfoldersData } = await supabase
-          .from('folders')
-          .select('*')
-          .eq('parent_id', folderId)
-          .order('name');
-
-        setSubfolders(subfoldersData || []);
-
-        // Fetch files
-        const { data: filesData } = await supabase
-          .from('files')
-          .select('*')
-          .eq('folder_id', folderId)
-          .eq('is_deleted', false)
-          .order('name');
-
-        setFiles(filesData || []);
-      } catch (error) {
-        console.error('Error fetching folder:', error);
+      if (!data.folder) {
         toast({
-          title: 'Error',
-          description: 'Failed to load folder contents',
+          title: 'Access Denied',
+          description: "You don't have permission to view this folder",
           variant: 'destructive',
         });
-      } finally {
-        setLoading(false);
+        navigate('/guest-portal');
+        return;
       }
-    };
 
-    fetchFolderContents();
+      setFolder(data.folder);
+      setSubfolders(data.subfolders || []);
+      setFiles(data.files || []);
+      setBreadcrumbs(data.breadcrumbs || []);
+      setRootFolderId(data.rootFolderId);
+    } catch (error: any) {
+      console.error('Error fetching folder:', error);
+      
+      if (error.message?.includes('Access denied') || error.message?.includes('403')) {
+        toast({
+          title: 'Access Denied',
+          description: "You don't have permission to view this folder",
+          variant: 'destructive',
+        });
+        navigate('/guest-portal');
+        return;
+      }
+
+      toast({
+        title: 'Error',
+        description: 'Failed to load folder contents',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
   }, [guest, folderId, navigate, toast]);
 
-  const verifyAccess = async (targetFolderId: string): Promise<boolean> => {
-    if (!guest) return false;
+  useEffect(() => {
+    fetchFolderContents();
+  }, [fetchFolderContents]);
 
-    // Get all shared folder IDs the guest has access to
-    const { data: accessData } = await supabase
-      .from('guest_folder_access')
-      .select('folder_share:folder_shares(folder_id)')
-      .eq('guest_id', guest.id)
-      .eq('is_restricted', false);
+  // Realtime sync for files and folders
+  useEffect(() => {
+    if (!folderId || !guest) return;
 
-    const sharedFolderIds = (accessData || [])
-      .map(a => (a.folder_share as any)?.folder_id)
-      .filter(Boolean);
-
-    // Check if target folder is one of the shared folders
-    if (sharedFolderIds.includes(targetFolderId)) {
-      setRootFolderId(targetFolderId);
-      return true;
-    }
-
-    // Check if target folder is a subfolder of any shared folder
-    let currentId = targetFolderId;
-    while (currentId) {
-      const { data: currentFolder } = await supabase
-        .from('folders')
-        .select('parent_id')
-        .eq('id', currentId)
-        .maybeSingle();
-
-      if (!currentFolder) break;
-
-      if (sharedFolderIds.includes(currentId)) {
-        setRootFolderId(currentId);
-        return true;
-      }
-
-      if (currentFolder.parent_id && sharedFolderIds.includes(currentFolder.parent_id)) {
-        setRootFolderId(currentFolder.parent_id);
-        return true;
-      }
-
-      currentId = currentFolder.parent_id || '';
-    }
-
-    return false;
-  };
-
-  const buildBreadcrumbs = async (currentId: string, currentFolder: FolderItem) => {
-    const crumbs: { id: string; name: string }[] = [];
-    let folderId = currentId;
-    
-    // Add current folder
-    crumbs.unshift({ id: currentFolder.id, name: currentFolder.name });
-    
-    // Walk up the parent chain until we hit the root shared folder
-    while (folderId) {
-      const { data: parentData } = await supabase
-        .from('folders')
-        .select('id, name, parent_id')
-        .eq('id', folderId)
-        .maybeSingle();
-
-      if (!parentData || !parentData.parent_id) break;
-
-      // Check if parent is in our access list
-      const { data: accessCheck } = await supabase
-        .from('guest_folder_access')
-        .select('folder_share:folder_shares(folder_id)')
-        .eq('guest_id', guest!.id);
-
-      const sharedIds = (accessCheck || []).map(a => (a.folder_share as any)?.folder_id);
-      
-      if (sharedIds.includes(parentData.parent_id)) {
-        // Fetch parent name and add to breadcrumbs
-        const { data: parentFolder } = await supabase
-          .from('folders')
-          .select('id, name')
-          .eq('id', parentData.parent_id)
-          .maybeSingle();
-        
-        if (parentFolder) {
-          crumbs.unshift({ id: parentFolder.id, name: parentFolder.name });
+    // Subscribe to file changes in this folder
+    const filesChannel = supabase
+      .channel(`guest-files-${folderId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'files',
+          filter: `folder_id=eq.${folderId}`,
+        },
+        () => {
+          // Refetch folder contents on any file change
+          fetchFolderContents();
         }
-        break;
-      }
+      )
+      .subscribe();
 
-      folderId = parentData.parent_id;
-      
-      // Fetch parent folder details
-      const { data: parentFolder } = await supabase
-        .from('folders')
-        .select('id, name')
-        .eq('id', folderId)
-        .maybeSingle();
+    // Subscribe to subfolder changes
+    const foldersChannel = supabase
+      .channel(`guest-subfolders-${folderId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'folders',
+          filter: `parent_id=eq.${folderId}`,
+        },
+        () => {
+          // Refetch folder contents on any folder change
+          fetchFolderContents();
+        }
+      )
+      .subscribe();
 
-      if (parentFolder && !crumbs.find(c => c.id === parentFolder.id)) {
-        crumbs.unshift({ id: parentFolder.id, name: parentFolder.name });
-      }
-    }
-
-    setBreadcrumbs(crumbs);
-  };
+    return () => {
+      supabase.removeChannel(filesChannel);
+      supabase.removeChannel(foldersChannel);
+    };
+  }, [folderId, guest, fetchFolderContents]);
 
   const handleDownload = async (file: FileItem) => {
     try {
@@ -291,6 +231,14 @@ const GuestFolderView = () => {
             </Button>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={fetchFolderContents}
+              title="Refresh"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </Button>
             <div className="flex items-center border border-border rounded-lg overflow-hidden">
               <button
                 onClick={() => setViewMode('grid')}
@@ -488,9 +436,13 @@ const GuestFolderView = () => {
           <Card className="border-dashed">
             <CardContent className="py-12 text-center">
               <FolderOpen className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">This folder is empty</h3>
-              <p className="text-muted-foreground text-sm">
-                {searchQuery ? 'No files match your search' : 'No files or folders here yet'}
+              <h3 className="text-lg font-medium text-foreground mb-2">
+                {searchQuery ? 'No results found' : 'This folder is empty'}
+              </h3>
+              <p className="text-muted-foreground">
+                {searchQuery
+                  ? 'Try a different search term'
+                  : 'No files or folders here yet'}
               </p>
             </CardContent>
           </Card>
@@ -501,7 +453,10 @@ const GuestFolderView = () => {
       <FilePreviewModal
         file={previewFile}
         open={previewOpen}
-        onOpenChange={setPreviewOpen}
+        onOpenChange={(open) => {
+          setPreviewOpen(open);
+          if (!open) setPreviewFile(null);
+        }}
       />
     </div>
   );
