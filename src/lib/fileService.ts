@@ -273,31 +273,33 @@ export const restoreFile = async (fileId: string): Promise<void> => {
 };
 
 export const getFileUrl = async (storagePath: string): Promise<string> => {
-  // Try VPS first
-  const nodes = getStorageNodes();
-  for (const node of nodes) {
-    if (node.status === "online") {
-      // Check if file exists on this node
-      const vpsUrl = `${node.endpoint}/files/${storagePath}`;
-      try {
-        const response = await fetch(vpsUrl, { method: "HEAD" });
-        if (response.ok) {
-          return vpsUrl;
-        }
-      } catch (e) {
-        // Node might be down or file not on this node
-      }
-    }
+  // Use edge function to get file URL (avoids mixed content issues)
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData.session) {
+    throw new Error("Not authenticated");
   }
 
-  // Fallback to Supabase
-  const { data } = await supabase.storage
-    .from("user-files")
-    .createSignedUrl(storagePath, 3600); // 1 hour expiry
+  const response = await fetch(
+    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(storagePath)}&action=url`,
+    {
+      headers: {
+        Authorization: `Bearer ${sessionData.session.access_token}`,
+      },
+    }
+  );
 
-  if (!data?.signedUrl) throw new Error("Failed to get file URL");
+  if (!response.ok) {
+    throw new Error("Failed to get file URL");
+  }
 
-  return data.signedUrl;
+  const result = await response.json();
+  
+  // If VPS URL, proxy through edge function for HTTPS
+  if (result.storage === "vps") {
+    return `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(storagePath)}&action=get`;
+  }
+  
+  return result.url;
 };
 
 export const createFolder = async (
