@@ -41,3 +41,6 @@ verify_jwt = false
 
 [functions.guest-messages]
 verify_jwt = false
+
+[functions.guest-folders]
+verify_jwt = false
