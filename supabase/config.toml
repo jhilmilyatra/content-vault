@@ -9,6 +9,9 @@ verify_jwt = false
 [functions.verify-share-link]
 verify_jwt = false
 
+[functions.shared-download]
+verify_jwt = false
+
 [functions.telegram-upload]
 verify_jwt = false
 

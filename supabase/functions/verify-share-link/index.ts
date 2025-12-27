@@ -5,6 +5,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Primary VPS storage - hardcoded (same as vps-file function)
+const VPS_ENDPOINT = "http://46.38.232.46:4000";
+const VPS_API_KEY = "kARTOOS007";
+
 interface VerifyRequest {
   shortCode: string;
   password?: string;
@@ -17,8 +21,9 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
+      supabaseUrl,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       { auth: { persistSession: false } }
     );
@@ -112,25 +117,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Generate signed URL for the file
-    const { data: signedUrl, error: signError } = await supabaseAdmin
-      .storage
-      .from('user-files')
-      .createSignedUrl(link.files.storage_path, 3600); // 1 hour expiry
-
-    if (signError || !signedUrl) {
-      console.error('Error creating signed URL:', signError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to generate download link' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Increment download count
-    await supabaseAdmin
-      .from('shared_links')
-      .update({ download_count: link.download_count + 1 })
-      .eq('id', link.id);
+    // Generate download URL using the shared-download edge function
+    const downloadUrl = `${supabaseUrl}/functions/v1/shared-download?code=${shortCode}`;
 
     console.log('Share link verified successfully');
 
@@ -141,7 +129,7 @@ Deno.serve(async (req) => {
           name: link.files.original_name,
           mimeType: link.files.mime_type,
           size: link.files.size_bytes,
-          downloadUrl: signedUrl.signedUrl
+          downloadUrl: downloadUrl
         }
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
