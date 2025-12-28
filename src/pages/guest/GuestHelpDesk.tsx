@@ -162,8 +162,19 @@ const GuestHelpDesk = () => {
           if (selectedMember && newMsg.member_id === selectedMember) {
             // Add message to current conversation immediately
             setMessages((prev) => {
-              // Prevent duplicates
+              // Prevent duplicates - check for real ID or temp messages with same content
               if (prev.some(m => m.id === newMsg.id)) return prev;
+              // Replace any temp message with same content (optimistic update)
+              const hasTempWithSameContent = prev.some(
+                m => m.id.startsWith('temp-') && m.message === newMsg.message && m.sender_type === newMsg.sender_type
+              );
+              if (hasTempWithSameContent) {
+                return prev.map(m => 
+                  m.id.startsWith('temp-') && m.message === newMsg.message && m.sender_type === newMsg.sender_type
+                    ? newMsg
+                    : m
+                );
+              }
               return [...prev, newMsg];
             });
             
@@ -258,6 +269,26 @@ const GuestHelpDesk = () => {
     const messageText = newMessage.trim();
     setNewMessage(''); // Clear immediately for better UX
     
+    // Optimistic update - add message immediately to UI
+    const optimisticMessage: Message = {
+      id: `temp-${Date.now()}`,
+      guest_id: guest.id,
+      member_id: selectedMember,
+      sender_type: 'guest',
+      message: messageText,
+      is_read: false,
+      created_at: new Date().toISOString(),
+    };
+    
+    setMessages(prev => [...prev, optimisticMessage]);
+    
+    // Update conversation list immediately
+    setConversations(prev => prev.map(c => 
+      c.member_id === selectedMember 
+        ? { ...c, last_message: messageText, last_message_at: optimisticMessage.created_at }
+        : c
+    ));
+    
     try {
       const { data, error } = await supabase.functions.invoke('guest-messages', {
         body: { 
@@ -270,15 +301,23 @@ const GuestHelpDesk = () => {
 
       if (error) throw error;
 
-      if (data?.success) {
+      if (data?.success && data.message) {
+        // Replace optimistic message with real one from server
+        setMessages(prev => prev.map(m => 
+          m.id === optimisticMessage.id ? { ...data.message, sender_type: 'guest' as const } : m
+        ));
         inputRef.current?.focus();
       } else {
-        // Restore message if failed
+        // Remove optimistic message and restore input
+        setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id));
         setNewMessage(messageText);
         throw new Error(data?.error || 'Failed to send message');
       }
     } catch (error: any) {
       console.error('Error sending message:', error);
+      // Remove optimistic message on error
+      setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id));
+      setNewMessage(messageText);
       toast({
         title: 'Error',
         description: error.message || 'Failed to send message',
