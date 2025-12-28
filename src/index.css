@@ -6,7 +6,7 @@
 
 /* 
   CloudVault Design System
-  Enterprise-grade dark theme with teal accents
+  Premium mobile-first dark theme with refined glass effects
 */
 
 @layer base {
@@ -56,6 +56,12 @@
     --shadow-glow: 0 0 60px -15px hsl(172 66% 50% / 0.4);
     --shadow-card: 0 4px 24px -4px hsl(222 47% 2% / 0.5);
     --shadow-elevated: 0 8px 32px -8px hsl(222 47% 2% / 0.6);
+    --shadow-glass: 0 8px 32px -8px hsl(222 47% 2% / 0.3);
+
+    /* Glass design tokens */
+    --glass-bg: hsl(217 33% 12% / 0.12);
+    --glass-border: hsl(210 40% 98% / 0.08);
+    --glass-blur: 12px;
 
     --sidebar-background: 222 47% 7%;
     --sidebar-foreground: 210 40% 98%;
@@ -65,6 +71,15 @@
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 217 33% 15%;
     --sidebar-ring: 172 66% 50%;
+
+    /* Motion timing tokens */
+    --duration-micro: 150ms;
+    --duration-fast: 200ms;
+    --duration-normal: 250ms;
+    --duration-slow: 300ms;
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-natural: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
   .dark {
@@ -105,14 +120,42 @@
     background-clip: text;
   }
 
+  /* Premium Glass Effect - Selective Use Only */
   .glass {
-    background: hsl(217 33% 12% / 0.8);
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--shadow-glass);
+  }
+
+  .glass-subtle {
+    background: hsl(217 33% 12% / 0.08);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid hsl(210 40% 98% / 0.05);
+  }
+
+  .glass-elevated {
+    background: hsl(217 33% 12% / 0.15);
     backdrop-filter: blur(16px);
-    border: 1px solid hsl(217 33% 20% / 0.5);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid hsl(210 40% 98% / 0.1);
+    box-shadow: var(--shadow-elevated);
+  }
+
+  /* Solid fallback for glass (accessibility) */
+  .glass-fallback {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
   }
 
   .glow {
     box-shadow: var(--shadow-glow);
+  }
+
+  .glow-success {
+    box-shadow: 0 0 40px -10px hsl(var(--success) / 0.5);
   }
 
   .card-gradient {
@@ -131,6 +174,10 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
 
+  .safe-area-bottom {
+    padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+  }
+
   /* Touch optimization */
   .touch-manipulation {
     touch-action: manipulation;
@@ -138,6 +185,10 @@
   }
 
   /* GPU acceleration helper */
+  .will-change-transform {
+    will-change: transform, opacity;
+  }
+
   .will-change-auto {
     will-change: auto;
   }
@@ -153,9 +204,102 @@
     -webkit-user-select: none;
     user-select: none;
   }
+
+  /* Motion utilities */
+  .motion-safe {
+    transition-timing-function: var(--ease-natural);
+  }
+
+  .motion-spring {
+    transition-timing-function: var(--ease-spring);
+  }
+
+  .transition-micro {
+    transition-duration: var(--duration-micro);
+    transition-timing-function: var(--ease-natural);
+  }
+
+  .transition-fast {
+    transition-duration: var(--duration-fast);
+    transition-timing-function: var(--ease-natural);
+  }
+
+  .transition-normal {
+    transition-duration: var(--duration-normal);
+    transition-timing-function: var(--ease-natural);
+  }
+
+  /* Press state utilities for buttons/interactive elements */
+  .press-scale {
+    @apply active:scale-[0.97] transition-transform duration-150;
+    transition-timing-function: var(--ease-spring);
+  }
+
+  /* Subtle hover lift */
+  .hover-lift {
+    @apply hover:-translate-y-0.5 transition-transform duration-200;
+    transition-timing-function: var(--ease-natural);
+  }
+
+  /* Shake animation for errors */
+  .shake {
+    animation: shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  }
 }
 
-/* Performance optimizations */
+/* Keyframe animations */
+@keyframes shake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-3px); }
+  40%, 60% { transform: translateX(3px); }
+}
+
+@keyframes slide-up-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-down-fade {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scale-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fade-in-blur {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(var(--glass-blur));
+  }
+}
+
+/* Performance optimizations & accessibility */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -166,10 +310,34 @@
   }
 }
 
+/* Reduced transparency support - fallback to solid backgrounds */
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-subtle,
+  .glass-elevated {
+    background: hsl(var(--card)) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* Low-end device detection via reduced motion as proxy */
+@media (prefers-reduced-motion: reduce) {
+  .glass,
+  .glass-subtle,
+  .glass-elevated {
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+}
+
 /* Mobile viewport fix for iOS */
 @supports (height: 100dvh) {
   .min-h-dvh {
     min-height: 100dvh;
+  }
+  .h-dvh {
+    height: 100dvh;
   }
 }
 
@@ -177,4 +345,16 @@
   .min-h-dvh {
     min-height: 100vh;
   }
+  .h-dvh {
+    height: 100vh;
+  }
+}
+
+/* Hide scrollbar but keep functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }

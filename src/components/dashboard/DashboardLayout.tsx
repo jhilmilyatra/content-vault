@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, memo } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { 
@@ -34,6 +34,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
 import MemberChatPanel from "./MemberChatPanel";
 import NotificationDropdown from "./NotificationDropdown";
+import MobileBottomNav from "./MobileBottomNav";
+import { cn } from "@/lib/utils";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -56,11 +58,28 @@ const memberNavItems: NavItem[] = [
   { icon: Settings, label: "Settings", path: "/dashboard/settings" },
 ];
 
+// Bottom nav shows first 5 most used items
+const memberBottomNavItems: NavItem[] = [
+  { icon: LayoutDashboard, label: "Home", path: "/dashboard" },
+  { icon: FolderOpen, label: "Files", path: "/dashboard/files" },
+  { icon: Link2, label: "Links", path: "/dashboard/links" },
+  { icon: BarChart3, label: "Stats", path: "/dashboard/analytics" },
+  { icon: Settings, label: "Settings", path: "/dashboard/settings" },
+];
+
 const adminNavItems: NavItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: Users, label: "Users", path: "/dashboard/admin/users" },
   { icon: FileWarning, label: "Reports", path: "/dashboard/admin/reports" },
   { icon: BarChart3, label: "Analytics", path: "/dashboard/analytics" },
+  { icon: Settings, label: "Settings", path: "/dashboard/settings" },
+];
+
+const adminBottomNavItems: NavItem[] = [
+  { icon: LayoutDashboard, label: "Home", path: "/dashboard" },
+  { icon: Users, label: "Users", path: "/dashboard/admin/users" },
+  { icon: FileWarning, label: "Reports", path: "/dashboard/admin/reports" },
+  { icon: BarChart3, label: "Stats", path: "/dashboard/analytics" },
   { icon: Settings, label: "Settings", path: "/dashboard/settings" },
 ];
 
@@ -81,6 +100,14 @@ const ownerNavItems: NavItem[] = [
   { icon: Settings, label: "Settings", path: "/dashboard/settings" },
 ];
 
+const ownerBottomNavItems: NavItem[] = [
+  { icon: LayoutDashboard, label: "Home", path: "/dashboard" },
+  { icon: Activity, label: "System", path: "/dashboard/system-monitoring" },
+  { icon: Users, label: "Users", path: "/dashboard/users" },
+  { icon: Shield, label: "Security", path: "/dashboard/security" },
+  { icon: Settings, label: "Settings", path: "/dashboard/settings" },
+];
+
 // Memoized nav item component
 const NavItemComponent = memo(({ 
   item, 
@@ -95,14 +122,17 @@ const NavItemComponent = memo(({
 }) => (
   <Link
     to={item.path}
-    className={`flex items-center gap-3 px-3 py-2.5 sm:py-2.5 rounded-lg transition-all duration-200 touch-manipulation min-h-[44px]
-      ${isActive 
+    className={cn(
+      "flex items-center gap-3 px-3 py-2.5 rounded-xl",
+      "transition-all duration-fast ease-natural",
+      "touch-manipulation min-h-[44px]",
+      "press-scale",
+      isActive 
         ? "bg-sidebar-accent text-sidebar-accent-foreground" 
-        : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 active:bg-sidebar-accent/70"
-      }
-    `}
+        : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+    )}
   >
-    <item.icon className={`w-5 h-5 flex-shrink-0 ${isActive ? "text-primary" : ""}`} />
+    <item.icon className={cn("w-5 h-5 flex-shrink-0", isActive && "text-primary")} />
     {(!collapsed || isMobile) && (
       <span className="text-sm font-medium">{item.label}</span>
     )}
@@ -115,6 +145,7 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [headerIsGlass, setHeaderIsGlass] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, role, signOut } = useAuth();
@@ -122,6 +153,7 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
   const isMobile = useIsMobile();
   
   const navItems = role === "owner" ? ownerNavItems : role === "admin" ? adminNavItems : memberNavItems;
+  const bottomNavItems = role === "owner" ? ownerBottomNavItems : role === "admin" ? adminBottomNavItems : memberBottomNavItems;
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -139,6 +171,15 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
       document.body.style.overflow = '';
     };
   }, [mobileMenuOpen]);
+
+  // Header glass effect on scroll
+  useEffect(() => {
+    const handleScroll = () => {
+      setHeaderIsGlass(window.scrollY > 20);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   const handleSignOut = useCallback(async () => {
     await signOut();
@@ -191,34 +232,42 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40"
+            transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
+            className="fixed inset-0 bg-background/60 backdrop-blur-sm z-40"
             onClick={closeMobileMenu}
           />
         )}
       </AnimatePresence>
 
-      {/* Sidebar */}
+      {/* Desktop Sidebar */}
       <AnimatePresence mode="wait">
         {(!isMobile || mobileMenuOpen) && (
           <motion.aside
-            initial={isMobile ? { x: -280 } : false}
-            animate={{ x: 0, width: isMobile ? 280 : (collapsed ? 72 : 260) }}
-            exit={isMobile ? { x: -280 } : undefined}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className={`${isMobile ? 'fixed' : 'fixed'} left-0 top-0 bottom-0 z-50 bg-sidebar border-r border-sidebar-border flex flex-col safe-area-inset`}
+            initial={isMobile ? { x: -280, opacity: 0 } : false}
+            animate={{ x: 0, opacity: 1, width: isMobile ? 280 : (collapsed ? 72 : 260) }}
+            exit={isMobile ? { x: -280, opacity: 0 } : undefined}
+            transition={{ 
+              duration: 0.25, 
+              ease: [0.2, 0.8, 0.2, 1]
+            }}
+            className={cn(
+              "fixed left-0 top-0 bottom-0 z-50",
+              "bg-sidebar border-r border-sidebar-border",
+              "flex flex-col safe-area-inset"
+            )}
           >
             {/* Logo */}
             <div className="h-14 sm:h-16 flex items-center justify-between px-4 border-b border-sidebar-border">
               <Link to="/" className="flex items-center gap-3 touch-manipulation">
-                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg gradient-primary flex items-center justify-center flex-shrink-0">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl gradient-primary flex items-center justify-center flex-shrink-0 shadow-lg">
                   <Cloud className="w-5 h-5 sm:w-6 sm:h-6 text-primary-foreground" />
                 </div>
                 {(!collapsed || isMobile) && (
                   <motion.span
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -10 }}
+                    transition={{ duration: 0.15 }}
                     className="text-base sm:text-lg font-bold text-sidebar-foreground"
                   >
                     CloudVault
@@ -229,7 +278,7 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 touch-manipulation"
+                  className="h-9 w-9 touch-manipulation press-scale"
                   onClick={closeMobileMenu}
                 >
                   <X className="w-5 h-5" />
@@ -240,18 +289,19 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
             {/* Role badge */}
             {(!collapsed || isMobile) && (
               <div className="px-4 py-3">
-                <div className={`px-3 py-1.5 rounded-lg text-xs font-medium text-center
-                  ${role === "owner" ? "bg-amber-500/20 text-amber-400" : ""}
-                  ${role === "admin" ? "bg-violet-500/20 text-violet-400" : ""}
-                  ${role === "member" ? "bg-primary/20 text-primary" : ""}
-                `}>
+                <div className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-medium text-center",
+                  role === "owner" && "bg-amber-500/20 text-amber-400",
+                  role === "admin" && "bg-violet-500/20 text-violet-400",
+                  role === "member" && "bg-primary/20 text-primary"
+                )}>
                   {role === "owner" ? "Owner Panel" : role === "admin" ? "Admin Panel" : "Member Panel"}
                 </div>
               </div>
             )}
 
             {/* Navigation */}
-            <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scroll-smooth">
+            <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scroll-smooth scrollbar-hide">
               {navItems.map((item) => (
                 <NavItemComponent
                   key={item.path}
@@ -268,7 +318,11 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
               <div className="p-3 border-t border-sidebar-border">
                 <button
                   onClick={toggleCollapsed}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors touch-manipulation"
+                  className={cn(
+                    "w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl",
+                    "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
+                    "transition-all duration-fast ease-natural touch-manipulation press-scale"
+                  )}
                 >
                   {collapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
                   {!collapsed && <span className="text-sm">Collapse</span>}
@@ -281,18 +335,27 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
 
       {/* Main content */}
       <div 
-        className="flex-1 transition-all duration-200 min-w-0"
+        className="flex-1 transition-all duration-normal ease-natural min-w-0"
         style={{ marginLeft: isMobile ? 0 : sidebarWidth }}
       >
-        {/* Top bar */}
-        <header className="h-14 sm:h-16 bg-background/80 backdrop-blur-lg border-b border-border flex items-center justify-between px-3 sm:px-6 sticky top-0 z-30 safe-area-inset">
+        {/* Top bar - glass on scroll */}
+        <header 
+          className={cn(
+            "h-14 sm:h-16 flex items-center justify-between px-3 sm:px-6 sticky top-0 z-30",
+            "transition-all duration-normal ease-natural",
+            "safe-area-inset border-b",
+            headerIsGlass 
+              ? "glass-elevated border-border/30" 
+              : "bg-background border-border"
+          )}
+        >
           <div className="flex items-center gap-2 sm:gap-4 flex-1 max-w-md">
             {/* Mobile menu toggle */}
             {isMobile && (
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-10 w-10 flex-shrink-0 touch-manipulation"
+                className="h-10 w-10 flex-shrink-0 touch-manipulation press-scale"
                 onClick={toggleMobileMenu}
               >
                 <Menu className="w-5 h-5" />
@@ -302,7 +365,7 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 placeholder="Search..."
-                className="pl-10 bg-muted border-border h-9 sm:h-9 text-sm"
+                className="pl-10 bg-muted/50 border-border/50 h-9 sm:h-9 text-sm rounded-xl focus:bg-muted"
               />
             </div>
           </div>
@@ -314,17 +377,30 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
               {getInitials()}
             </div>
 
-            <Button variant="ghost" size="icon" onClick={handleSignOut} className="h-9 w-9 touch-manipulation">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={handleSignOut} 
+              className="h-9 w-9 touch-manipulation press-scale"
+            >
               <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
             </Button>
           </div>
         </header>
 
-        {/* Page content */}
-        <main className="p-3 sm:p-6">
+        {/* Page content - with bottom padding for mobile nav */}
+        <main className={cn(
+          "p-3 sm:p-6",
+          isMobile && "pb-24" // Extra padding for bottom nav
+        )}>
           {children}
         </main>
       </div>
+
+      {/* Mobile Bottom Navigation */}
+      {isMobile && (
+        <MobileBottomNav items={bottomNavItems} />
+      )}
 
       {/* Member Chat Panel */}
       {role === "member" && (
