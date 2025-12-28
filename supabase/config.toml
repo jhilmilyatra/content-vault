@@ -65,3 +65,6 @@ verify_jwt = false
 
 [functions.vps-chunked-upload]
 verify_jwt = false
+
+[functions.owner-update-user]
+verify_jwt = false
