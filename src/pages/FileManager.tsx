@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   uploadFile,
   deleteFile,
@@ -18,6 +19,7 @@ import {
   type UploadProgress,
 } from "@/lib/fileService";
 import UploadProgressBar from "@/components/files/UploadProgressBar";
+import UploadFAB from "@/components/files/UploadFAB";
 import {
   FolderOpen,
   FileVideo,
@@ -100,6 +102,8 @@ const FileManager = () => {
 
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchContents = useCallback(async () => {
     if (!user) return;
@@ -420,7 +424,8 @@ const FileManager = () => {
             <h1 className="text-2xl font-bold text-foreground">Files</h1>
             <p className="text-muted-foreground">Manage your files and folders</p>
           </div>
-          <div className="flex items-center gap-2">
+          {/* Desktop buttons - hidden on mobile (FAB used instead) */}
+          <div className="hidden sm:flex items-center gap-2">
             <Button
               variant={selectionMode ? "secondary" : "outline"}
               onClick={() => {
@@ -430,16 +435,17 @@ const FileManager = () => {
                   setSelectedFolders([]);
                 }
               }}
+              className="rounded-xl"
             >
               <CheckSquare className="w-4 h-4 mr-2" />
               {selectionMode ? "Cancel" : "Select"}
             </Button>
-            <Button variant="outline" onClick={() => setCreateFolderOpen(true)}>
+            <Button variant="outline" onClick={() => setCreateFolderOpen(true)} className="rounded-xl">
               <Plus className="w-4 h-4 mr-2" />
               New Folder
             </Button>
             <label>
-              <Button variant="hero" className="cursor-pointer" asChild>
+              <Button variant="hero" className="cursor-pointer rounded-xl" asChild>
                 <span>
                   <Upload className="w-4 h-4 mr-2" />
                   Upload
@@ -454,7 +460,35 @@ const FileManager = () => {
               />
             </label>
           </div>
+          {/* Mobile: Selection toggle only */}
+          <div className="flex sm:hidden items-center gap-2">
+            <Button
+              variant={selectionMode ? "secondary" : "outline"}
+              size="sm"
+              onClick={() => {
+                setSelectionMode(!selectionMode);
+                if (selectionMode) {
+                  setSelectedFiles([]);
+                  setSelectedFolders([]);
+                }
+              }}
+              className="rounded-xl"
+            >
+              <CheckSquare className="w-4 h-4 mr-1" />
+              {selectionMode ? "Cancel" : "Select"}
+            </Button>
+          </div>
         </div>
+
+        {/* Hidden file input for FAB */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={handleFileUpload}
+          disabled={uploading}
+        />
 
         {/* Upload Progress */}
         <AnimatePresence>
@@ -903,6 +937,15 @@ const FileManager = () => {
             onOpenChange={setShareFolderOpen}
             folder={folderToShare}
             userId={user.id}
+          />
+        )}
+
+        {/* Mobile Upload FAB */}
+        {isMobile && (
+          <UploadFAB
+            onUploadClick={() => fileInputRef.current?.click()}
+            onNewFolderClick={() => setCreateFolderOpen(true)}
+            disabled={uploading}
           />
         )}
       </div>

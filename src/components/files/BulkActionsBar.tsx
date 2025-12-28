@@ -22,6 +22,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import type { FileItem, FolderItem } from "@/lib/fileService";
 import { deleteFile } from "@/lib/fileService";
+import { cn } from "@/lib/utils";
 
 interface BulkActionsBarProps {
   selectedFiles: string[];
@@ -181,69 +182,86 @@ const BulkActionsBar = ({
     <>
       <AnimatePresence>
         <motion.div
-          initial={{ opacity: 0, y: -10 }}
+          initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          className="flex items-center justify-between p-3 rounded-lg bg-primary/10 border border-primary/30"
+          exit={{ opacity: 0, y: 20 }}
+          transition={{ 
+            type: "spring", 
+            stiffness: 400, 
+            damping: 30 
+          }}
+          className={cn(
+            "fixed bottom-24 left-4 right-4 z-50 sm:bottom-6 sm:left-auto sm:right-24",
+            "sm:max-w-md",
+            "p-3 rounded-2xl",
+            "glass-elevated",
+            "safe-area-bottom"
+          )}
         >
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                checked={selectedCount === totalItems}
-                onCheckedChange={(checked) => {
-                  if (checked) {
-                    onSelectAll();
-                  } else {
-                    onClearSelection();
-                  }
-                }}
-              />
-              <span className="text-sm font-medium">
-                {selectedCount} selected
-              </span>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={selectedCount === totalItems}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      onSelectAll();
+                    } else {
+                      onClearSelection();
+                    }
+                  }}
+                  className="border-muted-foreground/50"
+                />
+                <span className="text-sm font-medium text-foreground">
+                  {selectedCount} selected
+                </span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onClearSelection}
+                className="h-8 px-2 text-muted-foreground hover:text-foreground press-scale"
+              >
+                <X className="w-4 h-4" />
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onClearSelection}
-            >
-              <X className="w-4 h-4 mr-1" />
-              Clear
-            </Button>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShareDialogOpen(true)}
-              disabled={loading}
-            >
-              <Share2 className="w-4 h-4 mr-2" />
-              Share All
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={openMoveDialog}
-              disabled={loading}
-            >
-              <FolderInput className="w-4 h-4 mr-2" />
-              Move
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleBulkDelete}
-              disabled={loading}
-            >
-              {loading ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Trash2 className="w-4 h-4 mr-2" />
-              )}
-              Delete
-            </Button>
+            
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShareDialogOpen(true)}
+                disabled={loading || selectedFileCount === 0}
+                className="h-9 w-9 rounded-xl press-scale"
+                title="Share"
+              >
+                <Share2 className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={openMoveDialog}
+                disabled={loading || selectedFileCount === 0}
+                className="h-9 w-9 rounded-xl press-scale"
+                title="Move"
+              >
+                <FolderInput className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleBulkDelete}
+                disabled={loading}
+                className="h-9 w-9 rounded-xl press-scale text-destructive hover:text-destructive hover:bg-destructive/10"
+                title="Delete"
+              >
+                {loading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+              </Button>
+            </div>
           </div>
         </motion.div>
       </AnimatePresence>
@@ -259,7 +277,7 @@ const BulkActionsBar = ({
           </DialogHeader>
           <div className="py-4">
             <Select value={targetFolderId} onValueChange={setTargetFolderId}>
-              <SelectTrigger>
+              <SelectTrigger className="rounded-xl">
                 <SelectValue placeholder="Select folder" />
               </SelectTrigger>
               <SelectContent>
@@ -275,10 +293,10 @@ const BulkActionsBar = ({
             </Select>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setMoveDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setMoveDialogOpen(false)} className="rounded-xl">
               Cancel
             </Button>
-            <Button onClick={handleBulkMove} disabled={loading}>
+            <Button onClick={handleBulkMove} disabled={loading} className="rounded-xl">
               {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
               Move Files
             </Button>
@@ -290,16 +308,16 @@ const BulkActionsBar = ({
       <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Share {selectedCount} file(s)</DialogTitle>
+            <DialogTitle>Share {selectedFileCount} file(s)</DialogTitle>
             <DialogDescription>
               Create share links for all selected files. Links will be copied to your clipboard.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShareDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setShareDialogOpen(false)} className="rounded-xl">
               Cancel
             </Button>
-            <Button onClick={handleBulkShare} disabled={loading}>
+            <Button onClick={handleBulkShare} disabled={loading} className="rounded-xl">
               {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
               Create Links
             </Button>
