@@ -25,12 +25,17 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
 
   // Video player state
   const videoRef = useRef<HTMLVideoElement>(null);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [showControls, setShowControls] = useState(true);
+  
+  // Double-tap seek state
+  const lastTapRef = useRef<{ time: number; x: number } | null>(null);
+  const [seekIndicator, setSeekIndicator] = useState<{ side: 'left' | 'right'; visible: boolean }>({ side: 'left', visible: false });
 
   useEffect(() => {
     if (open && file) {
@@ -244,6 +249,47 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
 
+  // Handle double-tap seek
+  const handleVideoTap = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    const now = Date.now();
+    const container = videoContainerRef.current;
+    if (!container || !videoRef.current) return;
+
+    const rect = container.getBoundingClientRect();
+    const clientX = 'touches' in e ? e.changedTouches[0].clientX : e.clientX;
+    const x = clientX - rect.left;
+    const isLeftSide = x < rect.width / 2;
+
+    // Check for double-tap (within 300ms and same side)
+    if (lastTapRef.current && now - lastTapRef.current.time < 300) {
+      const wasLeftSide = lastTapRef.current.x < rect.width / 2;
+      if (isLeftSide === wasLeftSide) {
+        // Double-tap detected
+        if (isLeftSide) {
+          videoRef.current.currentTime = Math.max(videoRef.current.currentTime - 10, 0);
+          setSeekIndicator({ side: 'left', visible: true });
+        } else {
+          videoRef.current.currentTime = Math.min(videoRef.current.currentTime + 10, duration);
+          setSeekIndicator({ side: 'right', visible: true });
+        }
+        // Hide indicator after animation
+        setTimeout(() => setSeekIndicator(prev => ({ ...prev, visible: false })), 500);
+        lastTapRef.current = null;
+        return;
+      }
+    }
+
+    lastTapRef.current = { time: now, x };
+    
+    // Single tap toggles play/pause after a delay (if not double-tap)
+    setTimeout(() => {
+      if (lastTapRef.current && now === lastTapRef.current.time) {
+        togglePlay();
+        lastTapRef.current = null;
+      }
+    }, 300);
+  };
+
   const renderPreview = () => {
     if (!file || !fileUrl) return null;
 
@@ -273,31 +319,54 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
             onTouchStart={() => setShowControls(true)}
           >
             {/* Video Element */}
-            <div className="relative flex-1 flex items-center justify-center">
+            <div 
+              ref={videoContainerRef}
+              className="relative flex-1 flex items-center justify-center"
+              onClick={handleVideoTap}
+              onTouchEnd={handleVideoTap}
+            >
               <video
                 ref={videoRef}
                 src={fileUrl}
-                className="max-w-full max-h-[60vh] sm:max-h-[60vh] object-contain"
+                className="max-w-full max-h-[60vh] sm:max-h-[60vh] object-contain pointer-events-none"
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
                 onEnded={handleVideoEnded}
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
-                onClick={togglePlay}
                 playsInline
                 webkit-playsinline="true"
               />
               
-              {/* Play overlay button */}
-              {!isPlaying && (
-                <button
-                  onClick={togglePlay}
-                  className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity hover:bg-black/40 touch-manipulation"
+              {/* Double-tap seek indicators */}
+              {seekIndicator.visible && (
+                <div 
+                  className={`absolute top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 animate-fade-in ${
+                    seekIndicator.side === 'left' ? 'left-8' : 'right-8'
+                  }`}
                 >
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-primary/90 flex items-center justify-center active:scale-95 transition-transform">
+                  <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                    {seekIndicator.side === 'left' ? (
+                      <SkipBack className="w-7 h-7 text-white" />
+                    ) : (
+                      <SkipForward className="w-7 h-7 text-white" />
+                    )}
+                  </div>
+                  <span className="text-white text-sm font-medium">
+                    {seekIndicator.side === 'left' ? '-10s' : '+10s'}
+                  </span>
+                </div>
+              )}
+              
+              {/* Play overlay button */}
+              {!isPlaying && !seekIndicator.visible && (
+                <div
+                  className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity hover:bg-black/40 touch-manipulation pointer-events-none"
+                >
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-primary/90 flex items-center justify-center">
                     <Play className="w-8 h-8 sm:w-10 sm:h-10 text-primary-foreground ml-1" />
                   </div>
-                </button>
+                </div>
               )}
             </div>
 
