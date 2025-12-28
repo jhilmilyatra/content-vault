@@ -59,6 +59,15 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
         throw new Error("Not authenticated");
       }
 
+      // Track the file view (async, don't wait)
+      supabase.functions.invoke('track-file-view', {
+        body: {
+          fileId: file.id,
+          viewType: 'preview',
+          bytesTransferred: file.size_bytes
+        }
+      }).catch((err) => console.error('Failed to track view:', err));
+
       // Fetch file directly via edge function
       const fileResponse = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`,
@@ -98,6 +107,15 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
       if (!sessionData.session) {
         throw new Error("Not authenticated");
       }
+
+      // Track the download (async, don't wait)
+      supabase.functions.invoke('track-file-view', {
+        body: {
+          fileId: file.id,
+          viewType: 'download',
+          bytesTransferred: file.size_bytes
+        }
+      }).catch((err) => console.error('Failed to track download:', err));
 
       // Get file via edge function
       const downloadUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`;

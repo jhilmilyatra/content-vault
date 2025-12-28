@@ -181,6 +181,57 @@ export type Database = {
           },
         ]
       }
+      file_views: {
+        Row: {
+          bytes_transferred: number | null
+          created_at: string
+          file_id: string
+          guest_id: string | null
+          id: string
+          ip_address: unknown
+          user_agent: string | null
+          user_id: string | null
+          view_type: string
+        }
+        Insert: {
+          bytes_transferred?: number | null
+          created_at?: string
+          file_id: string
+          guest_id?: string | null
+          id?: string
+          ip_address?: unknown
+          user_agent?: string | null
+          user_id?: string | null
+          view_type?: string
+        }
+        Update: {
+          bytes_transferred?: number | null
+          created_at?: string
+          file_id?: string
+          guest_id?: string | null
+          id?: string
+          ip_address?: unknown
+          user_agent?: string | null
+          user_id?: string | null
+          view_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "file_views_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "file_views_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "guest_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       files: {
         Row: {
           created_at: string
@@ -896,6 +947,18 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      record_file_view: {
+        Args: {
+          p_bytes_transferred?: number
+          p_file_id: string
+          p_guest_id?: string
+          p_ip_address?: string
+          p_user_agent?: string
+          p_user_id?: string
+          p_view_type?: string
+        }
+        Returns: string
       }
       validate_api_token: {
         Args: { p_token_hash: string }
