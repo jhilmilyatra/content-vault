@@ -32,10 +32,14 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [showControls, setShowControls] = useState(true);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   
   // Double-tap seek state
   const lastTapRef = useRef<{ time: number; x: number } | null>(null);
   const [seekIndicator, setSeekIndicator] = useState<{ side: 'left' | 'right'; visible: boolean }>({ side: 'left', visible: false });
+
+  const playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
   useEffect(() => {
     if (open && file) {
@@ -51,8 +55,67 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
       setIsPlaying(false);
       setCurrentTime(0);
       setDuration(0);
+      setPlaybackSpeed(1);
+      setShowSpeedMenu(false);
     }
   }, [open, file]);
+
+  // Keyboard shortcuts for video player
+  useEffect(() => {
+    if (!open || !file) return;
+    
+    const fileType = getFileType(file.mime_type);
+    if (fileType !== 'video') return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault();
+          togglePlay();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          skipBackward();
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          skipForward();
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          if (videoRef.current) {
+            const newVol = Math.min(volume + 0.1, 1);
+            videoRef.current.volume = newVol;
+            setVolume(newVol);
+            setIsMuted(false);
+          }
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          if (videoRef.current) {
+            const newVol = Math.max(volume - 0.1, 0);
+            videoRef.current.volume = newVol;
+            setVolume(newVol);
+            if (newVol === 0) setIsMuted(true);
+          }
+          break;
+        case 'KeyM':
+          e.preventDefault();
+          toggleMute();
+          break;
+        case 'KeyF':
+          e.preventDefault();
+          toggleFullscreen();
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, file, volume, isPlaying, duration]);
 
   const loadFileUrl = async () => {
     if (!file) return;
@@ -243,6 +306,14 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
     }
   };
 
+  const changePlaybackSpeed = (speed: number) => {
+    if (videoRef.current) {
+      videoRef.current.playbackRate = speed;
+      setPlaybackSpeed(speed);
+      setShowSpeedMenu(false);
+    }
+  };
+
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
@@ -428,6 +499,32 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
                 </div>
 
                 <div className="flex items-center gap-1 sm:gap-2">
+                  {/* Playback speed control */}
+                  <div className="relative">
+                    <Button
+                      variant="ghost"
+                      onClick={() => setShowSpeedMenu(!showSpeedMenu)}
+                      className="text-white hover:bg-white/20 h-8 px-2 text-xs sm:text-sm font-medium touch-manipulation"
+                    >
+                      {playbackSpeed}x
+                    </Button>
+                    {showSpeedMenu && (
+                      <div className="absolute bottom-full mb-2 right-0 bg-black/90 rounded-lg border border-white/20 overflow-hidden min-w-[80px]">
+                        {playbackSpeeds.map((speed) => (
+                          <button
+                            key={speed}
+                            onClick={() => changePlaybackSpeed(speed)}
+                            className={`w-full px-3 py-2 text-sm text-left hover:bg-white/20 transition-colors ${
+                              playbackSpeed === speed ? 'text-primary bg-white/10' : 'text-white'
+                            }`}
+                          >
+                            {speed}x
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Volume control - hidden on mobile */}
                   <div className="hidden sm:flex items-center gap-2 group">
                     <Button
