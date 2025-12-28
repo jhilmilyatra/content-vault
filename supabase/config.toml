@@ -47,3 +47,6 @@ verify_jwt = false
 
 [functions.vps-upload]
 verify_jwt = false
+
+[functions.vps-file]
+verify_jwt = false
