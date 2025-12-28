@@ -786,19 +786,24 @@ const FileManager = () => {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
-                        <DropdownMenuItem onClick={() => {
+                        <DropdownMenuItem onClick={(e) => {
+                          e.stopPropagation();
                           setPreviewFile(file);
                           setPreviewOpen(true);
                         }}>
                           <Eye className="w-4 h-4 mr-2" />
                           Preview
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleDownload(file)}>
+                        <DropdownMenuItem onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownload(file);
+                        }}>
                           <Download className="w-4 h-4 mr-2" />
                           Download
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setShareFile({ id: file.id, name: file.original_name });
                             setShareDialogOpen(true);
                           }}
@@ -807,7 +812,8 @@ const FileManager = () => {
                           Share
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setRenameTarget({ type: "file", id: file.id, name: file.name });
                             setNewName(file.name);
                             setRenameDialogOpen(true);
@@ -819,7 +825,10 @@ const FileManager = () => {
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           className="text-destructive"
-                          onClick={() => handleDeleteFile(file)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteFile(file);
+                          }}
                         >
                           <Trash2 className="w-4 h-4 mr-2" />
                           Move to Trash

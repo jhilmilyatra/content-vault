@@ -383,7 +383,7 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
           </div>
 
           <div className="flex items-center gap-1 sm:gap-2">
-            {/* Chat button for members */}
+            {/* Chat button for members - positioned higher on mobile to avoid bottom nav overlap */}
             {role === "member" && (
               <Button 
                 variant="ghost" 
