@@ -2,8 +2,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, range",
+  "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+  "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges",
 };
 
 // Primary VPS storage - hardcoded same as fileService
@@ -59,7 +60,7 @@ Deno.serve(async (req) => {
     // Get file info from storage path
     const { data: fileData, error: fileError } = await supabaseAdmin
       .from("files")
-      .select("id, folder_id, user_id, name, original_name, mime_type")
+      .select("id, folder_id, user_id, name, original_name, mime_type, size_bytes")
       .eq("storage_path", storagePath)
       .eq("is_deleted", false)
       .single();
@@ -80,14 +81,41 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch file from VPS only - no Supabase fallback for large file optimization
-    console.log(`Fetching file from VPS: ${VPS_CONFIG.endpoint}/files/${storagePath}`);
-    
+    // Handle HEAD requests for video players to get file size
+    if (req.method === "HEAD") {
+      return new Response(null, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": fileData.mime_type || "application/octet-stream",
+          "Content-Length": String(fileData.size_bytes),
+          "Accept-Ranges": "bytes",
+        },
+      });
+    }
+
+    // Check for Range header (for video streaming)
+    const rangeHeader = req.headers.get("Range");
+    const fileSize = fileData.size_bytes;
+
+    console.log(`Guest file proxy: path=${storagePath}, range=${rangeHeader || 'none'}, size=${fileSize}`);
+
+    // Build VPS request headers
+    const vpsHeaders: Record<string, string> = {
+      "Authorization": `Bearer ${VPS_CONFIG.apiKey}`,
+    };
+
+    // Forward range header to VPS if present
+    if (rangeHeader) {
+      vpsHeaders["Range"] = rangeHeader;
+    }
+
+    // Fetch file from VPS
     const vpsResponse = await fetch(`${VPS_CONFIG.endpoint}/files/${storagePath}`, {
-      headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` },
+      headers: vpsHeaders,
     });
 
-    if (!vpsResponse.ok) {
+    if (!vpsResponse.ok && vpsResponse.status !== 206) {
       console.error(`VPS fetch failed: ${vpsResponse.status} ${vpsResponse.statusText}`);
       return new Response(
         JSON.stringify({ error: "File not found on storage server" }),
@@ -95,16 +123,53 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Stream the VPS response directly
-    const contentType = vpsResponse.headers.get("Content-Type") || fileData.mime_type || "application/octet-stream";
-    
+    const contentType = fileData.mime_type || "application/octet-stream";
+    const isVideo = contentType.startsWith("video/");
+    const isAudio = contentType.startsWith("audio/");
+
+    // Build response headers
+    const responseHeaders: Record<string, string> = {
+      ...corsHeaders,
+      "Content-Type": contentType,
+      "Accept-Ranges": "bytes",
+      "Cache-Control": "public, max-age=3600",
+    };
+
+    // Handle range response (206 Partial Content)
+    if (vpsResponse.status === 206 || rangeHeader) {
+      const contentRange = vpsResponse.headers.get("Content-Range");
+      const contentLength = vpsResponse.headers.get("Content-Length");
+      
+      if (contentRange) {
+        responseHeaders["Content-Range"] = contentRange;
+      } else if (rangeHeader && fileSize) {
+        // Parse range and build Content-Range header
+        const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+        if (match) {
+          const start = parseInt(match[1]);
+          const end = match[2] ? parseInt(match[2]) : fileSize - 1;
+          responseHeaders["Content-Range"] = `bytes ${start}-${end}/${fileSize}`;
+          responseHeaders["Content-Length"] = String(end - start + 1);
+        }
+      }
+      
+      if (contentLength) {
+        responseHeaders["Content-Length"] = contentLength;
+      }
+
+      return new Response(vpsResponse.body, {
+        status: 206,
+        headers: responseHeaders,
+      });
+    }
+
+    // Full file response
+    responseHeaders["Content-Length"] = String(fileSize);
+    responseHeaders["Content-Disposition"] = `inline; filename="${encodeURIComponent(fileData.original_name)}"`;
+
     return new Response(vpsResponse.body, {
-      headers: {
-        ...corsHeaders,
-        "Content-Type": contentType,
-        "Content-Disposition": `inline; filename="${fileData.original_name}"`,
-        "Cache-Control": "public, max-age=3600",
-      },
+      status: 200,
+      headers: responseHeaders,
     });
   } catch (error) {
     console.error("Guest file proxy error:", error);
