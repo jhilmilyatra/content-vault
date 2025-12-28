@@ -51,7 +51,6 @@ const GuestHelpDesk = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -264,14 +263,16 @@ const GuestHelpDesk = () => {
     if (!guest || !selectedMember || !newMessage.trim()) return;
 
     stopTyping();
-    setSending(true);
     
     const messageText = newMessage.trim();
-    setNewMessage(''); // Clear immediately for better UX
+    const tempId = `temp-${Date.now()}`;
     
-    // Optimistic update - add message immediately to UI
+    // Clear input IMMEDIATELY for instant feedback
+    setNewMessage('');
+    
+    // Optimistic update - add message immediately to UI (no delay)
     const optimisticMessage: Message = {
-      id: `temp-${Date.now()}`,
+      id: tempId,
       guest_id: guest.id,
       member_id: selectedMember,
       sender_type: 'guest',
@@ -280,15 +281,20 @@ const GuestHelpDesk = () => {
       created_at: new Date().toISOString(),
     };
     
+    // Use functional updates and batch state changes
     setMessages(prev => [...prev, optimisticMessage]);
-    
-    // Update conversation list immediately
     setConversations(prev => prev.map(c => 
       c.member_id === selectedMember 
         ? { ...c, last_message: messageText, last_message_at: optimisticMessage.created_at }
         : c
     ));
     
+    // Scroll immediately on mobile
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    });
+    
+    // Send in background - don't block UI with setSending
     try {
       const { data, error } = await supabase.functions.invoke('guest-messages', {
         body: { 
@@ -304,27 +310,24 @@ const GuestHelpDesk = () => {
       if (data?.success && data.message) {
         // Replace optimistic message with real one from server
         setMessages(prev => prev.map(m => 
-          m.id === optimisticMessage.id ? { ...data.message, sender_type: 'guest' as const } : m
+          m.id === tempId ? { ...data.message, sender_type: 'guest' as const } : m
         ));
-        inputRef.current?.focus();
       } else {
         // Remove optimistic message and restore input
-        setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id));
+        setMessages(prev => prev.filter(m => m.id !== tempId));
         setNewMessage(messageText);
         throw new Error(data?.error || 'Failed to send message');
       }
     } catch (error: any) {
       console.error('Error sending message:', error);
       // Remove optimistic message on error
-      setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id));
+      setMessages(prev => prev.filter(m => m.id !== tempId));
       setNewMessage(messageText);
       toast({
         title: 'Error',
         description: error.message || 'Failed to send message',
         variant: 'destructive',
       });
-    } finally {
-      setSending(false);
     }
   };
 
@@ -408,10 +411,7 @@ const GuestHelpDesk = () => {
                       {formatDate(msg.created_at)}
                     </div>
                   )}
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.15 }}
+                  <div
                     className={`flex ${msg.sender_type === 'guest' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
@@ -419,7 +419,7 @@ const GuestHelpDesk = () => {
                         msg.sender_type === 'guest'
                           ? 'bg-primary text-primary-foreground rounded-br-md'
                           : 'bg-muted rounded-bl-md'
-                      }`}
+                      } ${msg.id.startsWith('temp-') ? 'opacity-90' : ''}`}
                     >
                       <p className="text-sm leading-relaxed break-words">{msg.message}</p>
                       <div className={`flex items-center gap-1 mt-1 ${
@@ -435,7 +435,9 @@ const GuestHelpDesk = () => {
                           {formatTime(msg.created_at)}
                         </p>
                         {msg.sender_type === 'guest' && (
-                          msg.is_read ? (
+                          msg.id.startsWith('temp-') ? (
+                            <Loader2 className="w-3 h-3 text-primary-foreground/70 animate-spin" />
+                          ) : msg.is_read ? (
                             <CheckCheck className="w-3 h-3 text-primary-foreground/70" />
                           ) : (
                             <Check className="w-3 h-3 text-primary-foreground/70" />
@@ -443,7 +445,7 @@ const GuestHelpDesk = () => {
                         )}
                       </div>
                     </div>
-                  </motion.div>
+                  </div>
                 </div>
               );
             })}
@@ -476,17 +478,16 @@ const GuestHelpDesk = () => {
               placeholder="Type a message..."
               value={newMessage}
               onChange={handleInputChangeWithTyping}
-              disabled={sending}
               className="touch-manipulation min-h-[44px] text-base rounded-full px-4"
               autoComplete="off"
             />
             <Button 
               type="submit" 
               size="icon"
-              disabled={sending || !newMessage.trim()}
+              disabled={!newMessage.trim()}
               className="touch-manipulation h-11 w-11 rounded-full shrink-0"
             >
-              {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+              <Send className="w-5 h-5" />
             </Button>
           </form>
         </div>
@@ -721,10 +722,9 @@ const GuestHelpDesk = () => {
                         placeholder="Type your message..."
                         value={newMessage}
                         onChange={handleInputChangeWithTyping}
-                        disabled={sending}
                       />
-                      <Button type="submit" disabled={sending || !newMessage.trim()}>
-                        {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                      <Button type="submit" disabled={!newMessage.trim()}>
+                        <Send className="w-4 h-4" />
                       </Button>
                     </form>
                   </div>
