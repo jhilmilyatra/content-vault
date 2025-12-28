@@ -131,6 +131,56 @@ export type Database = {
         }
         Relationships: []
       }
+      chunked_upload_sessions: {
+        Row: {
+          created_at: string
+          expires_at: string
+          file_name: string
+          folder_id: string | null
+          id: string
+          mime_type: string
+          total_chunks: number
+          total_size: number
+          upload_id: string
+          uploaded_chunks: number[]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string
+          file_name: string
+          folder_id?: string | null
+          id?: string
+          mime_type?: string
+          total_chunks: number
+          total_size: number
+          upload_id: string
+          uploaded_chunks?: number[]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          file_name?: string
+          folder_id?: string | null
+          id?: string
+          mime_type?: string
+          total_chunks?: number
+          total_size?: number
+          upload_id?: string
+          uploaded_chunks?: number[]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chunked_upload_sessions_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       files: {
         Row: {
           created_at: string
