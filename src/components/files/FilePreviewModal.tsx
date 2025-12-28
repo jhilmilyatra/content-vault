@@ -23,8 +23,9 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
 
-  // Video player state
+  // Video/Audio player state
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -34,16 +35,24 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
   const [showControls, setShowControls] = useState(true);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
   
   // Double-tap seek state
   const lastTapRef = useRef<{ time: number; x: number } | null>(null);
   const [seekIndicator, setSeekIndicator] = useState<{ side: 'left' | 'right'; visible: boolean }>({ side: 'left', visible: false });
 
   const playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  
+  // Get current media ref (video or audio)
+  const getMediaRef = () => {
+    const fileType = file ? getFileType(file.mime_type) : "other";
+    return fileType === 'audio' ? audioRef.current : videoRef.current;
+  };
 
   useEffect(() => {
     if (open && file) {
       loadFileUrl();
+      setMediaError(null);
     } else {
       // Clean up blob URL to prevent memory leaks
       if (fileUrl && fileUrl.startsWith("blob:")) {
@@ -57,19 +66,23 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
       setDuration(0);
       setPlaybackSpeed(1);
       setShowSpeedMenu(false);
+      setMediaError(null);
     }
   }, [open, file]);
 
-  // Keyboard shortcuts for video player
+  // Keyboard shortcuts for video/audio player
   useEffect(() => {
     if (!open || !file) return;
     
     const fileType = getFileType(file.mime_type);
-    if (fileType !== 'video') return;
+    if (fileType !== 'video' && fileType !== 'audio') return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger if user is typing in an input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      
+      const media = getMediaRef();
+      if (!media) return;
       
       switch (e.code) {
         case 'Space':
@@ -86,18 +99,18 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
           break;
         case 'ArrowUp':
           e.preventDefault();
-          if (videoRef.current) {
+          {
             const newVol = Math.min(volume + 0.1, 1);
-            videoRef.current.volume = newVol;
+            media.volume = newVol;
             setVolume(newVol);
             setIsMuted(false);
           }
           break;
         case 'ArrowDown':
           e.preventDefault();
-          if (videoRef.current) {
+          {
             const newVol = Math.max(volume - 0.1, 0);
-            videoRef.current.volume = newVol;
+            media.volume = newVol;
             setVolume(newVol);
             if (newVol === 0) setIsMuted(true);
           }
@@ -108,7 +121,7 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
           break;
         case 'KeyF':
           e.preventDefault();
-          toggleFullscreen();
+          if (fileType === 'video') toggleFullscreen();
           break;
       }
     };
@@ -230,69 +243,92 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
     if (mimeType.startsWith("video/")) return "video";
     if (mimeType.startsWith("audio/")) return "audio";
     if (mimeType === "application/pdf") return "pdf";
+    // Handle common video formats that might have wrong mime types
+    const videoExtensions = ['.mp4', '.webm', '.ogg', '.ogv', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v'];
+    const audioExtensions = ['.mp3', '.wav', '.ogg', '.oga', '.flac', '.aac', '.m4a', '.wma'];
+    if (file) {
+      const ext = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+      if (videoExtensions.includes(ext)) return "video";
+      if (audioExtensions.includes(ext)) return "audio";
+    }
     return "other";
   };
 
-  // Video player controls
+  // Media player controls - work for both video and audio
   const togglePlay = () => {
-    if (videoRef.current) {
+    const media = getMediaRef();
+    if (media) {
       if (isPlaying) {
-        videoRef.current.pause();
+        media.pause();
       } else {
-        videoRef.current.play();
+        media.play().catch(err => {
+          console.error('Playback error:', err);
+          setMediaError('Unable to play this file. The format may not be supported.');
+        });
       }
       setIsPlaying(!isPlaying);
     }
   };
 
   const toggleMute = () => {
-    if (videoRef.current) {
-      videoRef.current.muted = !isMuted;
+    const media = getMediaRef();
+    if (media) {
+      media.muted = !isMuted;
       setIsMuted(!isMuted);
     }
   };
 
   const handleVolumeChange = (value: number[]) => {
-    if (videoRef.current) {
+    const media = getMediaRef();
+    if (media) {
       const newVolume = value[0];
-      videoRef.current.volume = newVolume;
+      media.volume = newVolume;
       setVolume(newVolume);
       setIsMuted(newVolume === 0);
     }
   };
 
   const handleSeek = (value: number[]) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = value[0];
+    const media = getMediaRef();
+    if (media) {
+      media.currentTime = value[0];
       setCurrentTime(value[0]);
     }
   };
 
   const handleTimeUpdate = () => {
-    if (videoRef.current) {
-      setCurrentTime(videoRef.current.currentTime);
+    const media = getMediaRef();
+    if (media) {
+      setCurrentTime(media.currentTime);
     }
   };
 
   const handleLoadedMetadata = () => {
-    if (videoRef.current) {
-      setDuration(videoRef.current.duration);
+    const media = getMediaRef();
+    if (media) {
+      setDuration(media.duration);
     }
   };
 
-  const handleVideoEnded = () => {
+  const handleMediaEnded = () => {
     setIsPlaying(false);
   };
 
+  const handleMediaError = () => {
+    setMediaError('Unable to play this file. The format may not be supported by your browser.');
+  };
+
   const skipForward = () => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = Math.min(videoRef.current.currentTime + 10, duration);
+    const media = getMediaRef();
+    if (media) {
+      media.currentTime = Math.min(media.currentTime + 10, duration);
     }
   };
 
   const skipBackward = () => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = Math.max(videoRef.current.currentTime - 10, 0);
+    const media = getMediaRef();
+    if (media) {
+      media.currentTime = Math.max(media.currentTime - 10, 0);
     }
   };
 
@@ -307,8 +343,9 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
   };
 
   const changePlaybackSpeed = (speed: number) => {
-    if (videoRef.current) {
-      videoRef.current.playbackRate = speed;
+    const media = getMediaRef();
+    if (media) {
+      media.playbackRate = speed;
       setPlaybackSpeed(speed);
       setShowSpeedMenu(false);
     }
@@ -402,7 +439,8 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
                 className="max-w-full max-h-[60vh] sm:max-h-[60vh] object-contain pointer-events-none"
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
-                onEnded={handleVideoEnded}
+                onEnded={handleMediaEnded}
+                onError={handleMediaError}
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
                 playsInline
@@ -580,14 +618,149 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
 
       case "audio":
         return (
-          <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
-            <div className="w-32 h-32 rounded-full bg-primary/20 flex items-center justify-center">
-              <FileText className="w-16 h-16 text-primary" />
+          <div className="flex-1 flex flex-col items-center justify-center gap-6 p-4 sm:p-8">
+            {/* Audio visualization circle */}
+            <div className={`w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center transition-transform ${isPlaying ? 'animate-pulse' : ''}`}>
+              <button
+                onClick={togglePlay}
+                className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-primary/90 flex items-center justify-center hover:bg-primary transition-all active:scale-95 touch-manipulation"
+              >
+                {isPlaying ? (
+                  <Pause className="w-8 h-8 sm:w-10 sm:h-10 text-primary-foreground" />
+                ) : (
+                  <Play className="w-8 h-8 sm:w-10 sm:h-10 text-primary-foreground ml-1" />
+                )}
+              </button>
             </div>
-            <p className="text-lg font-medium text-foreground">{file.name}</p>
-            <audio src={fileUrl} controls className="w-full max-w-md">
-              Your browser does not support the audio tag.
-            </audio>
+            
+            <p className="text-lg font-medium text-foreground text-center">{file.name}</p>
+            
+            {/* Hidden audio element */}
+            <audio
+              ref={audioRef}
+              src={fileUrl}
+              onTimeUpdate={handleTimeUpdate}
+              onLoadedMetadata={handleLoadedMetadata}
+              onEnded={handleMediaEnded}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onError={handleMediaError}
+              className="hidden"
+            />
+            
+            {/* Error message */}
+            {mediaError && (
+              <div className="text-destructive text-sm text-center px-4">
+                {mediaError}
+              </div>
+            )}
+            
+            {/* Audio controls */}
+            <div className="w-full max-w-md space-y-3">
+              {/* Progress bar */}
+              <div className="space-y-1">
+                <Slider
+                  value={[currentTime]}
+                  min={0}
+                  max={duration || 100}
+                  step={0.1}
+                  onValueChange={handleSeek}
+                  className="cursor-pointer touch-manipulation"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>{formatTime(currentTime)}</span>
+                  <span>{formatTime(duration)}</span>
+                </div>
+              </div>
+              
+              {/* Control buttons */}
+              <div className="flex items-center justify-center gap-2 sm:gap-4">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={skipBackward}
+                  className="h-10 w-10 touch-manipulation active:scale-95"
+                >
+                  <SkipBack className="w-5 h-5" />
+                </Button>
+                
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={togglePlay}
+                  className="h-12 w-12 touch-manipulation active:scale-95"
+                >
+                  {isPlaying ? (
+                    <Pause className="w-6 h-6" />
+                  ) : (
+                    <Play className="w-6 h-6" />
+                  )}
+                </Button>
+                
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={skipForward}
+                  className="h-10 w-10 touch-manipulation active:scale-95"
+                >
+                  <SkipForward className="w-5 h-5" />
+                </Button>
+              </div>
+              
+              {/* Speed and volume controls */}
+              <div className="flex items-center justify-between gap-4">
+                {/* Speed control */}
+                <div className="relative">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowSpeedMenu(!showSpeedMenu)}
+                    className="text-xs font-medium"
+                  >
+                    {playbackSpeed}x
+                  </Button>
+                  {showSpeedMenu && (
+                    <div className="absolute bottom-full mb-2 left-0 bg-popover rounded-lg border shadow-lg overflow-hidden min-w-[80px] z-10">
+                      {playbackSpeeds.map((speed) => (
+                        <button
+                          key={speed}
+                          onClick={() => changePlaybackSpeed(speed)}
+                          className={`w-full px-3 py-2 text-sm text-left hover:bg-muted transition-colors ${
+                            playbackSpeed === speed ? 'text-primary bg-muted' : ''
+                          }`}
+                        >
+                          {speed}x
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Volume control */}
+                <div className="flex items-center gap-2 flex-1 max-w-[150px]">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={toggleMute}
+                    className="h-8 w-8 flex-shrink-0"
+                  >
+                    {isMuted || volume === 0 ? (
+                      <VolumeX className="w-4 h-4" />
+                    ) : (
+                      <Volume2 className="w-4 h-4" />
+                    )}
+                  </Button>
+                  <Slider
+                    value={[isMuted ? 0 : volume]}
+                    min={0}
+                    max={1}
+                    step={0.1}
+                    onValueChange={handleVolumeChange}
+                    className="flex-1"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         );
 
