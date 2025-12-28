@@ -41,22 +41,12 @@ interface AnalyticsData {
   storageUsed: number;
 }
 
-// Generate mock data for demo
-const generateChartData = (days: number) => {
-  const data = [];
-  const now = new Date();
-  for (let i = days - 1; i >= 0; i--) {
-    const date = new Date(now);
-    date.setDate(date.getDate() - i);
-    data.push({
-      date: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      downloads: Math.floor(Math.random() * 500) + 100,
-      views: Math.floor(Math.random() * 1000) + 200,
-      bandwidth: Math.floor(Math.random() * 50) + 10,
-    });
-  }
-  return data;
-};
+interface ChartDataPoint {
+  date: string;
+  downloads: number;
+  views: number;
+  bandwidth: number;
+}
 
 const Analytics = () => {
   const [stats, setStats] = useState<AnalyticsData>({
@@ -66,18 +56,17 @@ const Analytics = () => {
     storageUsed: 0,
   });
   const [timeRange, setTimeRange] = useState("7");
-  const [chartData, setChartData] = useState(generateChartData(7));
+  const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
 
   const { user, role } = useAuth();
 
   useEffect(() => {
-    fetchAnalytics();
-  }, [user, role]);
-
-  useEffect(() => {
-    setChartData(generateChartData(parseInt(timeRange)));
-  }, [timeRange]);
+    if (user) {
+      fetchAnalytics();
+      fetchChartData();
+    }
+  }, [user, role, timeRange]);
 
   const fetchAnalytics = async () => {
     if (!user) return;
@@ -110,6 +99,97 @@ const Analytics = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchChartData = async () => {
+    if (!user) return;
+
+    try {
+      const days = parseInt(timeRange);
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+
+      // Get file views aggregated by day
+      let query = supabase
+        .from("file_views")
+        .select("created_at, view_type, bytes_transferred, file_id, files!inner(user_id)")
+        .gte("created_at", startDate.toISOString())
+        .order("created_at", { ascending: true });
+
+      // If not owner, filter by files owned by this user
+      if (role !== "owner") {
+        query = query.eq("files.user_id", user.id);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error("Error fetching chart data:", error);
+        // Fall back to empty chart
+        setChartData(generateEmptyChartData(days));
+        return;
+      }
+
+      // Aggregate data by date
+      const dateMap = new Map<string, { downloads: number; views: number; bandwidth: number }>();
+      
+      // Initialize all dates
+      for (let i = days - 1; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        const dateStr = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        dateMap.set(dateStr, { downloads: 0, views: 0, bandwidth: 0 });
+      }
+
+      // Populate with real data
+      data?.forEach((view) => {
+        const date = new Date(view.created_at);
+        const dateStr = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        
+        const existing = dateMap.get(dateStr) || { downloads: 0, views: 0, bandwidth: 0 };
+        
+        if (view.view_type === "download") {
+          existing.downloads += 1;
+        } else {
+          existing.views += 1;
+        }
+        
+        existing.bandwidth += Number(view.bytes_transferred || 0) / (1024 * 1024 * 1024); // Convert to GB
+        
+        dateMap.set(dateStr, existing);
+      });
+
+      // Convert to array
+      const chartDataArray: ChartDataPoint[] = [];
+      dateMap.forEach((value, date) => {
+        chartDataArray.push({
+          date,
+          downloads: value.downloads,
+          views: value.views,
+          bandwidth: parseFloat(value.bandwidth.toFixed(3)),
+        });
+      });
+
+      setChartData(chartDataArray);
+    } catch (error) {
+      console.error("Error fetching chart data:", error);
+      setChartData(generateEmptyChartData(parseInt(timeRange)));
+    }
+  };
+
+  const generateEmptyChartData = (days: number): ChartDataPoint[] => {
+    const data: ChartDataPoint[] = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      data.push({
+        date: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        downloads: 0,
+        views: 0,
+        bandwidth: 0,
+      });
+    }
+    return data;
   };
 
   const formatBytes = (bytes: number) => {

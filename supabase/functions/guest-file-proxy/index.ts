@@ -81,6 +81,15 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Get client IP and user agent for tracking
+    const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || 
+                     req.headers.get("cf-connecting-ip") || 
+                     req.headers.get("x-real-ip") || null;
+    const userAgent = req.headers.get("user-agent") || null;
+    
+    // Determine view type from URL params or default to preview
+    const viewType = url.searchParams.get("type") || "preview";
+
     // Handle HEAD requests for video players to get file size
     if (req.method === "HEAD") {
       return new Response(null, {
@@ -123,9 +132,35 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Calculate bytes transferred for bandwidth tracking
+    let bytesTransferred = fileSize;
+    if (rangeHeader) {
+      const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+      if (match) {
+        const start = parseInt(match[1]);
+        const end = match[2] ? parseInt(match[2]) : fileSize - 1;
+        bytesTransferred = end - start + 1;
+      }
+    }
+
+    // Record file view and bandwidth (async - don't wait)
+    (async () => {
+      try {
+        await supabaseAdmin.rpc('record_file_view', {
+          p_file_id: fileData.id,
+          p_guest_id: guestId,
+          p_ip_address: clientIp,
+          p_user_agent: userAgent,
+          p_view_type: rangeHeader ? 'stream' : viewType,
+          p_bytes_transferred: bytesTransferred
+        });
+        console.log(`📊 Recorded view: file=${fileData.id}, guest=${guestId}, type=${viewType}, bytes=${bytesTransferred}`);
+      } catch (err) {
+        console.error('Failed to record view:', err);
+      }
+    })();
+
     const contentType = fileData.mime_type || "application/octet-stream";
-    const isVideo = contentType.startsWith("video/");
-    const isAudio = contentType.startsWith("audio/");
 
     // Build response headers
     const responseHeaders: Record<string, string> = {
