@@ -301,13 +301,43 @@ const FileManager = () => {
 
   const handleDownload = async (file: FileItem) => {
     try {
-      const url = await getFileUrl(file.storage_path);
+      // Get auth session for authenticated request
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        throw new Error("Not authenticated");
+      }
+
+      // Fetch file via edge function with auth header
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`,
+        {
+          headers: {
+            Authorization: `Bearer ${sessionData.session.access_token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch file");
+      }
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
       const a = document.createElement("a");
-      a.href = url;
+      a.href = blobUrl;
       a.download = file.original_name;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+
+      // Clean up blob URL
+      URL.revokeObjectURL(blobUrl);
+
+      toast({
+        title: "Download started",
+        description: `Downloading ${file.original_name}`,
+      });
     } catch (error) {
       console.error("Error downloading:", error);
       toast({
