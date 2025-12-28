@@ -63,8 +63,5 @@ verify_jwt = false
 [functions.shared-download]
 verify_jwt = false
 
-[functions.background-jobs]
-verify_jwt = false
-
-[functions.telegram-upload]
+[functions.vps-chunked-upload]
 verify_jwt = false
