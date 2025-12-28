@@ -63,10 +63,11 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
 
   return (
     <motion.div
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: "auto" }}
-      exit={{ opacity: 0, height: 0 }}
-      className="p-4 rounded-lg bg-card border border-border overflow-hidden"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 8 }}
+      transition={{ duration: 0.25, ease: [0.2, 0.8, 0.2, 1] }}
+      className="p-4 rounded-2xl glass-elevated overflow-hidden"
     >
       {/* Overall Progress */}
       <div className="flex items-center gap-4 mb-3">
