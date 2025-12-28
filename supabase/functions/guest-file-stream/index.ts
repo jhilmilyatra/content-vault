@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
     // Get file info from storage path
     const { data: fileData, error: fileError } = await supabaseAdmin
       .from("files")
-      .select("id, folder_id, user_id, name, original_name, mime_type")
+      .select("id, folder_id, user_id, name, original_name, mime_type, size_bytes")
       .eq("storage_path", storagePath)
       .eq("is_deleted", false)
       .single();
@@ -81,17 +81,38 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Size limits for preview - large files should use download instead
+    const MAX_PREVIEW_SIZE = 100 * 1024 * 1024; // 100MB max for preview
+    const isLargeFile = fileData.size_bytes > MAX_PREVIEW_SIZE;
+    
+    // For large files that aren't video/audio, suggest download instead
+    const isStreamable = fileData.mime_type.startsWith("video/") || fileData.mime_type.startsWith("audio/");
+    
+    if (isLargeFile && !isStreamable && action !== 'download') {
+      console.log(`File too large for preview: ${fileData.size_bytes} bytes`);
+      return new Response(
+        JSON.stringify({ 
+          error: "File too large for preview",
+          suggestDownload: true,
+          size: fileData.size_bytes,
+          fileName: fileData.original_name
+        }),
+        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Try to get file from VPS first
     console.log(`Fetching file from VPS: ${VPS_CONFIG.endpoint}/files/${storagePath}`);
     
     try {
-      const vpsResponse = await fetch(`${VPS_CONFIG.endpoint}/files/${storagePath}`, {
+      // Just check if file exists on VPS with HEAD request
+      const vpsCheckResponse = await fetch(`${VPS_CONFIG.endpoint}/files/${storagePath}`, {
+        method: "HEAD",
         headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` },
       });
       
-      if (vpsResponse.ok) {
+      if (vpsCheckResponse.ok) {
         // VPS has the file - create a proxy URL through this edge function
-        // For get-url or download action, return the direct VPS URL wrapped in our proxy
         const proxyUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/guest-file-proxy?guestId=${encodeURIComponent(guestId)}&path=${encodeURIComponent(storagePath)}`;
         
         console.log(`VPS file found, returning proxy URL`);
@@ -100,12 +121,13 @@ Deno.serve(async (req) => {
             url: proxyUrl,
             fileName: fileData.original_name,
             mimeType: fileData.mime_type,
+            size: fileData.size_bytes,
             source: "vps"
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       } else {
-        console.log(`VPS returned ${vpsResponse.status}, trying Supabase storage`);
+        console.log(`VPS returned ${vpsCheckResponse.status}, trying Supabase storage`);
       }
     } catch (vpsError) {
       console.error("VPS fetch error:", vpsError);
@@ -131,6 +153,7 @@ Deno.serve(async (req) => {
         url: signedUrlData.signedUrl,
         fileName: fileData.original_name,
         mimeType: fileData.mime_type,
+        size: fileData.size_bytes,
         source: "supabase"
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }

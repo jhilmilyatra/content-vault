@@ -75,6 +75,18 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
         throw new Error(response.error.message || 'Failed to get file URL');
       }
 
+      // Handle large file case
+      if (response.data?.suggestDownload) {
+        toast({
+          title: "File too large for preview",
+          description: `This file is ${formatFileSize(response.data.size)}. Please download it to view.`,
+          variant: "default",
+        });
+        setFileUrl(null);
+        setLoading(false);
+        return;
+      }
+
       if (response.data?.url) {
         setFileUrl(response.data.url);
       } else if (response.data?.blob) {
@@ -87,7 +99,7 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
       console.error("Error loading file:", error);
       toast({
         title: "Error",
-        description: "Failed to load file preview",
+        description: "Failed to load file preview. Try downloading the file instead.",
         variant: "destructive",
       });
     } finally {

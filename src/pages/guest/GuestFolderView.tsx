@@ -230,44 +230,66 @@ const GuestFolderView = () => {
     await new Promise(resolve => setTimeout(resolve, 500));
     setZipStatus('processing');
     
-    try {
-      // Use fetch directly with proper blob handling to avoid data corruption
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-      
-      const response = await fetch(`${supabaseUrl}/functions/v1/guest-folder-zip`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseKey,
-        },
-        body: JSON.stringify({ guestId: guest.id, folderId }),
-      });
+    const maxRetries = 2;
+    let lastError: string | null = null;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // Use fetch directly with proper blob handling to avoid data corruption
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
+        
+        const response = await fetch(`${supabaseUrl}/functions/v1/guest-folder-zip`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': supabaseKey,
+          },
+          body: JSON.stringify({ guestId: guest.id, folderId }),
+          signal: controller.signal,
+        });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to create ZIP');
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Failed to create ZIP');
+        }
+
+        // Get the response as a proper blob
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${folder?.name || 'folder'}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        setZipStatus('complete');
+        setDownloadingZip(false);
+        return; // Success, exit the retry loop
+      } catch (error: any) {
+        console.error(`ZIP download attempt ${attempt + 1} failed:`, error);
+        lastError = error.name === 'AbortError' 
+          ? 'Request timed out. Please try again with fewer files.'
+          : error.message || 'Failed to download folder as ZIP';
+        
+        if (attempt < maxRetries) {
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
       }
-
-      // Get the response as a proper blob
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${folder?.name || 'folder'}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      setZipStatus('complete');
-    } catch (error: any) {
-      console.error('ZIP download error:', error);
-      setZipStatus('error');
-      setZipError(error.message || 'Failed to download folder as ZIP');
-    } finally {
-      setDownloadingZip(false);
     }
+    
+    // All retries failed
+    setZipStatus('error');
+    setZipError(lastError || 'Failed to download folder as ZIP. Please try again.');
+    setDownloadingZip(false);
   };
 
   const handleZipModalClose = () => {

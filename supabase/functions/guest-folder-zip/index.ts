@@ -10,6 +10,7 @@ const corsHeaders = {
 const MAX_FILES_IN_ZIP = 500;
 const MAX_ZIP_SIZE = 500 * 1024 * 1024; // 500MB
 const RATE_LIMIT = { requests: 3, windowMs: 60000 }; // 3 ZIP requests per minute
+const FILE_FETCH_TIMEOUT = 30000; // 30 seconds per file
 
 // Rate limiting
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
@@ -41,6 +42,22 @@ interface FileItem {
   storage_path: string;
   mime_type: string;
   size_bytes: number;
+}
+
+// Fetch with timeout
+async function fetchWithTimeout(url: string, options: RequestInit, timeout: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -143,37 +160,36 @@ Deno.serve(async (req) => {
     // Create ZIP file
     const zip = new JSZip();
     let filesAdded = 0;
+    let filesSkipped = 0;
 
-    // Process files in batches of 3 for parallel downloads
-    for (let i = 0; i < allFiles.length; i += 3) {
-      const batch = allFiles.slice(i, i + 3);
-      const results = await Promise.allSettled(
-        batch.map(async ({ file, relativePath }) => {
-          const vpsResponse = await fetch(`${VPS_CONFIG.endpoint}/files/${file.storage_path}`, {
-            headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` },
-          });
-          
-          if (vpsResponse.ok) {
-            const arrayBuffer = await vpsResponse.arrayBuffer();
-            return { file, relativePath, arrayBuffer };
-          }
-          return null;
-        })
-      );
-
-      for (const result of results) {
-        if (result.status === "fulfilled" && result.value) {
-          const { file, relativePath, arrayBuffer } = result.value;
+    // Process files one by one with retry logic
+    for (const { file, relativePath } of allFiles) {
+      try {
+        const vpsResponse = await fetchWithTimeout(
+          `${VPS_CONFIG.endpoint}/files/${file.storage_path}`,
+          { headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` } },
+          FILE_FETCH_TIMEOUT
+        );
+        
+        if (vpsResponse.ok) {
+          const arrayBuffer = await vpsResponse.arrayBuffer();
           const filePath = relativePath ? `${relativePath}/${file.original_name}` : file.original_name;
           zip.file(filePath, arrayBuffer);
           filesAdded++;
+        } else {
+          console.warn(`Failed to fetch ${file.storage_path}: ${vpsResponse.status}`);
+          filesSkipped++;
         }
+      } catch (fetchError) {
+        console.warn(`Error fetching ${file.storage_path}:`, fetchError);
+        filesSkipped++;
+        // Continue with other files
       }
     }
 
     if (filesAdded === 0) {
       return new Response(
-        JSON.stringify({ error: "Failed to fetch any files" }),
+        JSON.stringify({ error: "Failed to fetch any files. Please try again." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -181,19 +197,21 @@ Deno.serve(async (req) => {
     const zipBlob = await zip.generateAsync({ type: "blob" });
 
     const duration = Date.now() - startTime;
-    console.log(`✓ ZIP created: ${filesAdded} files in ${duration}ms`);
+    console.log(`✓ ZIP created: ${filesAdded} files (${filesSkipped} skipped) in ${duration}ms`);
 
     return new Response(zipBlob, {
       headers: {
         ...corsHeaders,
         "Content-Type": "application/zip",
         "Content-Disposition": `attachment; filename="${folderData.name}.zip"`,
+        "X-Files-Added": String(filesAdded),
+        "X-Files-Skipped": String(filesSkipped),
       },
     });
   } catch (error) {
     console.error("Guest folder ZIP error:", error);
     return new Response(
-      JSON.stringify({ error: "Failed to create ZIP" }),
+      JSON.stringify({ error: "Failed to create ZIP. Please try again." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
