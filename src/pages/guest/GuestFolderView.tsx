@@ -231,16 +231,26 @@ const GuestFolderView = () => {
     setZipStatus('processing');
     
     try {
-      const response = await supabase.functions.invoke('guest-folder-zip', {
-        body: { guestId: guest.id, folderId },
+      // Use fetch directly with proper blob handling to avoid data corruption
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      
+      const response = await fetch(`${supabaseUrl}/functions/v1/guest-folder-zip`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+        },
+        body: JSON.stringify({ guestId: guest.id, folderId }),
       });
 
-      if (response.error) {
-        throw new Error(response.error.message || 'Failed to create ZIP');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to create ZIP');
       }
 
-      // The response should be a blob
-      const blob = new Blob([response.data], { type: 'application/zip' });
+      // Get the response as a proper blob
+      const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
