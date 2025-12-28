@@ -17,7 +17,27 @@ export default defineConfig(({ mode }) => ({
     },
   },
   build: {
+    // Enable source maps only in development
+    sourcemap: mode === "development",
     rollupOptions: {
+      output: {
+        // Manual chunk splitting for better caching
+        manualChunks: {
+          // Vendor chunks
+          "vendor-react": ["react", "react-dom", "react-router-dom"],
+          "vendor-ui": [
+            "@radix-ui/react-dialog",
+            "@radix-ui/react-dropdown-menu",
+            "@radix-ui/react-tabs",
+            "@radix-ui/react-toast",
+            "@radix-ui/react-tooltip",
+          ],
+          "vendor-query": ["@tanstack/react-query"],
+          "vendor-motion": ["framer-motion"],
+          "vendor-supabase": ["@supabase/supabase-js"],
+          "vendor-charts": ["recharts"],
+        },
+      },
       plugins: [
         mode === "production" &&
           obfuscatorPlugin({
@@ -60,9 +80,10 @@ export default defineConfig(({ mode }) => ({
     minify: "terser",
     terserOptions: {
       compress: {
-        drop_console: true,
+        drop_console: mode === "production",
         drop_debugger: true,
-        pure_funcs: ["console.log", "console.info", "console.debug"],
+        pure_funcs: mode === "production" ? ["console.log", "console.info", "console.debug"] : [],
+        passes: 2, // Multiple compression passes
       },
       mangle: {
         safari10: true,
@@ -71,7 +92,21 @@ export default defineConfig(({ mode }) => ({
         comments: false,
       },
     },
-    // Chunk splitting for better obfuscation
+    // Chunk splitting for better caching
     chunkSizeWarningLimit: 1000,
+    // Target modern browsers for smaller bundles
+    target: "es2020",
+    // Enable CSS code splitting
+    cssCodeSplit: true,
+  },
+  // Optimize dependencies
+  optimizeDeps: {
+    include: [
+      "react",
+      "react-dom",
+      "react-router-dom",
+      "@tanstack/react-query",
+      "framer-motion",
+    ],
   },
 }));

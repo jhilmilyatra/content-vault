@@ -5,6 +5,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Cache headers for folder listings (short TTL)
+const cacheHeaders = {
+  "Cache-Control": "public, max-age=30, stale-while-revalidate=60",
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -52,7 +57,10 @@ Deno.serve(async (req) => {
       const hasAccess = await verifyFolderAccess(supabaseAdmin, guestId, folderId);
       return new Response(
         JSON.stringify({ hasAccess }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { 
+          status: 200, 
+          headers: { ...corsHeaders, ...cacheHeaders, "Content-Type": "application/json" } 
+        }
       );
     }
 
@@ -66,47 +74,51 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Get folder details
-      const { data: folderData, error: folderError } = await supabaseAdmin
-        .from("folders")
-        .select("id, name, description, parent_id")
-        .eq("id", folderId)
-        .single();
+      // Parallel fetch for better performance
+      const [folderResult, subfoldersResult, filesResult] = await Promise.all([
+        // Get folder details
+        supabaseAdmin
+          .from("folders")
+          .select("id, name, description, parent_id")
+          .eq("id", folderId)
+          .single(),
+        // Get subfolders
+        supabaseAdmin
+          .from("folders")
+          .select("id, name, description, parent_id")
+          .eq("parent_id", folderId)
+          .order("name"),
+        // Get files - only needed columns
+        supabaseAdmin
+          .from("files")
+          .select("id, name, original_name, mime_type, size_bytes, storage_path")
+          .eq("folder_id", folderId)
+          .eq("is_deleted", false)
+          .order("name"),
+      ]);
 
-      if (folderError || !folderData) {
+      if (folderResult.error || !folderResult.data) {
         return new Response(
           JSON.stringify({ error: "Folder not found" }),
           { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      // Get subfolders
-      const { data: subfolders } = await supabaseAdmin
-        .from("folders")
-        .select("id, name, description, parent_id")
-        .eq("parent_id", folderId)
-        .order("name");
-
-      // Get files
-      const { data: files } = await supabaseAdmin
-        .from("files")
-        .select("*")
-        .eq("folder_id", folderId)
-        .eq("is_deleted", false)
-        .order("name");
-
       // Build breadcrumbs
-      const breadcrumbs = await buildBreadcrumbs(supabaseAdmin, guestId, folderId, folderData);
+      const breadcrumbs = await buildBreadcrumbs(supabaseAdmin, guestId, folderId, folderResult.data);
 
       return new Response(
         JSON.stringify({
-          folder: folderData,
-          subfolders: subfolders || [],
-          files: files || [],
+          folder: folderResult.data,
+          subfolders: subfoldersResult.data || [],
+          files: filesResult.data || [],
           breadcrumbs,
           rootFolderId: accessResult.rootFolderId,
         }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { 
+          status: 200, 
+          headers: { ...corsHeaders, ...cacheHeaders, "Content-Type": "application/json" } 
+        }
       );
     }
 

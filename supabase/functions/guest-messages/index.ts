@@ -66,47 +66,99 @@ Deno.serve(async (req) => {
 
       const memberIds = [...new Set((accessData || []).map((a: any) => a.member_id))];
 
-      // Get member profiles
-      const { data: profiles } = await supabaseAdmin
-        .from("profiles")
-        .select("user_id, full_name")
-        .in("user_id", memberIds);
-
-      const profileMap = new Map(profiles?.map((p: any) => [p.user_id, p.full_name]) || []);
-
-      // Build conversation list with last message and unread count
-      const conversations = [];
-
-      for (const memberId of memberIds) {
-        // Get last message
-        const { data: lastMsg } = await supabaseAdmin
-          .from("guest_messages")
-          .select("message, created_at")
-          .eq("guest_id", guestId)
-          .eq("member_id", memberId)
-          .order("created_at", { ascending: false })
-          .limit(1);
-
-        // Get unread count
-        const { count: unreadCount } = await supabaseAdmin
-          .from("guest_messages")
-          .select("id", { count: "exact", head: true })
-          .eq("guest_id", guestId)
-          .eq("member_id", memberId)
-          .eq("sender_type", "member")
-          .eq("is_read", false);
-
-        conversations.push({
-          member_id: memberId,
-          member_name: profileMap.get(memberId) || "Member",
-          last_message: lastMsg?.[0]?.message || "No messages yet",
-          last_message_at: lastMsg?.[0]?.created_at || "",
-          unread_count: unreadCount || 0,
-        });
+      if (memberIds.length === 0) {
+        return new Response(
+          JSON.stringify({ success: true, conversations: [] }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
+
+      // Parallel fetch for profiles and messages
+      const [profilesResult, messagesResult, unreadResult] = await Promise.all([
+        // Get member profiles
+        supabaseAdmin
+          .from("profiles")
+          .select("user_id, full_name")
+          .in("user_id", memberIds),
+        // Get last messages for all members in one query
+        supabaseAdmin
+          .from("guest_messages")
+          .select("member_id, message, created_at")
+          .eq("guest_id", guestId)
+          .in("member_id", memberIds)
+          .order("created_at", { ascending: false }),
+        // Get unread counts in one query
+        supabaseAdmin
+          .from("guest_messages")
+          .select("member_id")
+          .eq("guest_id", guestId)
+          .in("member_id", memberIds)
+          .eq("sender_type", "member")
+          .eq("is_read", false),
+      ]);
+
+      const profileMap = new Map(profilesResult.data?.map((p: any) => [p.user_id, p.full_name]) || []);
+      
+      // Group last messages by member
+      const lastMessageMap = new Map<string, { message: string; created_at: string }>();
+      for (const msg of messagesResult.data || []) {
+        if (!lastMessageMap.has(msg.member_id)) {
+          lastMessageMap.set(msg.member_id, { message: msg.message, created_at: msg.created_at });
+        }
+      }
+
+      // Count unreads by member
+      const unreadCountMap = new Map<string, number>();
+      for (const msg of unreadResult.data || []) {
+        unreadCountMap.set(msg.member_id, (unreadCountMap.get(msg.member_id) || 0) + 1);
+      }
+
+      const conversations = memberIds.map((memberId: string) => ({
+        member_id: memberId,
+        member_name: profileMap.get(memberId) || "Member",
+        last_message: lastMessageMap.get(memberId)?.message || "No messages yet",
+        last_message_at: lastMessageMap.get(memberId)?.created_at || "",
+        unread_count: unreadCountMap.get(memberId) || 0,
+      }));
+
+      // Sort by unread count then by last message time
+      conversations.sort((a, b) => {
+        if (b.unread_count !== a.unread_count) return b.unread_count - a.unread_count;
+        if (a.last_message_at && b.last_message_at) {
+          return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime();
+        }
+        return 0;
+      });
 
       return new Response(
         JSON.stringify({ success: true, conversations }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (action === "updateTyping") {
+      // Handle typing indicator updates
+      const { isTyping } = await req.json().catch(() => ({ isTyping: false }));
+      
+      if (!memberId) {
+        return new Response(
+          JSON.stringify({ error: "Member ID is required" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      await supabaseAdmin
+        .from("typing_indicators")
+        .upsert({
+          user_id: guestId,
+          chat_type: "guest_member",
+          target_id: memberId,
+          is_typing: isTyping,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id,chat_type,target_id" });
+
+      return new Response(
+        JSON.stringify({ success: true }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -126,6 +178,7 @@ Deno.serve(async (req) => {
         .eq("guest_id", guestId)
         .eq("member_id", memberId)
         .eq("is_restricted", false)
+        .limit(1)
         .maybeSingle();
 
       if (!access) {
@@ -135,12 +188,14 @@ Deno.serve(async (req) => {
         );
       }
 
+      // Paginate messages - only fetch last 50 for performance
       const { data: messages, error: msgError } = await supabaseAdmin
         .from("guest_messages")
-        .select("*")
+        .select("id, guest_id, member_id, sender_type, message, is_read, created_at")
         .eq("guest_id", guestId)
         .eq("member_id", memberId)
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: false })
+        .limit(50);
 
       if (msgError) {
         console.error("Message fetch error:", msgError);
@@ -150,19 +205,23 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Mark messages as read if requested
+      // Reverse to get chronological order
+      const sortedMessages = (messages || []).reverse();
+
+      // Mark messages as read if requested (fire and forget)
       if (markAsRead) {
-        await supabaseAdmin
+        supabaseAdmin
           .from("guest_messages")
           .update({ is_read: true, read_at: new Date().toISOString() })
           .eq("guest_id", guestId)
           .eq("member_id", memberId)
           .eq("sender_type", "member")
-          .eq("is_read", false);
+          .eq("is_read", false)
+          .then(() => {});
       }
 
       return new Response(
-        JSON.stringify({ success: true, messages }),
+        JSON.stringify({ success: true, messages: sortedMessages }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

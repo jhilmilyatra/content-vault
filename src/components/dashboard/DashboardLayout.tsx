@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { 
@@ -24,6 +24,7 @@ import {
   MessageSquare,
   Menu,
   X,
+  LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,7 +38,13 @@ interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
-const memberNavItems = [
+interface NavItem {
+  icon: LucideIcon;
+  label: string;
+  path: string;
+}
+
+const memberNavItems: NavItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: FolderOpen, label: "Files", path: "/dashboard/files" },
   { icon: UserCheck, label: "Guests", path: "/dashboard/guests" },
@@ -48,7 +55,7 @@ const memberNavItems = [
   { icon: Settings, label: "Settings", path: "/dashboard/settings" },
 ];
 
-const adminNavItems = [
+const adminNavItems: NavItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: Users, label: "Users", path: "/dashboard/admin/users" },
   { icon: FileWarning, label: "Reports", path: "/dashboard/admin/reports" },
@@ -56,7 +63,7 @@ const adminNavItems = [
   { icon: Settings, label: "Settings", path: "/dashboard/settings" },
 ];
 
-const ownerNavItems = [
+const ownerNavItems: NavItem[] = [
   { icon: LayoutDashboard, label: "Overview", path: "/dashboard" },
   { icon: Users, label: "Users", path: "/dashboard/users" },
   { icon: UserCheck, label: "Guests", path: "/dashboard/guest-controls" },
@@ -72,7 +79,37 @@ const ownerNavItems = [
   { icon: Settings, label: "Settings", path: "/dashboard/settings" },
 ];
 
-const DashboardLayout = ({ children }: DashboardLayoutProps) => {
+// Memoized nav item component
+const NavItemComponent = memo(({ 
+  item, 
+  isActive, 
+  collapsed, 
+  isMobile 
+}: { 
+  item: NavItem; 
+  isActive: boolean; 
+  collapsed: boolean;
+  isMobile: boolean;
+}) => (
+  <Link
+    to={item.path}
+    className={`flex items-center gap-3 px-3 py-2.5 sm:py-2.5 rounded-lg transition-all duration-200 touch-manipulation min-h-[44px]
+      ${isActive 
+        ? "bg-sidebar-accent text-sidebar-accent-foreground" 
+        : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 active:bg-sidebar-accent/70"
+      }
+    `}
+  >
+    <item.icon className={`w-5 h-5 flex-shrink-0 ${isActive ? "text-primary" : ""}`} />
+    {(!collapsed || isMobile) && (
+      <span className="text-sm font-medium">{item.label}</span>
+    )}
+  </Link>
+));
+
+NavItemComponent.displayName = "NavItemComponent";
+
+const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -101,14 +138,14 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     };
   }, [mobileMenuOpen]);
 
-  const handleSignOut = async () => {
+  const handleSignOut = useCallback(async () => {
     await signOut();
     toast({
       title: "Signed out",
       description: "You have been signed out successfully.",
     });
     navigate("/");
-  };
+  }, [signOut, toast, navigate]);
 
   const getInitials = useCallback(() => {
     if (profile?.full_name) {
@@ -125,6 +162,22 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     return 'U';
   }, [profile]);
 
+  const toggleMobileMenu = useCallback(() => {
+    setMobileMenuOpen(prev => !prev);
+  }, []);
+
+  const closeMobileMenu = useCallback(() => {
+    setMobileMenuOpen(false);
+  }, []);
+
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed(prev => !prev);
+  }, []);
+
+  const toggleChat = useCallback(() => {
+    setChatOpen(prev => !prev);
+  }, []);
+
   const sidebarWidth = isMobile ? 280 : (collapsed ? 72 : 260);
 
   return (
@@ -138,7 +191,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40"
-            onClick={() => setMobileMenuOpen(false)}
+            onClick={closeMobileMenu}
           />
         )}
       </AnimatePresence>
@@ -175,7 +228,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                   variant="ghost"
                   size="icon"
                   className="h-9 w-9 touch-manipulation"
-                  onClick={() => setMobileMenuOpen(false)}
+                  onClick={closeMobileMenu}
                 >
                   <X className="w-5 h-5" />
                 </Button>
@@ -197,33 +250,22 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
 
             {/* Navigation */}
             <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scroll-smooth">
-              {navItems.map((item) => {
-                const isActive = location.pathname === item.path;
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={`flex items-center gap-3 px-3 py-2.5 sm:py-2.5 rounded-lg transition-all duration-200 touch-manipulation min-h-[44px]
-                      ${isActive 
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground" 
-                        : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 active:bg-sidebar-accent/70"
-                      }
-                    `}
-                  >
-                    <item.icon className={`w-5 h-5 flex-shrink-0 ${isActive ? "text-primary" : ""}`} />
-                    {(!collapsed || isMobile) && (
-                      <span className="text-sm font-medium">{item.label}</span>
-                    )}
-                  </Link>
-                );
-              })}
+              {navItems.map((item) => (
+                <NavItemComponent
+                  key={item.path}
+                  item={item}
+                  isActive={location.pathname === item.path}
+                  collapsed={collapsed}
+                  isMobile={isMobile}
+                />
+              ))}
             </nav>
 
             {/* Collapse toggle - desktop only */}
             {!isMobile && (
               <div className="p-3 border-t border-sidebar-border">
                 <button
-                  onClick={() => setCollapsed(!collapsed)}
+                  onClick={toggleCollapsed}
                   className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors touch-manipulation"
                 >
                   {collapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
@@ -249,7 +291,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                 variant="ghost"
                 size="icon"
                 className="h-10 w-10 flex-shrink-0 touch-manipulation"
-                onClick={() => setMobileMenuOpen(true)}
+                onClick={toggleMobileMenu}
               >
                 <Menu className="w-5 h-5" />
               </Button>
@@ -284,10 +326,12 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
 
       {/* Member Chat Panel */}
       {role === "member" && (
-        <MemberChatPanel isOpen={chatOpen} onClose={() => setChatOpen(!chatOpen)} />
+        <MemberChatPanel isOpen={chatOpen} onClose={toggleChat} />
       )}
     </div>
   );
-};
+});
+
+DashboardLayout.displayName = "DashboardLayout";
 
 export default DashboardLayout;

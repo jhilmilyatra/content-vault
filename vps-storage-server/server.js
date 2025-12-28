@@ -437,7 +437,7 @@ app.post('/upload-base64', authenticate, (req, res) => {
 });
 
 // ============================================
-// File Download/Serve Endpoint
+// File Download/Serve Endpoint with Range Support
 // ============================================
 app.get('/files/:userId/:fileName', (req, res) => {
   try {
@@ -453,7 +453,63 @@ app.get('/files/:userId/:fileName', (req, res) => {
       return res.status(404).json({ error: 'File not found' });
     }
 
-    res.sendFile(pathInfo.fullPath);
+    const stat = fs.statSync(pathInfo.fullPath);
+    const fileSize = stat.size;
+    const range = req.headers.range;
+
+    // Determine content type
+    const ext = path.extname(fileName).toLowerCase();
+    const mimeTypes = {
+      '.mp4': 'video/mp4',
+      '.webm': 'video/webm',
+      '.mp3': 'audio/mpeg',
+      '.wav': 'audio/wav',
+      '.ogg': 'audio/ogg',
+      '.pdf': 'application/pdf',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+    };
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+    // Handle range requests for video/audio streaming
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunkSize = end - start + 1;
+
+      // Validate range
+      if (start >= fileSize || end >= fileSize || start > end) {
+        res.status(416).json({ error: 'Range not satisfiable' });
+        return;
+      }
+
+      const stream = fs.createReadStream(pathInfo.fullPath, { start, end });
+      
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunkSize,
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=3600',
+      });
+      
+      stream.pipe(res);
+    } else {
+      // Full file download with streaming
+      res.writeHead(200, {
+        'Content-Length': fileSize,
+        'Content-Type': contentType,
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'public, max-age=3600',
+      });
+      
+      const stream = fs.createReadStream(pathInfo.fullPath);
+      stream.pipe(res);
+    }
   } catch (error) {
     console.error('Download error:', error);
     res.status(500).json({ error: 'Download failed', message: error.message });
