@@ -15,7 +15,9 @@ import {
   formatFileSize,
   type FileItem,
   type FolderItem,
+  type UploadProgress,
 } from "@/lib/fileService";
+import UploadProgressBar from "@/components/files/UploadProgressBar";
 import {
   FolderOpen,
   FileVideo,
@@ -75,7 +77,7 @@ const FileManager = () => {
   ]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadProgressList, setUploadProgressList] = useState<UploadProgress[]>([]);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
@@ -163,14 +165,33 @@ const FileManager = () => {
     if (!fileList.length || !user) return;
 
     setUploading(true);
-    setUploadProgress(0);
+    
+    // Initialize progress list for all files
+    const initialProgress: UploadProgress[] = fileList.map((file) => ({
+      loaded: 0,
+      total: file.size,
+      percentage: 0,
+      speed: 0,
+      remainingTime: 0,
+      fileName: file.name,
+      status: 'preparing' as const,
+    }));
+    setUploadProgressList(initialProgress);
 
     try {
+      const results: FileItem[] = [];
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i];
-        setUploadProgress(((i + 0.5) / fileList.length) * 100);
-        await uploadFile(file, user.id, currentFolderId);
-        setUploadProgress(((i + 1) / fileList.length) * 100);
+        const result = await uploadFile(file, user.id, currentFolderId, (progress) => {
+          if (typeof progress === 'object') {
+            setUploadProgressList((prev) => {
+              const updated = [...prev];
+              updated[i] = progress;
+              return updated;
+            });
+          }
+        });
+        results.push(result);
       }
 
       toast({
@@ -187,8 +208,11 @@ const FileManager = () => {
         variant: "destructive",
       });
     } finally {
-      setUploading(false);
-      setUploadProgress(0);
+      // Keep progress visible for a moment after completion
+      setTimeout(() => {
+        setUploading(false);
+        setUploadProgressList([]);
+      }, 1500);
     }
   };
 
@@ -435,23 +459,13 @@ const FileManager = () => {
         {/* Upload Progress */}
         <AnimatePresence>
           {uploading && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="p-4 rounded-lg bg-card border border-border"
-            >
-              <div className="flex items-center gap-4">
-                <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-foreground">Uploading files...</p>
-                  <Progress value={uploadProgress} className="h-2 mt-2" />
-                </div>
-                <span className="text-sm text-muted-foreground">
-                  {Math.round(uploadProgress)}%
-                </span>
-              </div>
-            </motion.div>
+            <UploadProgressBar 
+              uploads={uploadProgressList}
+              onCancel={() => {
+                setUploading(false);
+                setUploadProgressList([]);
+              }}
+            />
           )}
         </AnimatePresence>
 

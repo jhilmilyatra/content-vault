@@ -40,6 +40,16 @@ export interface StorageNode {
   priority: number;
 }
 
+export interface UploadProgress {
+  loaded: number;
+  total: number;
+  percentage: number;
+  speed: number; // bytes per second
+  remainingTime: number; // seconds
+  fileName: string;
+  status: 'preparing' | 'uploading' | 'processing' | 'complete' | 'error';
+}
+
 // Hardcoded primary VPS configuration - always available
 const PRIMARY_VPS_CONFIG = {
   endpoint: "http://46.38.232.46:4000",
@@ -116,67 +126,156 @@ export const hasVPSStorage = (): boolean => {
 };
 
 /**
- * Upload file to VPS via edge function (avoids mixed content issues)
+ * Upload file with real progress tracking using XMLHttpRequest
  */
-const uploadToVPSViaEdge = async (
+const uploadToVPSWithProgress = (
   file: File,
   userId: string,
   folderId: string | null,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: UploadProgress) => void
 ): Promise<FileItem> => {
-  const formData = new FormData();
-  formData.append("file", file);
-  if (folderId) {
-    formData.append("folderId", folderId);
-  }
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Get auth session for edge function
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        reject(new Error("Not authenticated"));
+        return;
+      }
 
-  // Get auth session for edge function
-  const { data: sessionData } = await supabase.auth.getSession();
-  if (!sessionData.session) {
-    throw new Error("Not authenticated");
-  }
+      const formData = new FormData();
+      formData.append("file", file);
+      if (folderId) {
+        formData.append("folderId", folderId);
+      }
 
-  if (onProgress) onProgress(10);
+      const xhr = new XMLHttpRequest();
+      const startTime = Date.now();
+      let lastLoaded = 0;
+      let lastTime = startTime;
 
-  // Use edge function which has hardcoded VPS config
-  const response = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-upload`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${sessionData.session.access_token}`,
-      },
-      body: formData,
+      // Track upload progress
+      xhr.upload.addEventListener("progress", (event) => {
+        if (event.lengthComputable && onProgress) {
+          const now = Date.now();
+          const timeDiff = (now - lastTime) / 1000; // seconds
+          const loadedDiff = event.loaded - lastLoaded;
+          
+          // Calculate speed (bytes per second)
+          const speed = timeDiff > 0 ? loadedDiff / timeDiff : 0;
+          
+          // Calculate remaining time
+          const remaining = event.total - event.loaded;
+          const remainingTime = speed > 0 ? remaining / speed : 0;
+          
+          lastLoaded = event.loaded;
+          lastTime = now;
+
+          onProgress({
+            loaded: event.loaded,
+            total: event.total,
+            percentage: Math.round((event.loaded / event.total) * 100),
+            speed,
+            remainingTime,
+            fileName: file.name,
+            status: 'uploading'
+          });
+        }
+      });
+
+      // Handle completion
+      xhr.addEventListener("load", () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const result = JSON.parse(xhr.responseText);
+            if (onProgress) {
+              onProgress({
+                loaded: file.size,
+                total: file.size,
+                percentage: 100,
+                speed: 0,
+                remainingTime: 0,
+                fileName: file.name,
+                status: 'complete'
+              });
+            }
+            resolve(result.file as FileItem);
+          } catch (e) {
+            reject(new Error("Failed to parse response"));
+          }
+        } else {
+          try {
+            const errorData = JSON.parse(xhr.responseText);
+            reject(new Error(errorData.error || `Upload failed: ${xhr.status}`));
+          } catch {
+            reject(new Error(`Upload failed: ${xhr.status}`));
+          }
+        }
+      });
+
+      // Handle errors
+      xhr.addEventListener("error", () => {
+        if (onProgress) {
+          onProgress({
+            loaded: 0,
+            total: file.size,
+            percentage: 0,
+            speed: 0,
+            remainingTime: 0,
+            fileName: file.name,
+            status: 'error'
+          });
+        }
+        reject(new Error("Network error during upload"));
+      });
+
+      xhr.addEventListener("abort", () => {
+        reject(new Error("Upload aborted"));
+      });
+
+      // Initial progress - preparing
+      if (onProgress) {
+        onProgress({
+          loaded: 0,
+          total: file.size,
+          percentage: 0,
+          speed: 0,
+          remainingTime: 0,
+          fileName: file.name,
+          status: 'preparing'
+        });
+      }
+
+      // Open and send request
+      xhr.open("POST", `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-upload`);
+      xhr.setRequestHeader("Authorization", `Bearer ${sessionData.session.access_token}`);
+      xhr.send(formData);
+    } catch (error) {
+      reject(error);
     }
-  );
-
-  if (onProgress) onProgress(90);
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Upload failed: ${response.status}`);
-  }
-
-  const result = await response.json();
-  
-  if (onProgress) onProgress(100);
-
-  return result.file as FileItem;
+  });
 };
 
 /**
- * Upload file - uses edge function for VPS upload (VPS only, no cloud fallback)
+ * Upload file - uses edge function for VPS upload with progress tracking
  */
 export const uploadFile = async (
   file: File,
   userId: string,
   folderId: string | null,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: UploadProgress | number) => void
 ): Promise<FileItem> => {
   console.log("📦 Uploading via edge function to VPS");
   
-  // VPS only - no fallback
-  return await uploadToVPSViaEdge(file, userId, folderId, onProgress);
+  // Wrap the progress callback to handle both old and new formats
+  const progressHandler = onProgress ? (progress: UploadProgress) => {
+    // For backwards compatibility, also support simple number callback
+    if (typeof onProgress === 'function') {
+      onProgress(progress);
+    }
+  } : undefined;
+  
+  return await uploadToVPSWithProgress(file, userId, folderId, progressHandler);
 };
 
 /**
@@ -200,7 +299,7 @@ export const uploadMultipleFiles = async (
   files: File[],
   userId: string,
   folderId: string | null,
-  onProgress?: (fileIndex: number, progress: number) => void
+  onProgress?: (fileIndex: number, progress: UploadProgress | number) => void
 ): Promise<FileItem[]> => {
   const results: FileItem[] = [];
 
@@ -364,6 +463,27 @@ export const formatFileSize = (bytes: number): string => {
   const sizes = ["B", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+};
+
+export const formatSpeed = (bytesPerSecond: number): string => {
+  if (bytesPerSecond === 0) return "0 B/s";
+  const k = 1024;
+  const sizes = ["B/s", "KB/s", "MB/s", "GB/s"];
+  const i = Math.floor(Math.log(bytesPerSecond) / Math.log(k));
+  return parseFloat((bytesPerSecond / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+};
+
+export const formatTime = (seconds: number): string => {
+  if (seconds < 1) return "< 1s";
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.round(seconds % 60);
+    return `${mins}m ${secs}s`;
+  }
+  const hours = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  return `${hours}h ${mins}m`;
 };
 
 export const getFileIcon = (mimeType: string): string => {
