@@ -26,6 +26,7 @@ import {
   X,
   LucideIcon,
   Activity,
+  ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -350,6 +351,17 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
           )}
         >
           <div className="flex items-center gap-2 sm:gap-4 flex-1 max-w-md">
+            {/* Back to dashboard button - always show on sub-pages */}
+            {location.pathname !== "/dashboard" && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 flex-shrink-0 touch-manipulation press-scale"
+                onClick={() => navigate("/dashboard")}
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+            )}
             {/* Mobile menu toggle */}
             {isMobile && (
               <Button
@@ -370,7 +382,19 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1 sm:gap-2">
+            {/* Chat button for members */}
+            {role === "member" && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={toggleChat}
+                className="h-9 w-9 touch-manipulation press-scale relative"
+              >
+                <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5" />
+              </Button>
+            )}
+            
             <NotificationDropdown />
             
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-semibold text-xs sm:text-sm">
