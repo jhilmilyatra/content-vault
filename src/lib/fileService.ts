@@ -47,8 +47,32 @@ export interface UploadProgress {
   speed: number; // bytes per second
   remainingTime: number; // seconds
   fileName: string;
-  status: 'preparing' | 'uploading' | 'processing' | 'complete' | 'error';
+  status: 'preparing' | 'uploading' | 'processing' | 'complete' | 'error' | 'paused';
+  chunked?: boolean;
+  currentChunk?: number;
+  totalChunks?: number;
+  uploadId?: string;
 }
+
+export interface ChunkedUploadState {
+  uploadId: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  folderId: string | null;
+  totalChunks: number;
+  uploadedChunks: number[];
+  createdAt: string;
+}
+
+// Chunk size: 5MB
+const CHUNK_SIZE = 5 * 1024 * 1024;
+
+// Threshold for chunked upload: 100MB
+const CHUNKED_UPLOAD_THRESHOLD = 100 * 1024 * 1024;
+
+// Storage key for resumable uploads
+const RESUMABLE_UPLOADS_KEY = "resumable_uploads";
 
 // Hardcoded primary VPS configuration - always available
 const PRIMARY_VPS_CONFIG = {
@@ -257,24 +281,312 @@ const uploadToVPSWithProgress = (
 };
 
 /**
- * Upload file - uses edge function for VPS upload with progress tracking
+ * Get saved resumable uploads from localStorage
+ */
+export const getResumableUploads = (): ChunkedUploadState[] => {
+  try {
+    const saved = localStorage.getItem(RESUMABLE_UPLOADS_KEY);
+    if (saved) {
+      return JSON.parse(saved) as ChunkedUploadState[];
+    }
+  } catch (e) {
+    console.error("Failed to load resumable uploads:", e);
+  }
+  return [];
+};
+
+/**
+ * Save resumable upload state to localStorage
+ */
+const saveResumableUpload = (state: ChunkedUploadState) => {
+  try {
+    const uploads = getResumableUploads();
+    const existing = uploads.findIndex(u => u.uploadId === state.uploadId);
+    if (existing >= 0) {
+      uploads[existing] = state;
+    } else {
+      uploads.push(state);
+    }
+    localStorage.setItem(RESUMABLE_UPLOADS_KEY, JSON.stringify(uploads));
+  } catch (e) {
+    console.error("Failed to save resumable upload:", e);
+  }
+};
+
+/**
+ * Remove resumable upload from localStorage
+ */
+const removeResumableUpload = (uploadId: string) => {
+  try {
+    const uploads = getResumableUploads().filter(u => u.uploadId !== uploadId);
+    localStorage.setItem(RESUMABLE_UPLOADS_KEY, JSON.stringify(uploads));
+  } catch (e) {
+    console.error("Failed to remove resumable upload:", e);
+  }
+};
+
+/**
+ * Clear all expired resumable uploads (older than 24 hours)
+ */
+export const clearExpiredResumableUploads = () => {
+  try {
+    const now = Date.now();
+    const uploads = getResumableUploads().filter(u => {
+      const createdAt = new Date(u.createdAt).getTime();
+      return now - createdAt < 24 * 60 * 60 * 1000;
+    });
+    localStorage.setItem(RESUMABLE_UPLOADS_KEY, JSON.stringify(uploads));
+  } catch (e) {
+    console.error("Failed to clear expired uploads:", e);
+  }
+};
+
+/**
+ * Upload large file in chunks with resume capability
+ */
+const uploadChunked = async (
+  file: File,
+  userId: string,
+  folderId: string | null,
+  onProgress?: (progress: UploadProgress) => void,
+  existingUploadId?: string
+): Promise<FileItem> => {
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData.session) {
+    throw new Error("Not authenticated");
+  }
+
+  const accessToken = sessionData.session.access_token;
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  
+  let uploadId = existingUploadId;
+  let uploadedChunks: number[] = [];
+
+  // Initialize or resume upload
+  if (!uploadId) {
+    // Initialize new chunked upload
+    if (onProgress) {
+      onProgress({
+        loaded: 0,
+        total: file.size,
+        percentage: 0,
+        speed: 0,
+        remainingTime: 0,
+        fileName: file.name,
+        status: 'preparing',
+        chunked: true,
+        currentChunk: 0,
+        totalChunks,
+      });
+    }
+
+    const initResponse = await fetch(
+      `${supabaseUrl}/functions/v1/vps-chunked-upload?action=init`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fileName: file.name,
+          mimeType: file.type || "application/octet-stream",
+          totalSize: file.size,
+          totalChunks,
+          folderId,
+        }),
+      }
+    );
+
+    if (!initResponse.ok) {
+      const error = await initResponse.json();
+      throw new Error(error.error || "Failed to initialize upload");
+    }
+
+    const initResult = await initResponse.json();
+    uploadId = initResult.uploadId;
+
+    // Save to localStorage for resume capability
+    saveResumableUpload({
+      uploadId: uploadId!,
+      fileName: file.name,
+      fileSize: file.size,
+      mimeType: file.type || "application/octet-stream",
+      folderId,
+      totalChunks,
+      uploadedChunks: [],
+      createdAt: new Date().toISOString(),
+    });
+  } else {
+    // Resume existing upload - get status
+    const statusResponse = await fetch(
+      `${supabaseUrl}/functions/v1/vps-chunked-upload?action=status&uploadId=${uploadId}`,
+      {
+        headers: { "Authorization": `Bearer ${accessToken}` },
+      }
+    );
+
+    if (statusResponse.ok) {
+      const statusResult = await statusResponse.json();
+      uploadedChunks = statusResult.uploadedChunks || [];
+      console.log(`📦 Resuming upload: ${uploadedChunks.length}/${totalChunks} chunks already uploaded`);
+    }
+  }
+
+  // Upload chunks
+  const startTime = Date.now();
+  let totalUploaded = uploadedChunks.reduce((acc, idx) => {
+    const chunkStart = idx * CHUNK_SIZE;
+    const chunkEnd = Math.min(chunkStart + CHUNK_SIZE, file.size);
+    return acc + (chunkEnd - chunkStart);
+  }, 0);
+
+  for (let i = 0; i < totalChunks; i++) {
+    // Skip already uploaded chunks
+    if (uploadedChunks.includes(i)) {
+      continue;
+    }
+
+    const chunkStart = i * CHUNK_SIZE;
+    const chunkEnd = Math.min(chunkStart + CHUNK_SIZE, file.size);
+    const chunk = file.slice(chunkStart, chunkEnd);
+    const chunkSize = chunkEnd - chunkStart;
+
+    // Update progress
+    if (onProgress) {
+      const elapsed = (Date.now() - startTime) / 1000;
+      const speed = totalUploaded > 0 && elapsed > 0 ? totalUploaded / elapsed : 0;
+      const remaining = file.size - totalUploaded;
+      const remainingTime = speed > 0 ? remaining / speed : 0;
+
+      onProgress({
+        loaded: totalUploaded,
+        total: file.size,
+        percentage: Math.round((totalUploaded / file.size) * 100),
+        speed,
+        remainingTime,
+        fileName: file.name,
+        status: 'uploading',
+        chunked: true,
+        currentChunk: i + 1,
+        totalChunks,
+        uploadId,
+      });
+    }
+
+    // Upload chunk
+    const formData = new FormData();
+    formData.append("chunk", new Blob([chunk]));
+    formData.append("uploadId", uploadId!);
+    formData.append("chunkIndex", String(i));
+
+    const chunkResponse = await fetch(
+      `${supabaseUrl}/functions/v1/vps-chunked-upload?action=chunk`,
+      {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${accessToken}` },
+        body: formData,
+      }
+    );
+
+    if (!chunkResponse.ok) {
+      const error = await chunkResponse.json();
+      throw new Error(error.error || `Failed to upload chunk ${i}`);
+    }
+
+    totalUploaded += chunkSize;
+    uploadedChunks.push(i);
+
+    // Update localStorage
+    const existingState = getResumableUploads().find(u => u.uploadId === uploadId);
+    if (existingState) {
+      saveResumableUpload({ ...existingState, uploadedChunks });
+    }
+  }
+
+  // Finalize upload
+  if (onProgress) {
+    onProgress({
+      loaded: file.size,
+      total: file.size,
+      percentage: 99,
+      speed: 0,
+      remainingTime: 0,
+      fileName: file.name,
+      status: 'processing',
+      chunked: true,
+      currentChunk: totalChunks,
+      totalChunks,
+      uploadId,
+    });
+  }
+
+  const finalizeResponse = await fetch(
+    `${supabaseUrl}/functions/v1/vps-chunked-upload?action=finalize`,
+    {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ uploadId }),
+    }
+  );
+
+  if (!finalizeResponse.ok) {
+    const error = await finalizeResponse.json();
+    throw new Error(error.error || "Failed to finalize upload");
+  }
+
+  const result = await finalizeResponse.json();
+
+  // Clean up localStorage
+  removeResumableUpload(uploadId!);
+
+  if (onProgress) {
+    onProgress({
+      loaded: file.size,
+      total: file.size,
+      percentage: 100,
+      speed: 0,
+      remainingTime: 0,
+      fileName: file.name,
+      status: 'complete',
+      chunked: true,
+      currentChunk: totalChunks,
+      totalChunks,
+      uploadId,
+    });
+  }
+
+  return result.file as FileItem;
+};
+
+/**
+ * Upload file - uses chunked upload for large files, regular upload for small files
  */
 export const uploadFile = async (
   file: File,
   userId: string,
   folderId: string | null,
-  onProgress?: (progress: UploadProgress | number) => void
+  onProgress?: (progress: UploadProgress | number) => void,
+  resumeUploadId?: string
 ): Promise<FileItem> => {
-  console.log("📦 Uploading via edge function to VPS");
-  
   // Wrap the progress callback to handle both old and new formats
   const progressHandler = onProgress ? (progress: UploadProgress) => {
-    // For backwards compatibility, also support simple number callback
     if (typeof onProgress === 'function') {
       onProgress(progress);
     }
   } : undefined;
+
+  // Use chunked upload for large files (>100MB) or when resuming
+  if (file.size > CHUNKED_UPLOAD_THRESHOLD || resumeUploadId) {
+    console.log(`📦 Using chunked upload for ${file.name} (${formatFileSize(file.size)})`);
+    return await uploadChunked(file, userId, folderId, progressHandler, resumeUploadId);
+  }
   
+  console.log(`📦 Uploading via edge function to VPS`);
   return await uploadToVPSWithProgress(file, userId, folderId, progressHandler);
 };
 

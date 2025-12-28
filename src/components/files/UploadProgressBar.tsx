@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, CheckCircle2, AlertCircle, Upload, X } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, Upload, X, Pause, Play, Layers } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { formatFileSize, formatSpeed, formatTime, type UploadProgress } from "@/lib/fileService";
@@ -18,6 +18,7 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
   const avgSpeed = uploads.reduce((acc, u) => acc + u.speed, 0) / uploads.filter(u => u.status === 'uploading').length || 0;
   const isComplete = uploads.every(u => u.status === 'complete');
   const hasError = uploads.some(u => u.status === 'error');
+  const hasChunkedUploads = uploads.some(u => u.chunked);
 
   const getStatusIcon = (status: UploadProgress['status']) => {
     switch (status) {
@@ -31,13 +32,26 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
         return <CheckCircle2 className="w-4 h-4 text-success" />;
       case 'error':
         return <AlertCircle className="w-4 h-4 text-destructive" />;
+      case 'paused':
+        return <Pause className="w-4 h-4 text-amber-500" />;
       default:
         return null;
     }
   };
 
-  const getStatusText = (status: UploadProgress['status']) => {
-    switch (status) {
+  const getStatusText = (upload: UploadProgress) => {
+    if (upload.chunked) {
+      switch (upload.status) {
+        case 'preparing': return 'Initializing...';
+        case 'uploading': return `Chunk ${upload.currentChunk}/${upload.totalChunks}`;
+        case 'processing': return 'Assembling file...';
+        case 'complete': return 'Complete';
+        case 'error': return 'Failed';
+        case 'paused': return 'Paused (can resume)';
+        default: return '';
+      }
+    }
+    switch (upload.status) {
       case 'preparing': return 'Preparing...';
       case 'uploading': return 'Uploading...';
       case 'processing': return 'Processing...';
@@ -65,13 +79,21 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
         )}
         <div className="flex-1">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-sm font-medium text-foreground">
-              {isComplete 
-                ? `${uploads.length} file(s) uploaded` 
-                : hasError 
-                  ? 'Upload failed' 
-                  : `Uploading ${uploads.length} file(s)...`}
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium text-foreground">
+                {isComplete 
+                  ? `${uploads.length} file(s) uploaded` 
+                  : hasError 
+                    ? 'Upload failed' 
+                    : `Uploading ${uploads.length} file(s)...`}
+              </p>
+              {hasChunkedUploads && !isComplete && (
+                <span className="flex items-center gap-1 text-xs text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                  <Layers className="w-3 h-3" />
+                  Chunked
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               {!isComplete && !hasError && avgSpeed > 0 && (
                 <span className="text-xs text-muted-foreground">
@@ -117,9 +139,16 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
               >
                 {getStatusIcon(upload.status)}
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-foreground truncate">
-                    {upload.fileName}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-medium text-foreground truncate">
+                      {upload.fileName}
+                    </p>
+                    {upload.chunked && (
+                      <span className="text-[9px] text-primary bg-primary/10 px-1 rounded">
+                        {upload.currentChunk}/{upload.totalChunks}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <Progress value={upload.percentage} className="h-1 flex-1" />
                     <span className="text-[10px] text-muted-foreground w-8 text-right">
@@ -127,9 +156,16 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
                     </span>
                   </div>
                 </div>
-                <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                  {formatFileSize(upload.total)}
-                </span>
+                <div className="flex flex-col items-end">
+                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                    {formatFileSize(upload.total)}
+                  </span>
+                  {upload.chunked && upload.status === 'uploading' && (
+                    <span className="text-[9px] text-muted-foreground">
+                      {getStatusText(upload)}
+                    </span>
+                  )}
+                </div>
               </motion.div>
             ))}
           </AnimatePresence>
