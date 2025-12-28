@@ -117,6 +117,40 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Increment view count in usage_metrics for the file owner
+    try {
+      const { data: existingMetrics } = await supabaseAdmin
+        .from('usage_metrics')
+        .select('id, total_views')
+        .eq('user_id', link.user_id)
+        .single();
+
+      if (existingMetrics) {
+        await supabaseAdmin
+          .from('usage_metrics')
+          .update({ 
+            total_views: (existingMetrics.total_views || 0) + 1,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingMetrics.id);
+      } else {
+        // Create metrics record if it doesn't exist
+        await supabaseAdmin
+          .from('usage_metrics')
+          .insert({
+            user_id: link.user_id,
+            total_views: 1,
+            storage_used_bytes: 0,
+            bandwidth_used_bytes: 0,
+            active_links_count: 1,
+            total_downloads: 0
+          });
+      }
+    } catch (metricsError) {
+      console.error('Failed to update view metrics:', metricsError);
+      // Don't fail the request if metrics update fails
+    }
+
     // Generate download URL using the shared-download edge function
     const downloadUrl = `${supabaseUrl}/functions/v1/shared-download?code=${shortCode}`;
 

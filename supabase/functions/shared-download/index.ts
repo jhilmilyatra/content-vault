@@ -103,11 +103,44 @@ Deno.serve(async (req) => {
       if (vpsResponse.ok) {
         const blob = await vpsResponse.blob();
         
-        // Update download count
+        // Update download count in shared_links
         await supabaseAdmin
           .from('shared_links')
           .update({ download_count: link.download_count + 1 })
           .eq('id', link.id);
+
+        // Update total_downloads and bandwidth in usage_metrics
+        try {
+          const { data: existingMetrics } = await supabaseAdmin
+            .from('usage_metrics')
+            .select('id, total_downloads, bandwidth_used_bytes')
+            .eq('user_id', link.user_id)
+            .single();
+
+          if (existingMetrics) {
+            await supabaseAdmin
+              .from('usage_metrics')
+              .update({ 
+                total_downloads: (existingMetrics.total_downloads || 0) + 1,
+                bandwidth_used_bytes: (Number(existingMetrics.bandwidth_used_bytes) || 0) + link.files.size_bytes,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', existingMetrics.id);
+          } else {
+            await supabaseAdmin
+              .from('usage_metrics')
+              .insert({
+                user_id: link.user_id,
+                total_downloads: 1,
+                bandwidth_used_bytes: link.files.size_bytes,
+                storage_used_bytes: 0,
+                active_links_count: 1,
+                total_views: 0
+              });
+          }
+        } catch (metricsError) {
+          console.error('Failed to update download metrics:', metricsError);
+        }
 
         console.log(`Successfully served file from VPS: ${fileName}`);
 
@@ -138,11 +171,33 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Update download count
+    // Update download count in shared_links
     await supabaseAdmin
       .from('shared_links')
       .update({ download_count: link.download_count + 1 })
       .eq('id', link.id);
+
+    // Update total_downloads and bandwidth in usage_metrics
+    try {
+      const { data: existingMetrics } = await supabaseAdmin
+        .from('usage_metrics')
+        .select('id, total_downloads, bandwidth_used_bytes')
+        .eq('user_id', link.user_id)
+        .single();
+
+      if (existingMetrics) {
+        await supabaseAdmin
+          .from('usage_metrics')
+          .update({ 
+            total_downloads: (existingMetrics.total_downloads || 0) + 1,
+            bandwidth_used_bytes: (Number(existingMetrics.bandwidth_used_bytes) || 0) + link.files.size_bytes,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingMetrics.id);
+      }
+    } catch (metricsError) {
+      console.error('Failed to update download metrics:', metricsError);
+    }
 
     console.log(`Successfully served file from Supabase: ${fileName}`);
 
