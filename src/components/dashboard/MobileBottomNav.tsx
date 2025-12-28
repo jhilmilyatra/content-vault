@@ -73,7 +73,7 @@ const MobileBottomNav = memo(({ items, maxVisibleItems = 5 }: MobileBottomNavPro
             mass: 0.8,
           }}
           className={cn(
-            "fixed bottom-0 left-0 right-0 z-50",
+            "fixed bottom-0 left-0 right-0 z-40",
             "glass-elevated safe-area-bottom",
             "border-t border-border/30",
             "px-2 pt-2 pb-1"

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,10 +10,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
-import { User, Lock, Bell, Palette, Save, Loader2, Key, Copy, RefreshCw, Check, Bot, Server, HardDrive } from 'lucide-react';
+import { User, Lock, Bell, Palette, Save, Loader2, Key, Copy, RefreshCw, Check, Bot, Server, HardDrive, ArrowLeft } from 'lucide-react';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const Settings = () => {
   const { user, profile } = useAuth();
+  const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [loading, setLoading] = useState(false);
   
   // Profile state
@@ -121,9 +125,21 @@ const Settings = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground">Manage your account settings and preferences</p>
+      <div className="flex items-center gap-3">
+        {isMobile && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate('/dashboard')}
+            className="h-9 w-9 flex-shrink-0"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+        )}
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+          <p className="text-muted-foreground">Manage your account settings and preferences</p>
+        </div>
       </div>
 
       <Tabs defaultValue="profile" className="space-y-6">

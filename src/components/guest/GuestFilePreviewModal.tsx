@@ -263,13 +263,14 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
             className="flex-1 flex flex-col bg-black rounded-lg overflow-hidden"
             onMouseEnter={() => setShowControls(true)}
             onMouseLeave={() => setShowControls(isPlaying ? false : true)}
+            onTouchStart={() => setShowControls(true)}
           >
             {/* Video Element */}
             <div className="relative flex-1 flex items-center justify-center">
               <video
                 ref={videoRef}
                 src={fileUrl}
-                className="max-w-full max-h-[60vh] object-contain"
+                className="max-w-full max-h-[60vh] sm:max-h-[60vh] object-contain"
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
                 onEnded={handleVideoEnded}
@@ -277,6 +278,7 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                 onPause={() => setIsPlaying(false)}
                 onClick={togglePlay}
                 playsInline
+                webkit-playsinline="true"
                 crossOrigin="anonymous"
               />
               
@@ -284,55 +286,55 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
               {!isPlaying && (
                 <button
                   onClick={togglePlay}
-                  className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity hover:bg-black/40"
+                  className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity hover:bg-black/40 touch-manipulation"
                 >
-                  <div className="w-20 h-20 rounded-full bg-primary/90 flex items-center justify-center">
-                    <Play className="w-10 h-10 text-primary-foreground ml-1" />
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-primary/90 flex items-center justify-center active:scale-95 transition-transform">
+                    <Play className="w-8 h-8 sm:w-10 sm:h-10 text-primary-foreground ml-1" />
                   </div>
                 </button>
               )}
             </div>
 
-            {/* Video Controls */}
+            {/* Video Controls - Always visible on mobile */}
             <div 
-              className={`p-4 bg-gradient-to-t from-black/90 to-transparent transition-opacity ${
-                showControls ? "opacity-100" : "opacity-0"
+              className={`p-3 sm:p-4 bg-gradient-to-t from-black/90 to-transparent transition-opacity ${
+                showControls ? "opacity-100" : "sm:opacity-0"
               }`}
             >
               {/* Progress bar */}
-              <div className="mb-3">
+              <div className="mb-2 sm:mb-3">
                 <Slider
                   value={[currentTime]}
                   min={0}
                   max={duration || 100}
                   step={0.1}
                   onValueChange={handleSeek}
-                  className="cursor-pointer"
+                  className="cursor-pointer touch-manipulation"
                 />
               </div>
 
               {/* Control buttons */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1 sm:gap-2">
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={skipBackward}
-                    className="text-white hover:bg-white/20"
+                    className="text-white hover:bg-white/20 h-9 w-9 sm:h-10 sm:w-10 touch-manipulation active:scale-95"
                   >
-                    <SkipBack className="w-5 h-5" />
+                    <SkipBack className="w-4 h-4 sm:w-5 sm:h-5" />
                   </Button>
                   
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={togglePlay}
-                    className="text-white hover:bg-white/20"
+                    className="text-white hover:bg-white/20 h-10 w-10 sm:h-10 sm:w-10 touch-manipulation active:scale-95"
                   >
                     {isPlaying ? (
-                      <Pause className="w-6 h-6" />
+                      <Pause className="w-5 h-5 sm:w-6 sm:h-6" />
                     ) : (
-                      <Play className="w-6 h-6" />
+                      <Play className="w-5 h-5 sm:w-6 sm:h-6" />
                     )}
                   </Button>
                   
@@ -340,19 +342,19 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                     variant="ghost"
                     size="icon"
                     onClick={skipForward}
-                    className="text-white hover:bg-white/20"
+                    className="text-white hover:bg-white/20 h-9 w-9 sm:h-10 sm:w-10 touch-manipulation active:scale-95"
                   >
-                    <SkipForward className="w-5 h-5" />
+                    <SkipForward className="w-4 h-4 sm:w-5 sm:h-5" />
                   </Button>
 
-                  <span className="text-white text-sm ml-2">
+                  <span className="text-white text-xs sm:text-sm ml-1 sm:ml-2 whitespace-nowrap">
                     {formatTime(currentTime)} / {formatTime(duration)}
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  {/* Volume control */}
-                  <div className="flex items-center gap-2 group">
+                <div className="flex items-center gap-1 sm:gap-2">
+                  {/* Volume control - hidden on mobile */}
+                  <div className="hidden sm:flex items-center gap-2 group">
                     <Button
                       variant="ghost"
                       size="icon"
@@ -376,13 +378,27 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                     </div>
                   </div>
 
+                  {/* Mute button for mobile */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={toggleMute}
+                    className="sm:hidden text-white hover:bg-white/20 h-9 w-9 touch-manipulation active:scale-95"
+                  >
+                    {isMuted || volume === 0 ? (
+                      <VolumeX className="w-4 h-4" />
+                    ) : (
+                      <Volume2 className="w-4 h-4" />
+                    )}
+                  </Button>
+
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={toggleFullscreen}
-                    className="text-white hover:bg-white/20"
+                    className="text-white hover:bg-white/20 h-9 w-9 sm:h-10 sm:w-10 touch-manipulation active:scale-95"
                   >
-                    <Maximize className="w-5 h-5" />
+                    <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />
                   </Button>
                 </div>
               </div>
