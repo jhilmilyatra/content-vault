@@ -13,32 +13,6 @@ const VPS_API_KEY = "kARTOOS007";
 // Chunk size: 5MB
 const CHUNK_SIZE = 5 * 1024 * 1024;
 
-interface ChunkUploadRequest {
-  uploadId: string;
-  chunkIndex: number;
-  totalChunks: number;
-  fileName: string;
-  mimeType: string;
-  totalSize: number;
-  folderId?: string;
-}
-
-interface UploadSession {
-  uploadId: string;
-  userId: string;
-  fileName: string;
-  mimeType: string;
-  totalSize: number;
-  totalChunks: number;
-  uploadedChunks: number[];
-  folderId: string | null;
-  createdAt: string;
-  expiresAt: string;
-}
-
-// In-memory storage for upload sessions (in production, use Redis or DB)
-const uploadSessions = new Map<string, UploadSession>();
-
 // Helper function to convert Uint8Array to base64
 function uint8ArrayToBase64(bytes: Uint8Array): string {
   const CHUNK_SIZE = 0x8000;
@@ -98,20 +72,28 @@ Deno.serve(async (req) => {
       const now = new Date();
       const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours
 
-      const session: UploadSession = {
-        uploadId,
-        userId: user.id,
-        fileName,
-        mimeType: mimeType || "application/octet-stream",
-        totalSize,
-        totalChunks,
-        uploadedChunks: [],
-        folderId: folderId || null,
-        createdAt: now.toISOString(),
-        expiresAt: expiresAt.toISOString(),
-      };
+      // Store session in database instead of in-memory Map
+      const { error: insertError } = await supabase
+        .from("chunked_upload_sessions")
+        .insert({
+          upload_id: uploadId,
+          user_id: user.id,
+          file_name: fileName,
+          mime_type: mimeType || "application/octet-stream",
+          total_size: totalSize,
+          total_chunks: totalChunks,
+          uploaded_chunks: [],
+          folder_id: folderId || null,
+          expires_at: expiresAt.toISOString(),
+        });
 
-      uploadSessions.set(uploadId, session);
+      if (insertError) {
+        console.error("Failed to create upload session:", insertError);
+        return new Response(
+          JSON.stringify({ error: "Failed to initialize upload" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
 
       console.log(`📦 Initialized chunked upload: ${uploadId} for ${fileName} (${totalChunks} chunks)`);
 
@@ -137,16 +119,20 @@ Deno.serve(async (req) => {
         );
       }
 
-      const session = uploadSessions.get(uploadId);
+      const { data: session, error: fetchError } = await supabase
+        .from("chunked_upload_sessions")
+        .select("*")
+        .eq("upload_id", uploadId)
+        .single();
       
-      if (!session) {
+      if (fetchError || !session) {
         return new Response(
           JSON.stringify({ error: "Upload session not found or expired" }),
           { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      if (session.userId !== user.id) {
+      if (session.user_id !== user.id) {
         return new Response(
           JSON.stringify({ error: "Unauthorized" }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -155,12 +141,12 @@ Deno.serve(async (req) => {
 
       return new Response(
         JSON.stringify({
-          uploadId: session.uploadId,
-          fileName: session.fileName,
-          totalChunks: session.totalChunks,
-          uploadedChunks: session.uploadedChunks,
-          progress: (session.uploadedChunks.length / session.totalChunks) * 100,
-          expiresAt: session.expiresAt,
+          uploadId: session.upload_id,
+          fileName: session.file_name,
+          totalChunks: session.total_chunks,
+          uploadedChunks: session.uploaded_chunks || [],
+          progress: ((session.uploaded_chunks?.length || 0) / session.total_chunks) * 100,
+          expiresAt: session.expires_at,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -180,31 +166,37 @@ Deno.serve(async (req) => {
         );
       }
 
-      const session = uploadSessions.get(uploadId);
+      const { data: session, error: fetchError } = await supabase
+        .from("chunked_upload_sessions")
+        .select("*")
+        .eq("upload_id", uploadId)
+        .single();
       
-      if (!session) {
+      if (fetchError || !session) {
         return new Response(
           JSON.stringify({ error: "Upload session not found or expired" }),
           { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      if (session.userId !== user.id) {
+      if (session.user_id !== user.id) {
         return new Response(
           JSON.stringify({ error: "Unauthorized" }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
+      const uploadedChunks: number[] = session.uploaded_chunks || [];
+
       // Check if chunk already uploaded
-      if (session.uploadedChunks.includes(chunkIndex)) {
+      if (uploadedChunks.includes(chunkIndex)) {
         console.log(`⏭️ Chunk ${chunkIndex} already uploaded, skipping`);
         return new Response(
           JSON.stringify({
             success: true,
             chunkIndex,
             skipped: true,
-            progress: (session.uploadedChunks.length / session.totalChunks) * 100,
+            progress: (uploadedChunks.length / session.total_chunks) * 100,
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -240,19 +232,27 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Mark chunk as uploaded
-      session.uploadedChunks.push(chunkIndex);
-      session.uploadedChunks.sort((a, b) => a - b);
+      // Mark chunk as uploaded in database
+      const newUploadedChunks = [...uploadedChunks, chunkIndex].sort((a, b) => a - b);
+      
+      const { error: updateError } = await supabase
+        .from("chunked_upload_sessions")
+        .update({ uploaded_chunks: newUploadedChunks })
+        .eq("upload_id", uploadId);
 
-      const progress = (session.uploadedChunks.length / session.totalChunks) * 100;
-      console.log(`✅ Chunk ${chunkIndex + 1}/${session.totalChunks} uploaded (${progress.toFixed(1)}%)`);
+      if (updateError) {
+        console.error("Failed to update upload session:", updateError);
+      }
+
+      const progress = (newUploadedChunks.length / session.total_chunks) * 100;
+      console.log(`✅ Chunk ${chunkIndex + 1}/${session.total_chunks} uploaded (${progress.toFixed(1)}%)`);
 
       return new Response(
         JSON.stringify({
           success: true,
           chunkIndex,
-          uploadedChunks: session.uploadedChunks.length,
-          totalChunks: session.totalChunks,
+          uploadedChunks: newUploadedChunks.length,
+          totalChunks: session.total_chunks,
           progress,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -271,43 +271,49 @@ Deno.serve(async (req) => {
         );
       }
 
-      const session = uploadSessions.get(uploadId);
+      const { data: session, error: fetchError } = await supabase
+        .from("chunked_upload_sessions")
+        .select("*")
+        .eq("upload_id", uploadId)
+        .single();
       
-      if (!session) {
+      if (fetchError || !session) {
         return new Response(
           JSON.stringify({ error: "Upload session not found" }),
           { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      if (session.userId !== user.id) {
+      if (session.user_id !== user.id) {
         return new Response(
           JSON.stringify({ error: "Unauthorized" }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
+      const uploadedChunks: number[] = session.uploaded_chunks || [];
+
       // Check all chunks are uploaded
-      if (session.uploadedChunks.length !== session.totalChunks) {
+      if (uploadedChunks.length !== session.total_chunks) {
         return new Response(
           JSON.stringify({ 
             error: "Not all chunks uploaded",
-            uploadedChunks: session.uploadedChunks.length,
-            totalChunks: session.totalChunks,
-            missingChunks: Array.from({ length: session.totalChunks }, (_, i) => i)
-              .filter(i => !session.uploadedChunks.includes(i))
+            uploadedChunks: uploadedChunks.length,
+            totalChunks: session.total_chunks,
+            missingChunks: Array.from({ length: session.total_chunks }, (_, i) => i)
+              .filter(i => !uploadedChunks.includes(i))
           }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      console.log(`🔧 Assembling ${session.totalChunks} chunks for ${session.fileName}...`);
+      console.log(`🔧 Assembling ${session.total_chunks} chunks for ${session.file_name}...`);
 
       // Fetch and combine all chunks
       const chunks: Uint8Array[] = [];
       let totalBytes = 0;
 
-      for (let i = 0; i < session.totalChunks; i++) {
+      for (let i = 0; i < session.total_chunks; i++) {
         const chunkFileName = `${uploadId}_chunk_${i}`;
         
         const vpsResponse = await fetch(`${VPS_ENDPOINT}/files/${user.id}/${chunkFileName}`, {
@@ -341,7 +347,7 @@ Deno.serve(async (req) => {
       const base64Data = uint8ArrayToBase64(combinedData);
       const timestamp = Date.now().toString(16).padStart(16, '0');
       const randomPart = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-      const ext = session.fileName.split('.').pop() || '';
+      const ext = session.file_name.split('.').pop() || '';
       const storageName = `file_${timestamp}${randomPart}${ext ? '.' + ext : ''}`;
 
       const vpsResponse = await fetch(`${VPS_ENDPOINT}/upload-base64`, {
@@ -352,8 +358,8 @@ Deno.serve(async (req) => {
         },
         body: JSON.stringify({
           fileName: storageName,
-          originalName: session.fileName,
-          mimeType: session.mimeType,
+          originalName: session.file_name,
+          mimeType: session.mime_type,
           data: base64Data,
           userId: user.id,
         }),
@@ -376,10 +382,10 @@ Deno.serve(async (req) => {
         .from("files")
         .insert({
           user_id: user.id,
-          folder_id: session.folderId,
-          name: session.fileName,
-          original_name: session.fileName,
-          mime_type: session.mimeType,
+          folder_id: session.folder_id,
+          name: session.file_name,
+          original_name: session.file_name,
+          mime_type: session.mime_type,
           size_bytes: totalBytes,
           storage_path: storagePath,
         })
@@ -394,9 +400,9 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Clean up chunks (fire and forget)
+      // Clean up chunks and session (fire and forget)
       const cleanupChunks = async () => {
-        for (let i = 0; i < session.totalChunks; i++) {
+        for (let i = 0; i < session.total_chunks; i++) {
           const chunkFileName = `${uploadId}_chunk_${i}`;
           try {
             await fetch(`${VPS_ENDPOINT}/delete`, {
@@ -411,14 +417,20 @@ Deno.serve(async (req) => {
             console.error(`Failed to delete chunk ${i}:`, e);
           }
         }
-        uploadSessions.delete(uploadId);
-        console.log(`🧹 Cleaned up ${session.totalChunks} chunks for upload ${uploadId}`);
+        
+        // Delete session from database
+        await supabase
+          .from("chunked_upload_sessions")
+          .delete()
+          .eq("upload_id", uploadId);
+          
+        console.log(`🧹 Cleaned up ${session.total_chunks} chunks for upload ${uploadId}`);
       };
       
       // Start cleanup in background
       cleanupChunks().catch(console.error);
 
-      console.log(`✅ Chunked upload complete: ${session.fileName}`);
+      console.log(`✅ Chunked upload complete: ${session.file_name}`);
 
       return new Response(
         JSON.stringify({
