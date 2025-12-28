@@ -65,11 +65,14 @@ export interface ChunkedUploadState {
   createdAt: string;
 }
 
-// Chunk size: 5MB
-const CHUNK_SIZE = 5 * 1024 * 1024;
+// Chunk size: 10MB (larger chunks = fewer requests = faster upload)
+const CHUNK_SIZE = 10 * 1024 * 1024;
 
-// Threshold for chunked upload: 100MB
-const CHUNKED_UPLOAD_THRESHOLD = 100 * 1024 * 1024;
+// Threshold for chunked upload: 50MB (lower threshold for better reliability)
+const CHUNKED_UPLOAD_THRESHOLD = 50 * 1024 * 1024;
+
+// Parallel chunk uploads (upload multiple chunks simultaneously)
+const PARALLEL_CHUNKS = 3;
 
 // Storage key for resumable uploads
 const RESUMABLE_UPLOADS_KEY = "resumable_uploads";
@@ -434,7 +437,7 @@ const uploadChunked = async (
     }
   }
 
-  // Upload chunks
+  // Upload chunks in parallel for better speed
   const startTime = Date.now();
   let totalUploaded = uploadedChunks.reduce((acc, idx) => {
     const chunkStart = idx * CHUNK_SIZE;
@@ -442,18 +445,15 @@ const uploadChunked = async (
     return acc + (chunkEnd - chunkStart);
   }, 0);
 
-  for (let i = 0; i < totalChunks; i++) {
-    // Skip already uploaded chunks
-    if (uploadedChunks.includes(i)) {
-      continue;
-    }
+  // Get remaining chunks to upload
+  const remainingChunks = Array.from({ length: totalChunks }, (_, i) => i)
+    .filter(i => !uploadedChunks.includes(i));
 
-    const chunkStart = i * CHUNK_SIZE;
-    const chunkEnd = Math.min(chunkStart + CHUNK_SIZE, file.size);
-    const chunk = file.slice(chunkStart, chunkEnd);
-    const chunkSize = chunkEnd - chunkStart;
-
-    // Update progress
+  // Upload chunks in parallel batches
+  for (let batchStart = 0; batchStart < remainingChunks.length; batchStart += PARALLEL_CHUNKS) {
+    const batch = remainingChunks.slice(batchStart, batchStart + PARALLEL_CHUNKS);
+    
+    // Update progress before batch
     if (onProgress) {
       const elapsed = (Date.now() - startTime) / 1000;
       const speed = totalUploaded > 0 && elapsed > 0 ? totalUploaded / elapsed : 0;
@@ -469,36 +469,51 @@ const uploadChunked = async (
         fileName: file.name,
         status: 'uploading',
         chunked: true,
-        currentChunk: i + 1,
+        currentChunk: uploadedChunks.length + 1,
         totalChunks,
         uploadId,
       });
     }
 
-    // Upload chunk
-    const formData = new FormData();
-    formData.append("chunk", new Blob([chunk]));
-    formData.append("uploadId", uploadId!);
-    formData.append("chunkIndex", String(i));
+    // Upload batch in parallel
+    const batchPromises = batch.map(async (chunkIndex) => {
+      const chunkStart = chunkIndex * CHUNK_SIZE;
+      const chunkEnd = Math.min(chunkStart + CHUNK_SIZE, file.size);
+      const chunk = file.slice(chunkStart, chunkEnd);
+      const chunkSize = chunkEnd - chunkStart;
 
-    const chunkResponse = await fetch(
-      `${supabaseUrl}/functions/v1/vps-chunked-upload?action=chunk`,
-      {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${accessToken}` },
-        body: formData,
+      const formData = new FormData();
+      formData.append("chunk", new Blob([chunk]));
+      formData.append("uploadId", uploadId!);
+      formData.append("chunkIndex", String(chunkIndex));
+
+      const chunkResponse = await fetch(
+        `${supabaseUrl}/functions/v1/vps-chunked-upload?action=chunk`,
+        {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${accessToken}` },
+          body: formData,
+        }
+      );
+
+      if (!chunkResponse.ok) {
+        const error = await chunkResponse.json();
+        throw new Error(error.error || `Failed to upload chunk ${chunkIndex}`);
       }
-    );
 
-    if (!chunkResponse.ok) {
-      const error = await chunkResponse.json();
-      throw new Error(error.error || `Failed to upload chunk ${i}`);
+      return { chunkIndex, chunkSize };
+    });
+
+    // Wait for all chunks in batch to complete
+    const results = await Promise.all(batchPromises);
+    
+    // Update tracking
+    for (const { chunkIndex, chunkSize } of results) {
+      totalUploaded += chunkSize;
+      uploadedChunks.push(chunkIndex);
     }
 
-    totalUploaded += chunkSize;
-    uploadedChunks.push(i);
-
-    // Update localStorage
+    // Update localStorage after each batch
     const existingState = getResumableUploads().find(u => u.uploadId === uploadId);
     if (existingState) {
       saveResumableUpload({ ...existingState, uploadedChunks });
