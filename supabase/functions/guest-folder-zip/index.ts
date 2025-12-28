@@ -6,7 +6,29 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Primary VPS storage
+// Limits
+const MAX_FILES_IN_ZIP = 500;
+const MAX_ZIP_SIZE = 500 * 1024 * 1024; // 500MB
+const RATE_LIMIT = { requests: 3, windowMs: 60000 }; // 3 ZIP requests per minute
+
+// Rate limiting
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(key: string): boolean {
+  const now = Date.now();
+  const existing = rateLimitStore.get(key);
+  
+  if (!existing || existing.resetAt < now) {
+    rateLimitStore.set(key, { count: 1, resetAt: now + RATE_LIMIT.windowMs });
+    return true;
+  }
+  
+  if (existing.count >= RATE_LIMIT.requests) return false;
+  existing.count++;
+  return true;
+}
+
+// VPS Configuration
 const VPS_CONFIG = {
   endpoint: "http://46.38.232.46:4000",
   apiKey: "kARTOOS007",
@@ -26,6 +48,8 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+
   try {
     const { guestId, folderId } = await req.json();
 
@@ -33,6 +57,14 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({ error: "Guest ID and folder ID are required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Rate limit by guest ID for heavy operations
+    if (!checkRateLimit(`zip:${guestId}`)) {
+      return new Response(
+        JSON.stringify({ error: "Too many ZIP requests. Please wait a minute.", retryAfter: 60 }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": "60" } }
       );
     }
 
@@ -86,9 +118,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Collect all files recursively
+    // Collect files with limit
     const allFiles: { file: FileItem; relativePath: string }[] = [];
-    await collectFolderFiles(supabaseAdmin, folderId, "", allFiles);
+    await collectFolderFiles(supabaseAdmin, folderId, "", allFiles, MAX_FILES_IN_ZIP);
 
     if (allFiles.length === 0) {
       return new Response(
@@ -97,41 +129,59 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check total size (limit to 500MB for memory safety)
+    // Check total size
     const totalSize = allFiles.reduce((sum, f) => sum + f.file.size_bytes, 0);
-    if (totalSize > 500 * 1024 * 1024) {
+    if (totalSize > MAX_ZIP_SIZE) {
       return new Response(
         JSON.stringify({ error: "Folder too large to download as ZIP (max 500MB)" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Create ZIP file using JSZip
+    console.log(`Creating ZIP with ${allFiles.length} files (${Math.round(totalSize / 1024 / 1024)}MB)`);
+
+    // Create ZIP file
     const zip = new JSZip();
+    let filesAdded = 0;
 
-    console.log(`Creating ZIP with ${allFiles.length} files`);
+    // Process files in batches of 3 for parallel downloads
+    for (let i = 0; i < allFiles.length; i += 3) {
+      const batch = allFiles.slice(i, i + 3);
+      const results = await Promise.allSettled(
+        batch.map(async ({ file, relativePath }) => {
+          const vpsResponse = await fetch(`${VPS_CONFIG.endpoint}/files/${file.storage_path}`, {
+            headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` },
+          });
+          
+          if (vpsResponse.ok) {
+            const arrayBuffer = await vpsResponse.arrayBuffer();
+            return { file, relativePath, arrayBuffer };
+          }
+          return null;
+        })
+      );
 
-    for (const { file, relativePath } of allFiles) {
-      try {
-        // Fetch from VPS only - no Supabase fallback for large file optimization
-        const vpsResponse = await fetch(`${VPS_CONFIG.endpoint}/files/${file.storage_path}`, {
-          headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` },
-        });
-        
-        if (vpsResponse.ok) {
-          const arrayBuffer = await vpsResponse.arrayBuffer();
+      for (const result of results) {
+        if (result.status === "fulfilled" && result.value) {
+          const { file, relativePath, arrayBuffer } = result.value;
           const filePath = relativePath ? `${relativePath}/${file.original_name}` : file.original_name;
           zip.file(filePath, arrayBuffer);
-          console.log(`Added to ZIP: ${filePath}`);
-        } else {
-          console.warn(`VPS fetch failed for ${file.original_name}: ${vpsResponse.status}`);
+          filesAdded++;
         }
-      } catch (e) {
-        console.error(`Error adding file ${file.name} to ZIP:`, e);
       }
     }
 
+    if (filesAdded === 0) {
+      return new Response(
+        JSON.stringify({ error: "Failed to fetch any files" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const zipBlob = await zip.generateAsync({ type: "blob" });
+
+    const duration = Date.now() - startTime;
+    console.log(`✓ ZIP created: ${filesAdded} files in ${duration}ms`);
 
     return new Response(zipBlob, {
       headers: {
@@ -153,31 +203,41 @@ async function collectFolderFiles(
   supabase: any,
   folderId: string,
   currentPath: string,
-  results: { file: FileItem; relativePath: string }[]
+  results: { file: FileItem; relativePath: string }[],
+  maxFiles: number
 ) {
-  // Get files in this folder
+  if (results.length >= maxFiles) return;
+
+  // Get files with LIMIT
+  const remaining = maxFiles - results.length;
   const { data: files } = await supabase
     .from("files")
     .select("id, name, original_name, storage_path, mime_type, size_bytes")
     .eq("folder_id", folderId)
-    .eq("is_deleted", false);
+    .eq("is_deleted", false)
+    .limit(remaining);
 
   if (files) {
     for (const file of files) {
+      if (results.length >= maxFiles) break;
       results.push({ file, relativePath: currentPath });
     }
   }
 
-  // Get subfolders
+  if (results.length >= maxFiles) return;
+
+  // Get subfolders with LIMIT
   const { data: subfolders } = await supabase
     .from("folders")
     .select("id, name")
-    .eq("parent_id", folderId);
+    .eq("parent_id", folderId)
+    .limit(50);
 
   if (subfolders) {
     for (const subfolder of subfolders) {
+      if (results.length >= maxFiles) break;
       const newPath = currentPath ? `${currentPath}/${subfolder.name}` : subfolder.name;
-      await collectFolderFiles(supabase, subfolder.id, newPath, results);
+      await collectFolderFiles(supabase, subfolder.id, newPath, results, maxFiles);
     }
   }
 }
@@ -191,11 +251,10 @@ async function verifyGuestFolderAccess(
     .from("guest_folder_access")
     .select("folder_share_id")
     .eq("guest_id", guestId)
-    .eq("is_restricted", false);
+    .eq("is_restricted", false)
+    .limit(100);
 
-  if (!accessData || accessData.length === 0) {
-    return false;
-  }
+  if (!accessData || accessData.length === 0) return false;
 
   const folderShareIds = accessData.map((a: any) => a.folder_share_id);
 
@@ -203,24 +262,22 @@ async function verifyGuestFolderAccess(
     .from("folder_shares")
     .select("folder_id")
     .in("id", folderShareIds)
-    .eq("is_active", true);
+    .eq("is_active", true)
+    .limit(100);
 
   const sharedFolderIds = (sharesData || []).map((s: any) => s.folder_id);
+  if (sharedFolderIds.length === 0) return false;
+  if (sharedFolderIds.includes(folderId)) return true;
 
-  if (sharedFolderIds.length === 0) {
-    return false;
-  }
-
-  if (sharedFolderIds.includes(folderId)) {
-    return true;
-  }
-
-  // Check if folder is a subfolder of any shared folder
+  // Check parent hierarchy with depth limit
   let currentId = folderId;
   const visited = new Set<string>();
+  let depth = 0;
+  const maxDepth = 20;
 
-  while (currentId && !visited.has(currentId)) {
+  while (currentId && !visited.has(currentId) && depth < maxDepth) {
     visited.add(currentId);
+    depth++;
 
     const { data: currentFolder } = await supabase
       .from("folders")
@@ -229,14 +286,8 @@ async function verifyGuestFolderAccess(
       .single();
 
     if (!currentFolder) break;
-
-    if (sharedFolderIds.includes(currentFolder.id)) {
-      return true;
-    }
-
-    if (currentFolder.parent_id && sharedFolderIds.includes(currentFolder.parent_id)) {
-      return true;
-    }
+    if (sharedFolderIds.includes(currentFolder.id)) return true;
+    if (currentFolder.parent_id && sharedFolderIds.includes(currentFolder.parent_id)) return true;
 
     currentId = currentFolder.parent_id;
   }

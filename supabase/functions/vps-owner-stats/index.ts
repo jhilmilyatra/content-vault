@@ -6,15 +6,19 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
 
-// Hardcoded VPS configuration
+// Limits
+const MAX_USERS = 100;
+
+// VPS Configuration
 const VPS_ENDPOINT = "http://46.38.232.46:4000";
 const VPS_OWNER_KEY = "kARTOOS007";
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const startTime = Date.now();
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -59,12 +63,14 @@ Deno.serve(async (req) => {
     const url = new URL(req.url);
     const action = url.searchParams.get("action") || "all-users";
     const userId = url.searchParams.get("userId");
+    const limit = Math.min(parseInt(url.searchParams.get("limit") || String(MAX_USERS), 10), MAX_USERS);
+    const offset = Math.max(parseInt(url.searchParams.get("offset") || "0", 10), 0);
 
     let vpsUrl = "";
     
     switch (action) {
       case "all-users":
-        vpsUrl = `${VPS_ENDPOINT}/stats/all-users`;
+        vpsUrl = `${VPS_ENDPOINT}/stats/all-users?limit=${limit}&offset=${offset}`;
         break;
       case "user":
         if (!userId) {
@@ -79,7 +85,7 @@ Deno.serve(async (req) => {
         vpsUrl = `${VPS_ENDPOINT}/health`;
         break;
       case "owner-files":
-        vpsUrl = `${VPS_ENDPOINT}/owner/files`;
+        vpsUrl = `${VPS_ENDPOINT}/owner/files?limit=${limit}&offset=${offset}`;
         break;
       default:
         return new Response(
@@ -104,14 +110,15 @@ Deno.serve(async (req) => {
 
     const vpsData = await vpsResponse.json();
 
-    // For all-users action, enrich with profile data
+    // For all-users action, enrich with profile data (with LIMIT)
     if (action === "all-users" && vpsData.users) {
-      const userIds = vpsData.users.map((u: any) => u.userId);
+      const userIds = vpsData.users.slice(0, MAX_USERS).map((u: any) => u.userId);
       
       const { data: profiles } = await supabase
         .from("profiles")
         .select("user_id, email, full_name")
-        .in("user_id", userIds);
+        .in("user_id", userIds)
+        .limit(MAX_USERS);
 
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
 
@@ -121,9 +128,21 @@ Deno.serve(async (req) => {
       }));
     }
 
+    const duration = Date.now() - startTime;
+    if (duration > 200) {
+      console.warn(`⚠️ SLOW vps-owner-stats: ${duration}ms`);
+    }
+
     return new Response(
-      JSON.stringify(vpsData),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ ...vpsData, limit, offset }),
+      { 
+        status: 200, 
+        headers: { 
+          ...corsHeaders, 
+          "Content-Type": "application/json",
+          "Cache-Control": "private, max-age=30"
+        } 
+      }
     );
 
   } catch (error: unknown) {
