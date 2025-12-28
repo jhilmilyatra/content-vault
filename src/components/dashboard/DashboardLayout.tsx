@@ -25,6 +25,7 @@ import {
   Menu,
   X,
   LucideIcon,
+  Activity,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,6 +66,7 @@ const adminNavItems: NavItem[] = [
 
 const ownerNavItems: NavItem[] = [
   { icon: LayoutDashboard, label: "Overview", path: "/dashboard" },
+  { icon: Activity, label: "System Monitor", path: "/dashboard/system-monitoring" },
   { icon: Users, label: "Users", path: "/dashboard/users" },
   { icon: UserCheck, label: "Guests", path: "/dashboard/guest-controls" },
   { icon: MessageSquare, label: "Member Chat", path: "/dashboard/member-chat" },
