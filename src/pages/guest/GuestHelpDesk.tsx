@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useGuestAuth } from '@/contexts/GuestAuthContext';
@@ -9,6 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useGuestTypingIndicator } from '@/hooks/useGuestTypingIndicator';
+import TypingIndicator from '@/components/chat/TypingIndicator';
 import {
   ArrowLeft,
   Loader2,
@@ -16,6 +18,8 @@ import {
   MessageCircle,
   User,
   ChevronLeft,
+  Check,
+  CheckCheck,
 } from 'lucide-react';
 
 interface Message {
@@ -51,6 +55,13 @@ const GuestHelpDesk = () => {
   const [showChat, setShowChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Typing indicator hook
+  const { remoteTyping, handleInputChange: handleTypingChange, stopTyping } = useGuestTypingIndicator({
+    guestId: guest?.id || '',
+    memberId: selectedMember || '',
+  });
 
   useEffect(() => {
     if (!authLoading && !guest) {
@@ -58,7 +69,7 @@ const GuestHelpDesk = () => {
     }
   }, [guest, authLoading, navigate]);
 
-  const fetchConversations = async () => {
+  const fetchConversations = useCallback(async () => {
     if (!guest) return;
 
     try {
@@ -81,13 +92,13 @@ const GuestHelpDesk = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [guest, toast]);
 
   useEffect(() => {
     fetchConversations();
-  }, [guest]);
+  }, [fetchConversations]);
 
-  const fetchMessages = async (memberId: string) => {
+  const fetchMessages = useCallback(async (memberId: string) => {
     if (!guest) return;
 
     try {
@@ -115,23 +126,27 @@ const GuestHelpDesk = () => {
     } catch (error) {
       console.error('Error fetching messages:', error);
     }
-  };
+  }, [guest]);
 
   useEffect(() => {
     if (selectedMember) {
       fetchMessages(selectedMember);
     }
-  }, [selectedMember]);
+  }, [selectedMember, fetchMessages]);
 
+  // Auto-scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, remoteTyping]);
 
+  // Real-time message subscription - optimized for instant updates
   useEffect(() => {
     if (!guest) return;
 
+    console.log('[GuestHelpDesk] Setting up real-time subscription for guest:', guest.id);
+
     const channel = supabase
-      .channel('guest-messages-realtime')
+      .channel(`guest-chat-${guest.id}`)
       .on(
         'postgres_changes',
         {
@@ -141,10 +156,18 @@ const GuestHelpDesk = () => {
           filter: `guest_id=eq.${guest.id}`,
         },
         (payload) => {
+          console.log('[GuestHelpDesk] New message received:', payload);
           const newMsg = payload.new as Message;
           
           if (selectedMember && newMsg.member_id === selectedMember) {
-            setMessages((prev) => [...prev, newMsg]);
+            // Add message to current conversation immediately
+            setMessages((prev) => {
+              // Prevent duplicates
+              if (prev.some(m => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg];
+            });
+            
+            // Mark as read if it's from member
             if (newMsg.sender_type === 'member') {
               supabase.functions.invoke('guest-messages', {
                 body: { 
@@ -155,18 +178,54 @@ const GuestHelpDesk = () => {
                 }
               });
             }
-          } else if (newMsg.sender_type === 'member') {
+          }
+          
+          // Update conversation list
+          if (newMsg.sender_type === 'member' && newMsg.member_id !== selectedMember) {
             setConversations(prev => prev.map(c => 
               c.member_id === newMsg.member_id 
-                ? { ...c, unread_count: c.unread_count + 1, last_message: newMsg.message, last_message_at: newMsg.created_at }
+                ? { 
+                    ...c, 
+                    unread_count: c.unread_count + 1, 
+                    last_message: newMsg.message, 
+                    last_message_at: newMsg.created_at 
+                  }
+                : c
+            ));
+          } else {
+            // Update last message for current conversation
+            setConversations(prev => prev.map(c => 
+              c.member_id === newMsg.member_id 
+                ? { ...c, last_message: newMsg.message, last_message_at: newMsg.created_at }
                 : c
             ));
           }
         }
       )
-      .subscribe();
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'guest_messages',
+          filter: `guest_id=eq.${guest.id}`,
+        },
+        (payload) => {
+          console.log('[GuestHelpDesk] Message updated:', payload);
+          const updatedMsg = payload.new as Message;
+          
+          // Update read status in current messages
+          setMessages(prev => prev.map(m => 
+            m.id === updatedMsg.id ? { ...m, is_read: updatedMsg.is_read } : m
+          ));
+        }
+      )
+      .subscribe((status) => {
+        console.log('[GuestHelpDesk] Subscription status:', status);
+      });
 
     return () => {
+      console.log('[GuestHelpDesk] Cleaning up subscription');
       supabase.removeChannel(channel);
     };
   }, [guest, selectedMember]);
@@ -179,30 +238,43 @@ const GuestHelpDesk = () => {
   };
 
   const handleBackToList = () => {
+    stopTyping();
     setShowChat(false);
     setSelectedMember(null);
+    setMessages([]);
+  };
+
+  const handleInputChangeWithTyping = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewMessage(e.target.value);
+    handleTypingChange();
   };
 
   const handleSendMessage = async () => {
     if (!guest || !selectedMember || !newMessage.trim()) return;
 
+    stopTyping();
     setSending(true);
+    
+    const messageText = newMessage.trim();
+    setNewMessage(''); // Clear immediately for better UX
+    
     try {
       const { data, error } = await supabase.functions.invoke('guest-messages', {
         body: { 
           action: 'sendMessage', 
           guestId: guest.id, 
           memberId: selectedMember,
-          message: newMessage.trim()
+          message: messageText
         }
       });
 
       if (error) throw error;
 
       if (data?.success) {
-        setNewMessage('');
         inputRef.current?.focus();
       } else {
+        // Restore message if failed
+        setNewMessage(messageText);
         throw new Error(data?.error || 'Failed to send message');
       }
     } catch (error: any) {
@@ -245,14 +317,14 @@ const GuestHelpDesk = () => {
 
   if (!guest) return null;
 
+  const selectedConversation = conversations.find(c => c.member_id === selectedMember);
+
   // Mobile: Full screen chat view
   if (isMobile && showChat && selectedMember) {
-    const selectedConversation = conversations.find(c => c.member_id === selectedMember);
-    
     return (
       <div className="h-[100dvh] flex flex-col bg-background">
         {/* Mobile Chat Header */}
-        <header className="border-b border-border bg-card px-3 py-3 flex items-center gap-3 shrink-0 safe-area-inset-top">
+        <header className="border-b border-border bg-card px-3 py-3 flex items-center gap-3 shrink-0">
           <Button 
             variant="ghost" 
             size="icon" 
@@ -266,12 +338,19 @@ const GuestHelpDesk = () => {
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-medium truncate text-sm">{selectedConversation?.member_name}</p>
-            <p className="text-xs text-muted-foreground">Folder Owner</p>
+            {remoteTyping ? (
+              <TypingIndicator compact />
+            ) : (
+              <p className="text-xs text-muted-foreground">Folder Owner</p>
+            )}
           </div>
         </header>
 
         {/* Messages - Scrollable area */}
-        <div className="flex-1 overflow-y-auto overscroll-contain">
+        <div 
+          ref={scrollContainerRef}
+          className="flex-1 overflow-y-auto overscroll-contain"
+        >
           <div className="px-3 py-4 space-y-3">
             {messages.length === 0 && (
               <div className="text-center text-muted-foreground text-sm py-8">
@@ -293,7 +372,7 @@ const GuestHelpDesk = () => {
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.2 }}
+                    transition={{ duration: 0.15 }}
                     className={`flex ${msg.sender_type === 'guest' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
@@ -304,26 +383,48 @@ const GuestHelpDesk = () => {
                       }`}
                     >
                       <p className="text-sm leading-relaxed break-words">{msg.message}</p>
-                      <p
-                        className={`text-[10px] mt-1 ${
-                          msg.sender_type === 'guest'
-                            ? 'text-primary-foreground/70'
-                            : 'text-muted-foreground'
-                        }`}
-                      >
-                        {formatTime(msg.created_at)}
-                      </p>
+                      <div className={`flex items-center gap-1 mt-1 ${
+                        msg.sender_type === 'guest' ? 'justify-end' : ''
+                      }`}>
+                        <p
+                          className={`text-[10px] ${
+                            msg.sender_type === 'guest'
+                              ? 'text-primary-foreground/70'
+                              : 'text-muted-foreground'
+                          }`}
+                        >
+                          {formatTime(msg.created_at)}
+                        </p>
+                        {msg.sender_type === 'guest' && (
+                          msg.is_read ? (
+                            <CheckCheck className="w-3 h-3 text-primary-foreground/70" />
+                          ) : (
+                            <Check className="w-3 h-3 text-primary-foreground/70" />
+                          )
+                        )}
+                      </div>
                     </div>
                   </motion.div>
                 </div>
               );
             })}
+            {remoteTyping && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex justify-start"
+              >
+                <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
+                  <TypingIndicator />
+                </div>
+              </motion.div>
+            )}
             <div ref={messagesEndRef} />
           </div>
         </div>
 
         {/* Message Input - Fixed at bottom */}
-        <div className="border-t border-border bg-card px-3 py-3 shrink-0 safe-area-inset-bottom">
+        <div className="border-t border-border bg-card px-3 py-3 shrink-0">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -335,7 +436,7 @@ const GuestHelpDesk = () => {
               ref={inputRef}
               placeholder="Type a message..."
               value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
+              onChange={handleInputChangeWithTyping}
               disabled={sending}
               className="touch-manipulation min-h-[44px] text-base rounded-full px-4"
               autoComplete="off"
@@ -359,7 +460,7 @@ const GuestHelpDesk = () => {
     return (
       <div className="min-h-[100dvh] bg-background flex flex-col">
         {/* Header */}
-        <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50 safe-area-inset-top">
+        <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
           <div className="px-4 py-4 flex items-center gap-3">
             <Button 
               variant="ghost" 
@@ -396,7 +497,7 @@ const GuestHelpDesk = () => {
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-medium truncate">{conv.member_name}</p>
                       {conv.unread_count > 0 && (
-                        <span className="bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-full shrink-0">
+                        <span className="bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-full shrink-0 animate-pulse">
                           {conv.unread_count}
                         </span>
                       )}
@@ -465,7 +566,7 @@ const GuestHelpDesk = () => {
                             <div className="flex items-center justify-between">
                               <p className="font-medium truncate">{conv.member_name}</p>
                               {conv.unread_count > 0 && (
-                                <span className="bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-full">
+                                <span className="bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-full animate-pulse">
                                   {conv.unread_count}
                                 </span>
                               )}
@@ -488,9 +589,12 @@ const GuestHelpDesk = () => {
             {selectedMember ? (
               <>
                 <CardHeader className="pb-3 border-b">
-                  <CardTitle className="text-lg">
-                    {conversations.find((c) => c.member_id === selectedMember)?.member_name}
-                  </CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">
+                      {selectedConversation?.member_name}
+                    </CardTitle>
+                    {remoteTyping && <TypingIndicator compact />}
+                  </div>
                 </CardHeader>
                 <CardContent className="flex-1 p-0 flex flex-col">
                   <ScrollArea className="flex-1 p-4">
@@ -511,6 +615,7 @@ const GuestHelpDesk = () => {
                             <motion.div
                               initial={{ opacity: 0, y: 10 }}
                               animate={{ opacity: 1, y: 0 }}
+                              transition={{ duration: 0.15 }}
                               className={`flex ${
                                 msg.sender_type === 'guest' ? 'justify-end' : 'justify-start'
                               }`}
@@ -523,20 +628,42 @@ const GuestHelpDesk = () => {
                                 }`}
                               >
                                 <p className="text-sm">{msg.message}</p>
-                                <p
-                                  className={`text-xs mt-1 ${
-                                    msg.sender_type === 'guest'
-                                      ? 'text-primary-foreground/70'
-                                      : 'text-muted-foreground'
-                                  }`}
-                                >
-                                  {formatTime(msg.created_at)}
-                                </p>
+                                <div className={`flex items-center gap-1 mt-1 ${
+                                  msg.sender_type === 'guest' ? 'justify-end' : ''
+                                }`}>
+                                  <p
+                                    className={`text-xs ${
+                                      msg.sender_type === 'guest'
+                                        ? 'text-primary-foreground/70'
+                                        : 'text-muted-foreground'
+                                    }`}
+                                  >
+                                    {formatTime(msg.created_at)}
+                                  </p>
+                                  {msg.sender_type === 'guest' && (
+                                    msg.is_read ? (
+                                      <CheckCheck className="w-3 h-3 text-primary-foreground/70" />
+                                    ) : (
+                                      <Check className="w-3 h-3 text-primary-foreground/70" />
+                                    )
+                                  )}
+                                </div>
                               </div>
                             </motion.div>
                           </div>
                         );
                       })}
+                      {remoteTyping && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="flex justify-start"
+                        >
+                          <div className="bg-muted rounded-lg px-4 py-3">
+                            <TypingIndicator />
+                          </div>
+                        </motion.div>
+                      )}
                       <div ref={messagesEndRef} />
                     </div>
                   </ScrollArea>
@@ -554,7 +681,7 @@ const GuestHelpDesk = () => {
                         ref={inputRef}
                         placeholder="Type your message..."
                         value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
+                        onChange={handleInputChangeWithTyping}
                         disabled={sending}
                       />
                       <Button type="submit" disabled={sending || !newMessage.trim()}>
