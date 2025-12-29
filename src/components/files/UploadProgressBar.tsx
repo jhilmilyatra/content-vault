@@ -24,6 +24,11 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
   const hasChunkedUploads = uploads.some(u => u.chunked);
   const activeUploads = uploads.filter(u => u.status === 'uploading').length;
   const completedUploads = uploads.filter(u => u.status === 'complete').length;
+  
+  // Get adaptive settings from the first active chunked upload
+  const activeChunkedUpload = uploads.find(u => u.chunked && u.status === 'uploading');
+  const adaptiveChunkSize = activeChunkedUpload?.adaptiveChunkSize;
+  const adaptiveParallelChunks = activeChunkedUpload?.adaptiveParallelChunks;
 
   const getStatusIcon = (status: UploadProgress['status']) => {
     switch (status) {
@@ -161,11 +166,11 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
               {hasChunkedUploads && !isComplete && (
                 <span className="flex items-center gap-1 text-[10px] text-gold bg-gold/10 px-2 py-0.5 rounded-full border border-gold/20">
                   <Layers className="w-3 h-3" />
-                  Chunked
+                  Adaptive
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-3 text-xs text-white/50">
+            <div className="flex items-center gap-3 text-xs text-white/50 flex-wrap">
               <span>{completedUploads}/{uploads.length} files</span>
               {!isComplete && !hasError && avgSpeed > 0 && (
                 <>
@@ -174,6 +179,24 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
                     <Zap className="w-3 h-3 text-gold" />
                     {formatSpeed(avgSpeed)}
                   </span>
+                </>
+              )}
+              {/* Adaptive settings display */}
+              {hasChunkedUploads && !isComplete && !hasError && adaptiveChunkSize && (
+                <>
+                  <span className="w-1 h-1 rounded-full bg-white/20" />
+                  <span className="flex items-center gap-1 text-cyan-400">
+                    <Layers className="w-3 h-3" />
+                    {formatFileSize(adaptiveChunkSize)} chunks
+                  </span>
+                  {adaptiveParallelChunks && (
+                    <>
+                      <span className="w-1 h-1 rounded-full bg-white/20" />
+                      <span className="text-emerald-400">
+                        ×{adaptiveParallelChunks} parallel
+                      </span>
+                    </>
+                  )}
                 </>
               )}
             </div>
