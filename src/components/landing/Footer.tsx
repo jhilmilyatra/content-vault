@@ -1,5 +1,6 @@
 import { Github, Twitter, Instagram } from "lucide-react";
 import Magnetic from "./Magnetic";
+import logo from "@/assets/logo.png";
 
 const Footer = () => {
   return (
@@ -7,7 +8,10 @@ const Footer = () => {
       <div className="container max-w-6xl mx-auto">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-12 mb-24">
           <div className="col-span-2">
-            <h3 className="text-xl font-bold tracking-tighter mb-4">CloudVault</h3>
+            <div className="flex items-center gap-3 mb-4">
+              <img src={logo} alt="CloudVault" className="h-10 w-auto" />
+              <h3 className="text-xl font-bold tracking-tighter">CloudVault</h3>
+            </div>
             <p className="text-white/50 text-sm max-w-xs leading-relaxed font-light">
               High-performance content distribution infrastructure. 
               Engineered for absolute security and sub-millisecond sync.

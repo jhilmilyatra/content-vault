@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { 
-  Cloud, 
-  LayoutDashboard, 
+  LayoutDashboard,
   FolderOpen, 
   Link2, 
   BarChart3, 
@@ -39,6 +38,7 @@ import NotificationDropdown from "./NotificationDropdown";
 import IosTabBar from "@/components/ios/IosTabBar";
 import { cn } from "@/lib/utils";
 import { lightHaptic } from "@/lib/haptics";
+import logo from "@/assets/logo.png";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -274,9 +274,7 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
             {/* Logo */}
             <div className="h-16 flex items-center justify-between px-4 border-b border-white/[0.06] safe-area-top">
               <Link to="/" className="flex items-center gap-3" onClick={() => lightHaptic()}>
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#007AFF] to-[#5856D6] flex items-center justify-center flex-shrink-0 shadow-lg shadow-[#007AFF]/20">
-                  <Cloud className="w-6 h-6 text-white" />
-                </div>
+                <img src={logo} alt="CloudVault" className="h-10 w-auto" />
                 {(!collapsed || isMobile) && (
                   <motion.span
                     initial={{ opacity: 0, x: -10 }}
