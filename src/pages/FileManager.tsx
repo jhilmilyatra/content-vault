@@ -204,24 +204,52 @@ const FileManager = () => {
     setUploadProgressList(initialProgress);
 
     try {
+      // Parallel upload configuration
+      const PARALLEL_UPLOADS = 3;
       const results: FileItem[] = [];
-      for (let i = 0; i < fileList.length; i++) {
-        const file = fileList[i];
-        const result = await uploadFile(file, user.id, currentFolderId, (progress) => {
-          if (typeof progress === 'object') {
-            setUploadProgressList((prev) => {
-              const updated = [...prev];
-              updated[i] = progress;
-              return updated;
+      const queue = [...fileList];
+      let activeUploads = 0;
+      let completedCount = 0;
+
+      const uploadNext = async (): Promise<void> => {
+        while (queue.length > 0 && activeUploads < PARALLEL_UPLOADS) {
+          const file = queue.shift();
+          if (!file) break;
+          
+          const fileIndex = fileList.indexOf(file);
+          activeUploads++;
+
+          try {
+            const result = await uploadFile(file, user.id, currentFolderId, (progress) => {
+              if (typeof progress === 'object') {
+                setUploadProgressList((prev) => {
+                  const updated = [...prev];
+                  updated[fileIndex] = progress;
+                  return updated;
+                });
+              }
             });
+            results.push(result);
+            completedCount++;
+          } catch (error) {
+            console.error(`Upload error for ${file.name}:`, error);
+          } finally {
+            activeUploads--;
           }
-        });
-        results.push(result);
-      }
+        }
+      };
+
+      // Start parallel upload workers
+      const workers = Array.from(
+        { length: Math.min(PARALLEL_UPLOADS, fileList.length) },
+        () => uploadNext()
+      );
+
+      await Promise.all(workers);
 
       toast({
         title: "Success",
-        description: `${fileList.length} file(s) uploaded successfully`,
+        description: `${completedCount} file(s) uploaded successfully`,
       });
 
       fetchContents();
