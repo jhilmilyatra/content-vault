@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -23,16 +22,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { GlassCard, GlassCardHeader } from "@/components/ios/GlassCard";
+import { SkeletonList } from "@/components/ios/SkeletonLoader";
+import { IosModal } from "@/components/ios/IosModal";
+import { staggerContainer, staggerItem } from "@/lib/motion";
+import { lightHaptic } from "@/lib/haptics";
 
 interface UserProfile {
   id: string;
@@ -151,58 +147,70 @@ const AdminUserManagement = () => {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <motion.div 
+        className="space-y-6 px-1"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+      >
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <Users className="w-6 h-6 text-primary" />
+        <div className="animate-fade-up">
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl ios-glass flex items-center justify-center">
+              <Users className="w-5 h-5 text-primary" />
+            </div>
             User Moderation
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-muted-foreground mt-1 ml-13">
             View and moderate user accounts
           </p>
         </div>
 
         {/* Search */}
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <div className="relative animate-fade-up" style={{ animationDelay: "0.1s" }}>
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder="Search users..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
+            className="pl-11 h-12 rounded-2xl ios-glass border-0 text-base"
           />
         </div>
 
         {/* Users List */}
-        <Card>
-          <CardHeader>
-            <CardTitle>All Users ({filteredUsers.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <GlassCard variant="elevated" className="animate-fade-up" style={{ animationDelay: "0.15s" }}>
+          <GlassCardHeader
+            title={`All Users (${filteredUsers.length})`}
+            icon={<Users className="w-5 h-5" />}
+          />
+          
+          <div className="p-4">
             {loading ? (
-              <div className="text-center py-8 text-muted-foreground">
-                Loading users...
-              </div>
+              <SkeletonList />
             ) : filteredUsers.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                No users found
+              <div className="text-center py-12 text-muted-foreground">
+                <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                <p>No users found</p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {filteredUsers.map((userProfile, index) => (
+              <motion.div 
+                className="space-y-2"
+                variants={staggerContainer}
+                initial="hidden"
+                animate="show"
+              >
+                {filteredUsers.map((userProfile) => (
                   <motion.div
                     key={userProfile.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.03 }}
-                    className={`flex items-center gap-4 p-4 rounded-lg border transition-colors ${
+                    variants={staggerItem}
+                    whileTap={{ scale: 0.98 }}
+                    className={`flex items-center gap-4 p-4 rounded-2xl transition-all duration-200 ${
                       userProfile.is_suspended
-                        ? "bg-destructive/5 border-destructive/20"
-                        : "bg-card hover:bg-muted/50"
+                        ? "bg-destructive/10 border border-destructive/20"
+                        : "ios-glass-subtle hover:bg-muted/30"
                     }`}
                   >
-                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-semibold text-sm">
+                    <div className="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-primary font-semibold text-sm shrink-0">
                       {userProfile.full_name?.[0]?.toUpperCase() ||
                         userProfile.email?.[0]?.toUpperCase() ||
                         "U"}
@@ -213,7 +221,7 @@ const AdminUserManagement = () => {
                           {userProfile.full_name || "No name"}
                         </p>
                         {userProfile.is_suspended && (
-                          <Badge variant="destructive" className="text-xs">
+                          <Badge variant="destructive" className="text-xs rounded-full px-2">
                             Suspended
                           </Badge>
                         )}
@@ -222,42 +230,48 @@ const AdminUserManagement = () => {
                         {userProfile.email}
                       </p>
                       {userProfile.is_suspended && userProfile.suspension_reason && (
-                        <p className="text-xs text-destructive mt-1">
-                          Reason: {userProfile.suspension_reason}
+                        <p className="text-xs text-destructive mt-1 truncate">
+                          {userProfile.suspension_reason}
                         </p>
                       )}
                     </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          className="rounded-full h-9 w-9"
+                          onClick={() => lightHaptic()}
+                        >
                           <MoreHorizontal className="w-4 h-4" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem>
-                          <Eye className="w-4 h-4 mr-2" />
+                      <DropdownMenuContent align="end" className="ios-glass-elevated rounded-2xl min-w-[180px]">
+                        <DropdownMenuItem className="rounded-xl py-3">
+                          <Eye className="w-4 h-4 mr-3" />
                           View Profile
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <Mail className="w-4 h-4 mr-2" />
+                        <DropdownMenuItem className="rounded-xl py-3">
+                          <Mail className="w-4 h-4 mr-3" />
                           Send Message
                         </DropdownMenuItem>
                         {userProfile.is_suspended ? (
                           <DropdownMenuItem
                             onClick={() => handleUnsuspendUser(userProfile)}
+                            className="rounded-xl py-3 text-emerald-500"
                           >
-                            <CheckCircle className="w-4 h-4 mr-2" />
+                            <CheckCircle className="w-4 h-4 mr-3" />
                             Unsuspend User
                           </DropdownMenuItem>
                         ) : (
                           <DropdownMenuItem
-                            className="text-destructive"
+                            className="rounded-xl py-3 text-destructive"
                             onClick={() => {
                               setSelectedUser(userProfile);
                               setSuspendDialogOpen(true);
                             }}
                           >
-                            <Ban className="w-4 h-4 mr-2" />
+                            <Ban className="w-4 h-4 mr-3" />
                             Suspend User
                           </DropdownMenuItem>
                         )}
@@ -265,45 +279,58 @@ const AdminUserManagement = () => {
                     </DropdownMenu>
                   </motion.div>
                 ))}
-              </div>
+              </motion.div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </GlassCard>
 
-        {/* Suspend Dialog */}
-        <Dialog open={suspendDialogOpen} onOpenChange={setSuspendDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Suspend User</DialogTitle>
-              <DialogDescription>
-                This will prevent the user from accessing their account. Please provide a reason.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-4">
-              <Label>User</Label>
-              <p className="text-sm text-muted-foreground mb-4">
+        {/* Suspend Modal */}
+        <IosModal
+          open={suspendDialogOpen}
+          onClose={() => setSuspendDialogOpen(false)}
+          title="Suspend User"
+          description="This will prevent the user from accessing their account."
+          footer={
+            <>
+              <Button 
+                variant="outline" 
+                onClick={() => setSuspendDialogOpen(false)}
+                className="flex-1 rounded-xl h-12"
+              >
+                Cancel
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={handleSuspendUser}
+                className="flex-1 rounded-xl h-12"
+              >
+                Suspend
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            <div className="p-3 rounded-xl bg-muted/30">
+              <Label className="text-xs text-muted-foreground">User</Label>
+              <p className="text-sm font-medium text-foreground">
                 {selectedUser?.email}
               </p>
-              <Label htmlFor="reason">Suspension Reason *</Label>
+            </div>
+            <div>
+              <Label htmlFor="reason" className="text-sm font-medium">
+                Suspension Reason *
+              </Label>
               <Textarea
                 id="reason"
                 placeholder="Enter reason for suspension..."
                 value={suspensionReason}
                 onChange={(e) => setSuspensionReason(e.target.value)}
-                className="mt-2"
+                className="mt-2 rounded-xl ios-glass border-0 min-h-[100px]"
               />
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setSuspendDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={handleSuspendUser}>
-                Suspend User
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+          </div>
+        </IosModal>
+      </motion.div>
     </DashboardLayout>
   );
 };
