@@ -743,6 +743,130 @@ app.get('/owner/files', requireOwner, (req, res) => {
 });
 
 // ============================================
+// Chunked Upload: Append chunk directly to file
+// ============================================
+app.post('/chunk-append', authenticate, (req, res) => {
+  try {
+    const { data, fileName, userId, chunkIndex, totalChunks, isFirstChunk, isLastChunk } = req.body;
+    
+    if (!data) {
+      return res.status(400).json({ error: 'Missing chunk data' });
+    }
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'Missing user ID' });
+    }
+    
+    if (!fileName) {
+      return res.status(400).json({ error: 'Missing file name' });
+    }
+    
+    if (chunkIndex === undefined || chunkIndex === null) {
+      return res.status(400).json({ error: 'Missing chunk index' });
+    }
+    
+    // Validate userId
+    if (!isValidUUID(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+    
+    // Validate filename
+    if (!isValidFilename(fileName)) {
+      return res.status(400).json({ error: 'Invalid filename format' });
+    }
+    
+    // Get safe path
+    const pathInfo = getSafePath(userId, fileName);
+    if (!pathInfo) {
+      return res.status(400).json({ error: 'Invalid path parameters' });
+    }
+    
+    // Decode base64
+    const buffer = Buffer.from(data, 'base64');
+    
+    // Ensure user directory exists
+    if (!fs.existsSync(pathInfo.userDir)) {
+      fs.mkdirSync(pathInfo.userDir, { recursive: true });
+    }
+
+    // For first chunk, create/truncate the file
+    // For subsequent chunks, append to existing file
+    if (isFirstChunk || chunkIndex === 0) {
+      fs.writeFileSync(pathInfo.fullPath, buffer);
+      console.log(`📦 Chunk ${chunkIndex}/${totalChunks - 1} written (new file): ${fileName}`);
+    } else {
+      // Append to file
+      fs.appendFileSync(pathInfo.fullPath, buffer);
+      console.log(`📦 Chunk ${chunkIndex}/${totalChunks - 1} appended: ${fileName}`);
+    }
+    
+    const filePath = `${userId}/${fileName}`;
+    
+    // Get current file size
+    const stats = fs.statSync(pathInfo.fullPath);
+    
+    res.json({
+      success: true,
+      chunkIndex,
+      totalChunks,
+      currentSize: stats.size,
+      path: filePath,
+      fileName,
+      isComplete: isLastChunk || (chunkIndex === totalChunks - 1),
+      url: `/files/${filePath}`
+    });
+  } catch (error) {
+    console.error('Chunk append error:', error);
+    res.status(500).json({ error: 'Chunk append failed', message: error.message });
+  }
+});
+
+// ============================================
+// Chunked Upload: Verify file completeness
+// ============================================
+app.post('/verify-file', authenticate, (req, res) => {
+  try {
+    const { fileName, userId, expectedSize } = req.body;
+    
+    if (!userId || !fileName) {
+      return res.status(400).json({ error: 'Missing userId or fileName' });
+    }
+    
+    // Validate userId
+    if (!isValidUUID(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+    
+    // Get safe path
+    const pathInfo = getSafePath(userId, fileName);
+    if (!pathInfo) {
+      return res.status(400).json({ error: 'Invalid path parameters' });
+    }
+    
+    if (!fs.existsSync(pathInfo.fullPath)) {
+      return res.status(404).json({ error: 'File not found', exists: false });
+    }
+    
+    const stats = fs.statSync(pathInfo.fullPath);
+    const isComplete = expectedSize ? stats.size === expectedSize : true;
+    
+    res.json({
+      success: true,
+      exists: true,
+      fileName,
+      size: stats.size,
+      expectedSize,
+      isComplete,
+      path: `${userId}/${fileName}`,
+      url: `/files/${userId}/${fileName}`
+    });
+  } catch (error) {
+    console.error('Verify file error:', error);
+    res.status(500).json({ error: 'Verify failed', message: error.message });
+  }
+});
+
+// ============================================
 // Storage Stats Helper Function
 // ============================================
 function getStorageStats() {
