@@ -53,14 +53,21 @@ const GuestHelpDesk = lazy(() => import("./pages/guest/GuestHelpDesk"));
 const GuestManagement = lazy(() => import("./pages/dashboard/GuestManagement"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
-// QueryClient with optimized defaults
+// QueryClient with aggressive caching for fast performance
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30 * 1000, // 30 seconds
-      gcTime: 5 * 60 * 1000, // 5 minutes (formerly cacheTime)
+      staleTime: 2 * 60 * 1000, // 2 minutes - data considered fresh
+      gcTime: 30 * 60 * 1000, // 30 minutes - keep in cache
       retry: 1,
       refetchOnWindowFocus: false,
+      refetchOnMount: false, // Don't refetch on mount if data exists
+      refetchOnReconnect: false, // Don't refetch on reconnect
+      networkMode: 'offlineFirst', // Use cached data first
+    },
+    mutations: {
+      retry: 1,
+      networkMode: 'offlineFirst',
     },
   },
 });
