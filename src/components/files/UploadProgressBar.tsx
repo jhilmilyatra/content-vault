@@ -1,11 +1,13 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Loader2, CheckCircle2, AlertCircle, Upload, X, Pause, Play, 
-  Layers, Zap, FileUp, Sparkles, CloudUpload
+  Layers, Zap, FileUp, Sparkles, CloudUpload, BarChart3
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatFileSize, formatSpeed, formatTime, type UploadProgress } from "@/lib/fileService";
+import { formatFileSize, formatSpeed, formatTime, type UploadProgress, type SpeedDataPoint } from "@/lib/fileService";
 import { lightHaptic } from "@/lib/haptics";
+import UploadSpeedGraph from "./UploadSpeedGraph";
+import { useState } from "react";
 
 interface UploadProgressBarProps {
   uploads: UploadProgress[];
@@ -13,6 +15,8 @@ interface UploadProgressBarProps {
 }
 
 const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
+  const [showGraph, setShowGraph] = useState(true);
+
   if (uploads.length === 0) return null;
 
   const totalProgress = uploads.reduce((acc, u) => acc + u.percentage, 0) / uploads.length;
@@ -29,6 +33,7 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
   const activeChunkedUpload = uploads.find(u => u.chunked && u.status === 'uploading');
   const adaptiveChunkSize = activeChunkedUpload?.adaptiveChunkSize;
   const adaptiveParallelChunks = activeChunkedUpload?.adaptiveParallelChunks;
+  const speedHistory = activeChunkedUpload?.speedHistory || [];
 
   const getStatusIcon = (status: UploadProgress['status']) => {
     switch (status) {
@@ -259,13 +264,42 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
           <span className="tabular-nums">
             {formatFileSize(totalLoaded)} / {formatFileSize(totalSize)}
           </span>
-          {!isComplete && !hasError && avgSpeed > 0 && (
-            <span className="tabular-nums">
-              ~{formatTime((totalSize - totalLoaded) / avgSpeed)} remaining
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {!isComplete && !hasError && avgSpeed > 0 && (
+              <span className="tabular-nums">
+                ~{formatTime((totalSize - totalLoaded) / avgSpeed)} remaining
+              </span>
+            )}
+            {hasChunkedUploads && !isComplete && !hasError && speedHistory.length > 0 && (
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShowGraph(!showGraph)}
+                className={`p-1 rounded-md transition-colors ${
+                  showGraph ? 'bg-gold/20 text-gold' : 'bg-white/5 text-white/40 hover:text-white/60'
+                }`}
+              >
+                <BarChart3 className="w-3 h-3" />
+              </motion.button>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Speed Graph */}
+      <AnimatePresence>
+        {showGraph && hasChunkedUploads && !isComplete && !hasError && speedHistory.length > 0 && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="px-4 pb-3 border-t border-white/[0.05] pt-3"
+          >
+            <UploadSpeedGraph speedHistory={speedHistory} currentSpeed={avgSpeed} />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Individual Files */}
       {uploads.length > 1 && (

@@ -20,6 +20,8 @@ import {
   deleteFolder,
   getFileUrl,
   formatFileSize,
+  updateBandwidthUsage,
+  updateStorageUsage,
   type FileItem,
   type FolderItem,
   type UploadProgress,
@@ -231,6 +233,12 @@ const FileManager = () => {
             });
             results.push(result);
             completedCount++;
+            
+            // Update bandwidth and storage usage after successful upload
+            await Promise.all([
+              updateBandwidthUsage(user.id, file.size),
+              updateStorageUsage(user.id, file.size),
+            ]);
           } catch (error) {
             console.error(`Upload error for ${file.name}:`, error);
           } finally {
