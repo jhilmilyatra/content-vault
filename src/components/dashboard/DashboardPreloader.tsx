@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
-import { Cloud } from "lucide-react";
+import logo from "@/assets/logo.png";
 
 interface DashboardPreloaderProps {
   onComplete?: () => void;
@@ -71,8 +71,8 @@ export const DashboardPreloader = ({ onComplete, duration = 1800 }: DashboardPre
                 }}
               />
               
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-teal-400 to-blue-600 flex items-center justify-center shadow-[0_0_60px_rgba(20,184,166,0.4)]">
-                <Cloud className="w-10 h-10 text-white" />
+              <div className="w-20 h-20 rounded-2xl bg-white p-2 flex items-center justify-center shadow-[0_0_60px_rgba(20,184,166,0.4)]">
+                <img src={logo} alt="CloudVault" className="w-full h-full object-contain" />
               </div>
             </motion.div>
 

@@ -1,5 +1,5 @@
-import { Loader2 } from "lucide-react";
 import { memo } from "react";
+import logo from "@/assets/logo.png";
 
 interface LoadingSpinnerProps {
   size?: "sm" | "md" | "lg";
@@ -8,14 +8,16 @@ interface LoadingSpinnerProps {
 
 const LoadingSpinner = memo(({ size = "md", text }: LoadingSpinnerProps) => {
   const sizeClasses = {
-    sm: "w-4 h-4",
-    md: "w-8 h-8",
-    lg: "w-12 h-12",
+    sm: "w-6 h-6",
+    md: "w-10 h-10",
+    lg: "w-14 h-14",
   };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[200px] gap-3">
-      <Loader2 className={`${sizeClasses[size]} animate-spin text-primary`} />
+      <div className={`${sizeClasses[size]} rounded-lg bg-white p-1 animate-pulse`}>
+        <img src={logo} alt="Loading" className="w-full h-full object-contain" />
+      </div>
       {text && <p className="text-sm text-muted-foreground">{text}</p>}
     </div>
   );
