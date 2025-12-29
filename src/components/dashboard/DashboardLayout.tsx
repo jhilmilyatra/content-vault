@@ -27,6 +27,7 @@ import {
   LucideIcon,
   Activity,
   ArrowLeft,
+  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,8 +36,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
 import MemberChatPanel from "./MemberChatPanel";
 import NotificationDropdown from "./NotificationDropdown";
-import MobileBottomNav from "./MobileBottomNav";
+import IosTabBar from "@/components/ios/IosTabBar";
 import { cn } from "@/lib/utils";
+import { lightHaptic } from "@/lib/haptics";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -62,9 +64,9 @@ const memberNavItems: NavItem[] = [
 const memberBottomNavItems: NavItem[] = [
   { icon: LayoutDashboard, label: "Home", path: "/dashboard" },
   { icon: FolderOpen, label: "Files", path: "/dashboard/files" },
-  { icon: Link2, label: "Links", path: "/dashboard/links" },
+  { icon: Plus, label: "Add", path: "/dashboard/files" },
   { icon: BarChart3, label: "Stats", path: "/dashboard/analytics" },
-  { icon: Settings, label: "Settings", path: "/dashboard/settings" },
+  { icon: Settings, label: "More", path: "/dashboard/settings" },
 ];
 
 const adminNavItems: NavItem[] = [
@@ -80,7 +82,7 @@ const adminBottomNavItems: NavItem[] = [
   { icon: Users, label: "Users", path: "/dashboard/admin/users" },
   { icon: FileWarning, label: "Reports", path: "/dashboard/admin/reports" },
   { icon: BarChart3, label: "Stats", path: "/dashboard/analytics" },
-  { icon: Settings, label: "Settings", path: "/dashboard/settings" },
+  { icon: Settings, label: "More", path: "/dashboard/settings" },
 ];
 
 const ownerNavItems: NavItem[] = [
@@ -105,7 +107,7 @@ const ownerBottomNavItems: NavItem[] = [
   { icon: Activity, label: "System", path: "/dashboard/system-monitoring" },
   { icon: Users, label: "Users", path: "/dashboard/users" },
   { icon: Shield, label: "Security", path: "/dashboard/security" },
-  { icon: Settings, label: "Settings", path: "/dashboard/settings" },
+  { icon: Menu, label: "More", path: "/dashboard/settings" },
 ];
 
 const NavItemComponent = memo(({ 
@@ -121,30 +123,24 @@ const NavItemComponent = memo(({
 }) => (
   <Link
     to={item.path}
+    onClick={() => lightHaptic()}
     className={cn(
-      "flex items-center gap-3 px-3 py-2.5 rounded-xl",
+      "flex items-center gap-3 px-3 py-3 rounded-xl",
       "transition-all duration-200 ease-out",
-      "touch-manipulation min-h-[44px]",
+      "touch-manipulation min-h-[48px]",
       "group relative",
+      "active:scale-[0.98]",
       isActive 
-        ? "bg-gradient-to-r from-teal-500/20 to-blue-500/10 text-white" 
-        : "text-white/50 hover:text-white hover:bg-white/5"
+        ? "bg-[#007AFF]/15 text-[#007AFF]" 
+        : "text-white/60 hover:text-white hover:bg-white/[0.06]"
     )}
   >
-    {/* Active indicator */}
-    {isActive && (
-      <motion.div
-        layoutId="activeNav"
-        className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-gradient-to-b from-teal-400 to-blue-500 rounded-full"
-        transition={{ type: "spring", stiffness: 500, damping: 30 }}
-      />
-    )}
     <item.icon className={cn(
       "w-5 h-5 flex-shrink-0 transition-colors",
-      isActive ? "text-teal-400" : "text-white/50 group-hover:text-white/80"
+      isActive ? "text-[#007AFF]" : "text-white/50 group-hover:text-white/80"
     )} />
     {(!collapsed || isMobile) && (
-      <span className="text-sm font-medium">{item.label}</span>
+      <span className="text-[15px] font-medium">{item.label}</span>
     )}
   </Link>
 ));
@@ -189,6 +185,7 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
   }, []);
 
   const handleSignOut = useCallback(async () => {
+    lightHaptic();
     await signOut();
     toast({
       title: "Signed out",
@@ -213,6 +210,7 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
   }, [profile]);
 
   const toggleMobileMenu = useCallback(() => {
+    lightHaptic();
     setMobileMenuOpen(prev => !prev);
   }, []);
 
@@ -225,26 +223,25 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
   }, []);
 
   const toggleChat = useCallback(() => {
+    lightHaptic();
     setChatOpen(prev => !prev);
   }, []);
 
   const sidebarWidth = isMobile ? 280 : (collapsed ? 72 : 260);
 
-  return (
-    <div className="min-h-dvh bg-[#0b0b0d] flex">
-      {/* Ambient background glow */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-teal-500/5 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl" />
-      </div>
+  // Get current page title
+  const getPageTitle = () => {
+    const currentItem = navItems.find(item => item.path === location.pathname);
+    return currentItem?.label || "Dashboard";
+  };
 
-      {/* Scanline overlay */}
-      <div 
-        className="fixed inset-0 z-[1] pointer-events-none opacity-[0.02]"
-        style={{
-          backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.03) 2px, rgba(255,255,255,0.03) 4px)'
-        }}
-      />
+  return (
+    <div className="min-h-dvh bg-black flex">
+      {/* iOS-style ambient background */}
+      <div className="fixed inset-0 pointer-events-none">
+        <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-[#007AFF]/5 rounded-full blur-[120px]" />
+        <div className="absolute bottom-1/4 right-0 w-[400px] h-[400px] bg-violet-500/5 rounded-full blur-[100px]" />
+      </div>
 
       {/* Mobile Menu Overlay */}
       <AnimatePresence>
@@ -253,8 +250,8 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+            transition={{ duration: 0.25 }}
+            className="fixed inset-0 bg-black/70 backdrop-blur-md z-40"
             onClick={closeMobileMenu}
           />
         )}
@@ -267,17 +264,17 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
             initial={isMobile ? { x: -280, opacity: 0 } : false}
             animate={{ x: 0, opacity: 1, width: isMobile ? 280 : (collapsed ? 72 : 260) }}
             exit={isMobile ? { x: -280, opacity: 0 } : undefined}
-            transition={{ duration: 0.25, ease: [0.2, 0.8, 0.2, 1] }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
             className={cn(
               "fixed left-0 top-0 bottom-0 z-50",
-              "bg-[#0a0a0c]/95 backdrop-blur-xl border-r border-white/5",
+              "bg-black/90 backdrop-blur-2xl border-r border-white/[0.06]",
               "flex flex-col"
             )}
           >
             {/* Logo */}
-            <div className="h-16 flex items-center justify-between px-4 border-b border-white/5">
-              <Link to="/" className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-400 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-teal-500/20">
+            <div className="h-16 flex items-center justify-between px-4 border-b border-white/[0.06] safe-area-top">
+              <Link to="/" className="flex items-center gap-3" onClick={() => lightHaptic()}>
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#007AFF] to-[#5856D6] flex items-center justify-center flex-shrink-0 shadow-lg shadow-[#007AFF]/20">
                   <Cloud className="w-6 h-6 text-white" />
                 </div>
                 {(!collapsed || isMobile) && (
@@ -285,8 +282,8 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -10 }}
-                    transition={{ duration: 0.15 }}
-                    className="text-lg font-bold text-white"
+                    transition={{ duration: 0.2 }}
+                    className="text-[17px] font-semibold text-white"
                   >
                     CloudVault
                   </motion.span>
@@ -296,7 +293,7 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 text-white/50 hover:text-white hover:bg-white/5"
+                  className="h-9 w-9 text-white/50 hover:text-white hover:bg-white/[0.06] active:scale-95"
                   onClick={closeMobileMenu}
                 >
                   <X className="w-5 h-5" />
@@ -308,18 +305,18 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
             {(!collapsed || isMobile) && (
               <div className="px-4 py-3">
                 <div className={cn(
-                  "px-3 py-2 rounded-lg text-xs font-semibold text-center uppercase tracking-wider",
-                  role === "owner" && "bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-400 border border-amber-500/20",
-                  role === "admin" && "bg-gradient-to-r from-violet-500/20 to-purple-500/20 text-violet-400 border border-violet-500/20",
-                  role === "member" && "bg-gradient-to-r from-teal-500/20 to-blue-500/20 text-teal-400 border border-teal-500/20"
+                  "px-3 py-2.5 rounded-xl text-[13px] font-semibold text-center uppercase tracking-wide",
+                  role === "owner" && "bg-gradient-to-r from-amber-500/15 to-orange-500/15 text-amber-400 border border-amber-500/20",
+                  role === "admin" && "bg-gradient-to-r from-violet-500/15 to-purple-500/15 text-violet-400 border border-violet-500/20",
+                  role === "member" && "bg-gradient-to-r from-[#007AFF]/15 to-[#5856D6]/15 text-[#007AFF] border border-[#007AFF]/20"
                 )}>
-                  {role === "owner" ? "Owner Panel" : role === "admin" ? "Admin Panel" : "Member Panel"}
+                  {role === "owner" ? "Owner" : role === "admin" ? "Admin" : "Member"}
                 </div>
               </div>
             )}
 
             {/* Navigation */}
-            <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-hide">
+            <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto scrollbar-hide">
               {navItems.map((item) => (
                 <NavItemComponent
                   key={item.path}
@@ -331,19 +328,46 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
               ))}
             </nav>
 
+            {/* User section */}
+            {(!collapsed || isMobile) && (
+              <div className="p-3 border-t border-white/[0.06]">
+                <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/[0.04]">
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#007AFF] to-[#5856D6] flex items-center justify-center text-white font-semibold text-sm">
+                    {getInitials()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[14px] font-medium text-white truncate">
+                      {profile?.full_name || profile?.email || "User"}
+                    </p>
+                    <p className="text-[12px] text-white/40 truncate">
+                      {profile?.email}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleSignOut}
+                    className="h-8 w-8 text-white/40 hover:text-white hover:bg-white/[0.06] active:scale-95"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {/* Collapse toggle - desktop only */}
             {!isMobile && (
-              <div className="p-3 border-t border-white/5">
+              <div className="p-3 border-t border-white/[0.06]">
                 <button
                   onClick={toggleCollapsed}
                   className={cn(
                     "w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl",
-                    "text-white/50 hover:text-white hover:bg-white/5",
-                    "transition-all duration-200"
+                    "text-white/40 hover:text-white hover:bg-white/[0.06]",
+                    "transition-all duration-200 active:scale-95"
                   )}
                 >
                   {collapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
-                  {!collapsed && <span className="text-sm">Collapse</span>}
+                  {!collapsed && <span className="text-[14px]">Collapse</span>}
                 </button>
               </div>
             )}
@@ -356,92 +380,121 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
         className="flex-1 transition-all duration-300 ease-out min-w-0 relative z-10"
         style={{ marginLeft: isMobile ? 0 : sidebarWidth }}
       >
-        {/* Top bar */}
+        {/* iOS-style sticky header */}
         <header 
           className={cn(
-            "h-16 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30",
-            "transition-all duration-300",
-            "border-b",
+            "sticky top-0 z-30 transition-all duration-300 safe-area-top",
             headerIsGlass 
-              ? "bg-[#0b0b0d]/80 backdrop-blur-xl border-white/10" 
-              : "bg-transparent border-transparent"
+              ? "bg-black/80 backdrop-blur-2xl border-b border-white/[0.08]" 
+              : "bg-transparent border-b border-transparent"
           )}
         >
-          <div className="flex items-center gap-3 flex-1 max-w-md">
-            {/* Back button for sub-pages */}
-            {location.pathname !== "/dashboard" && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 flex-shrink-0 text-white/50 hover:text-white hover:bg-white/5"
-                onClick={() => navigate("/dashboard")}
+          {/* Compact bar */}
+          <div className="h-14 flex items-center justify-between px-4">
+            <div className="flex items-center gap-2">
+              {/* Back button for sub-pages */}
+              {location.pathname !== "/dashboard" && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 text-[#007AFF] hover:bg-white/[0.06] active:scale-95"
+                  onClick={() => {
+                    lightHaptic();
+                    navigate("/dashboard");
+                  }}
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </Button>
+              )}
+              {/* Mobile menu toggle */}
+              {isMobile && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10 text-white/60 hover:text-white hover:bg-white/[0.06] active:scale-95"
+                  onClick={toggleMobileMenu}
+                >
+                  <Menu className="w-5 h-5" />
+                </Button>
+              )}
+              {/* Compact title (visible on scroll) */}
+              <motion.h1
+                initial={false}
+                animate={{
+                  opacity: headerIsGlass ? 1 : 0,
+                  x: headerIsGlass ? 0 : -8,
+                }}
+                transition={{ duration: 0.2 }}
+                className="text-[17px] font-semibold text-white"
               >
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-            )}
-            {/* Mobile menu toggle */}
-            {isMobile && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 flex-shrink-0 text-white/50 hover:text-white hover:bg-white/5"
-                onClick={toggleMobileMenu}
-              >
-                <Menu className="w-5 h-5" />
-              </Button>
-            )}
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-              <Input
-                placeholder="Search..."
-                className="pl-10 bg-white/5 border-white/10 h-10 text-sm rounded-xl text-white placeholder:text-white/30 focus:bg-white/10 focus:border-teal-500/50"
-              />
+                {getPageTitle()}
+              </motion.h1>
+            </div>
+
+            <div className="flex items-center gap-1">
+              {/* Chat button for members */}
+              {role === "member" && (
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={toggleChat}
+                  className="h-9 w-9 text-white/50 hover:text-white hover:bg-white/[0.06] active:scale-95"
+                >
+                  <MessageSquare className="w-5 h-5" />
+                </Button>
+              )}
+              
+              <NotificationDropdown />
+              
+              {/* Avatar */}
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#007AFF] to-[#5856D6] flex items-center justify-center text-white font-semibold text-[13px] shadow-lg shadow-[#007AFF]/20 ml-1">
+                {getInitials()}
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Chat button for members */}
-            {role === "member" && (
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={toggleChat}
-                className="h-9 w-9 text-white/50 hover:text-white hover:bg-white/5 relative"
-              >
-                <MessageSquare className="w-5 h-5" />
-              </Button>
-            )}
-            
-            <NotificationDropdown />
-            
-            {/* Avatar */}
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-teal-400 to-blue-600 flex items-center justify-center text-white font-semibold text-sm shadow-lg shadow-teal-500/20">
-              {getInitials()}
-            </div>
-
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={handleSignOut} 
-              className="h-9 w-9 text-white/50 hover:text-white hover:bg-white/5"
+          {/* Large title (iOS style) */}
+          {!isMobile && (
+            <motion.div
+              initial={false}
+              animate={{
+                opacity: headerIsGlass ? 0 : 1,
+                height: headerIsGlass ? 0 : "auto",
+                paddingBottom: headerIsGlass ? 0 : 16,
+              }}
+              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+              className="px-4 overflow-hidden"
             >
-              <LogOut className="w-5 h-5" />
-            </Button>
-          </div>
+              <h1 className="text-[34px] font-bold text-white tracking-tight">
+                {getPageTitle()}
+              </h1>
+            </motion.div>
+          )}
         </header>
 
         {/* Page content */}
         <main className={cn(
-          "p-4 sm:p-6",
+          "px-4 py-4",
           isMobile && "pb-24"
         )}>
+          {/* Large title for mobile (always visible in content) */}
+          {isMobile && (
+            <motion.h1
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="text-[28px] font-bold text-white tracking-tight mb-4"
+            >
+              {getPageTitle()}
+            </motion.h1>
+          )}
           {children}
         </main>
       </div>
 
-      {/* Mobile Bottom Navigation */}
+      {/* iOS-style Bottom Tab Bar */}
       {isMobile && (
-        <MobileBottomNav items={bottomNavItems} />
+        <IosTabBar items={bottomNavItems} />
       )}
 
       {/* Member Chat Panel */}
