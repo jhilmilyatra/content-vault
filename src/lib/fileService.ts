@@ -65,20 +65,162 @@ export interface ChunkedUploadState {
   createdAt: string;
 }
 
-// Chunk size: 5MB (smaller chunks = better parallelization = faster perceived speed)
-const CHUNK_SIZE = 5 * 1024 * 1024;
+// Adaptive chunk size configuration
+const MIN_CHUNK_SIZE = 1 * 1024 * 1024; // 1MB minimum
+const MAX_CHUNK_SIZE = 20 * 1024 * 1024; // 20MB maximum
+const DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB default
+const SPEED_TEST_SIZE = 256 * 1024; // 256KB for speed test
 
-// Threshold for chunked upload: 20MB (lower threshold for better speed on medium files)
+// Target chunk upload time (seconds) - aim for 3-5 second chunks
+const TARGET_CHUNK_TIME = 4;
+
+// Threshold for chunked upload: 20MB
 const CHUNKED_UPLOAD_THRESHOLD = 20 * 1024 * 1024;
 
-// Parallel chunk uploads (upload multiple chunks simultaneously) - increased for speed
-const PARALLEL_CHUNKS = 6;
+// Parallel chunk uploads - adjusted based on speed
+const MIN_PARALLEL_CHUNKS = 2;
+const MAX_PARALLEL_CHUNKS = 8;
+const DEFAULT_PARALLEL_CHUNKS = 4;
 
 // Parallel file uploads for batch uploads
 const PARALLEL_FILES = 3;
 
 // Storage key for resumable uploads
 const RESUMABLE_UPLOADS_KEY = "resumable_uploads";
+
+// Connection speed cache
+interface SpeedProfile {
+  bytesPerSecond: number;
+  optimalChunkSize: number;
+  optimalParallelChunks: number;
+  measuredAt: number;
+}
+
+let cachedSpeedProfile: SpeedProfile | null = null;
+const SPEED_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Estimate speed based on Network Information API or defaults
+ */
+const estimateSpeedFromConnection = (): number => {
+  const connection = (navigator as any).connection;
+  
+  if (connection?.downlink) {
+    // downlink is in Mbps, convert to bytes/second (upload ~15% of download)
+    const estimatedUploadMbps = connection.downlink * 0.15;
+    return estimatedUploadMbps * 1024 * 1024 / 8;
+  }
+  
+  if (connection?.effectiveType) {
+    const speedMap: Record<string, number> = {
+      'slow-2g': 50 * 1024,
+      '2g': 150 * 1024,
+      '3g': 750 * 1024,
+      '4g': 4 * 1024 * 1024,
+    };
+    return speedMap[connection.effectiveType] || 1 * 1024 * 1024;
+  }
+  
+  return 1 * 1024 * 1024; // Default 1 MB/s
+};
+
+/**
+ * Calculate optimal chunk size based on upload speed
+ */
+const calculateOptimalChunkSize = (bytesPerSecond: number): number => {
+  const optimalSize = bytesPerSecond * TARGET_CHUNK_TIME;
+  return Math.min(MAX_CHUNK_SIZE, Math.max(MIN_CHUNK_SIZE, optimalSize));
+};
+
+/**
+ * Calculate optimal parallel chunks based on speed
+ */
+const calculateOptimalParallelChunks = (bytesPerSecond: number): number => {
+  if (bytesPerSecond > 10 * 1024 * 1024) return MAX_PARALLEL_CHUNKS;
+  if (bytesPerSecond > 5 * 1024 * 1024) return 6;
+  if (bytesPerSecond > 2 * 1024 * 1024) return 4;
+  if (bytesPerSecond > 500 * 1024) return 3;
+  return MIN_PARALLEL_CHUNKS;
+};
+
+/**
+ * Get speed profile with caching (uses Network API estimate first, refines during upload)
+ */
+const getSpeedProfile = (): SpeedProfile => {
+  const now = Date.now();
+  
+  if (cachedSpeedProfile && (now - cachedSpeedProfile.measuredAt) < SPEED_CACHE_TTL) {
+    return cachedSpeedProfile;
+  }
+  
+  const bytesPerSecond = estimateSpeedFromConnection();
+  cachedSpeedProfile = {
+    bytesPerSecond,
+    optimalChunkSize: calculateOptimalChunkSize(bytesPerSecond),
+    optimalParallelChunks: calculateOptimalParallelChunks(bytesPerSecond),
+    measuredAt: now,
+  };
+  
+  console.log(`📊 Speed profile: ${formatFileSize(bytesPerSecond)}/s, chunk: ${formatFileSize(cachedSpeedProfile.optimalChunkSize)}, parallel: ${cachedSpeedProfile.optimalParallelChunks}`);
+  return cachedSpeedProfile;
+};
+
+/**
+ * Adaptive speed tracker for real-time adjustment during upload
+ */
+class AdaptiveSpeedTracker {
+  private samples: { bytes: number; time: number }[] = [];
+  private maxSamples = 10;
+  private currentChunkSize: number;
+  private currentParallelChunks: number;
+
+  constructor(initialChunkSize: number = DEFAULT_CHUNK_SIZE, initialParallelChunks: number = DEFAULT_PARALLEL_CHUNKS) {
+    this.currentChunkSize = initialChunkSize;
+    this.currentParallelChunks = initialParallelChunks;
+  }
+
+  addSample(bytes: number, durationMs: number) {
+    this.samples.push({ bytes, time: durationMs });
+    if (this.samples.length > this.maxSamples) this.samples.shift();
+    this.recalculate();
+  }
+
+  private recalculate() {
+    if (this.samples.length < 3) return;
+
+    const totalBytes = this.samples.reduce((acc, s) => acc + s.bytes, 0);
+    const totalTime = this.samples.reduce((acc, s) => acc + s.time, 0);
+    const bytesPerSecond = (totalBytes / totalTime) * 1000;
+
+    const newChunkSize = calculateOptimalChunkSize(bytesPerSecond);
+    const newParallelChunks = calculateOptimalParallelChunks(bytesPerSecond);
+
+    // Smooth adjustments
+    this.currentChunkSize = Math.round(this.currentChunkSize * 0.7 + newChunkSize * 0.3);
+    this.currentParallelChunks = Math.round(this.currentParallelChunks * 0.7 + newParallelChunks * 0.3);
+
+    // Clamp
+    this.currentChunkSize = Math.min(MAX_CHUNK_SIZE, Math.max(MIN_CHUNK_SIZE, this.currentChunkSize));
+    this.currentParallelChunks = Math.min(MAX_PARALLEL_CHUNKS, Math.max(MIN_PARALLEL_CHUNKS, this.currentParallelChunks));
+    
+    // Update global cache for future uploads
+    cachedSpeedProfile = {
+      bytesPerSecond,
+      optimalChunkSize: this.currentChunkSize,
+      optimalParallelChunks: this.currentParallelChunks,
+      measuredAt: Date.now(),
+    };
+  }
+
+  getChunkSize(): number { return this.currentChunkSize; }
+  getParallelChunks(): number { return this.currentParallelChunks; }
+  getEstimatedSpeed(): number {
+    if (this.samples.length === 0) return 0;
+    const totalBytes = this.samples.reduce((acc, s) => acc + s.bytes, 0);
+    const totalTime = this.samples.reduce((acc, s) => acc + s.time, 0);
+    return (totalBytes / totalTime) * 1000;
+  }
+}
 
 // Hardcoded primary VPS configuration - always available
 const PRIMARY_VPS_CONFIG = {
@@ -348,7 +490,7 @@ export const clearExpiredResumableUploads = () => {
 };
 
 /**
- * Upload large file in chunks with resume capability
+ * Upload large file in chunks with resume capability and adaptive speed
  */
 const uploadChunked = async (
   file: File,
@@ -364,14 +506,20 @@ const uploadChunked = async (
 
   const accessToken = sessionData.session.access_token;
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  
+  // Get initial speed profile
+  const speedProfile = getSpeedProfile();
+  const speedTracker = new AdaptiveSpeedTracker(speedProfile.optimalChunkSize, speedProfile.optimalParallelChunks);
+  
+  // Use adaptive chunk size
+  let chunkSize = speedTracker.getChunkSize();
+  const totalChunks = Math.ceil(file.size / chunkSize);
   
   let uploadId = existingUploadId;
   let uploadedChunks: number[] = [];
 
   // Initialize or resume upload
   if (!uploadId) {
-    // Initialize new chunked upload
     if (onProgress) {
       onProgress({
         loaded: 0,
@@ -401,6 +549,7 @@ const uploadChunked = async (
           totalSize: file.size,
           totalChunks,
           folderId,
+          chunkSize, // Send chunk size to server
         }),
       }
     );
@@ -413,7 +562,6 @@ const uploadChunked = async (
     const initResult = await initResponse.json();
     uploadId = initResult.uploadId;
 
-    // Save to localStorage for resume capability
     saveResumableUpload({
       uploadId: uploadId!,
       fileName: file.name,
@@ -425,7 +573,6 @@ const uploadChunked = async (
       createdAt: new Date().toISOString(),
     });
   } else {
-    // Resume existing upload - get status
     const statusResponse = await fetch(
       `${supabaseUrl}/functions/v1/vps-chunked-upload?action=status&uploadId=${uploadId}`,
       {
@@ -440,26 +587,26 @@ const uploadChunked = async (
     }
   }
 
-  // Upload chunks in parallel for better speed
   const startTime = Date.now();
   let totalUploaded = uploadedChunks.reduce((acc, idx) => {
-    const chunkStart = idx * CHUNK_SIZE;
-    const chunkEnd = Math.min(chunkStart + CHUNK_SIZE, file.size);
+    const chunkStart = idx * chunkSize;
+    const chunkEnd = Math.min(chunkStart + chunkSize, file.size);
     return acc + (chunkEnd - chunkStart);
   }, 0);
 
-  // Get remaining chunks to upload
   const remainingChunks = Array.from({ length: totalChunks }, (_, i) => i)
     .filter(i => !uploadedChunks.includes(i));
 
-  // Upload chunks in parallel batches
-  for (let batchStart = 0; batchStart < remainingChunks.length; batchStart += PARALLEL_CHUNKS) {
-    const batch = remainingChunks.slice(batchStart, batchStart + PARALLEL_CHUNKS);
+  // Upload chunks in adaptive parallel batches
+  let batchStart = 0;
+  while (batchStart < remainingChunks.length) {
+    // Get current optimal parallel count (adapts during upload)
+    const parallelCount = speedTracker.getParallelChunks();
+    const batch = remainingChunks.slice(batchStart, batchStart + parallelCount);
     
-    // Update progress before batch
     if (onProgress) {
       const elapsed = (Date.now() - startTime) / 1000;
-      const speed = totalUploaded > 0 && elapsed > 0 ? totalUploaded / elapsed : 0;
+      const speed = speedTracker.getEstimatedSpeed() || (totalUploaded > 0 && elapsed > 0 ? totalUploaded / elapsed : 0);
       const remaining = file.size - totalUploaded;
       const remainingTime = speed > 0 ? remaining / speed : 0;
 
@@ -478,18 +625,19 @@ const uploadChunked = async (
       });
     }
 
-    // Upload batch in parallel
     const batchPromises = batch.map(async (chunkIndex) => {
-      const chunkStart = chunkIndex * CHUNK_SIZE;
-      const chunkEnd = Math.min(chunkStart + CHUNK_SIZE, file.size);
+      const chunkStart = chunkIndex * chunkSize;
+      const chunkEnd = Math.min(chunkStart + chunkSize, file.size);
       const chunk = file.slice(chunkStart, chunkEnd);
-      const chunkSize = chunkEnd - chunkStart;
+      const chunkBytes = chunkEnd - chunkStart;
 
       const formData = new FormData();
       formData.append("chunk", new Blob([chunk]));
       formData.append("uploadId", uploadId!);
       formData.append("chunkIndex", String(chunkIndex));
 
+      const chunkStartTime = performance.now();
+      
       const chunkResponse = await fetch(
         `${supabaseUrl}/functions/v1/vps-chunked-upload?action=chunk`,
         {
@@ -499,21 +647,26 @@ const uploadChunked = async (
         }
       );
 
+      const chunkDuration = performance.now() - chunkStartTime;
+      
+      // Track speed for adaptive adjustment
+      speedTracker.addSample(chunkBytes, chunkDuration);
+
       if (!chunkResponse.ok) {
         const error = await chunkResponse.json();
         throw new Error(error.error || `Failed to upload chunk ${chunkIndex}`);
       }
 
-      return { chunkIndex, chunkSize };
+      return { chunkIndex, chunkSize: chunkBytes };
     });
 
     // Wait for all chunks in batch to complete
     const results = await Promise.all(batchPromises);
     
     // Update tracking
-    for (const { chunkIndex, chunkSize } of results) {
-      totalUploaded += chunkSize;
-      uploadedChunks.push(chunkIndex);
+    for (const result of results) {
+      totalUploaded += result.chunkSize;
+      uploadedChunks.push(result.chunkIndex);
     }
 
     // Update localStorage after each batch
@@ -521,6 +674,8 @@ const uploadChunked = async (
     if (existingState) {
       saveResumableUpload({ ...existingState, uploadedChunks });
     }
+    
+    batchStart += parallelCount;
   }
 
   // Finalize upload
