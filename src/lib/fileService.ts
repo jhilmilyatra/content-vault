@@ -52,6 +52,9 @@ export interface UploadProgress {
   currentChunk?: number;
   totalChunks?: number;
   uploadId?: string;
+  // Adaptive speed settings
+  adaptiveChunkSize?: number;
+  adaptiveParallelChunks?: number;
 }
 
 export interface ChunkedUploadState {
@@ -622,6 +625,8 @@ const uploadChunked = async (
         currentChunk: uploadedChunks.length + 1,
         totalChunks,
         uploadId,
+        adaptiveChunkSize: speedTracker.getChunkSize(),
+        adaptiveParallelChunks: speedTracker.getParallelChunks(),
       });
     }
 
