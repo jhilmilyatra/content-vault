@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PageTransition } from "@/components/ui/PageTransition";
+import { LazyImage } from "@/components/ui/LazyImage";
 import { GlassCard } from "@/components/ios/GlassCard";
 import { PremiumOnboarding } from "@/components/onboarding/PremiumOnboarding";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
@@ -964,15 +965,42 @@ const FileManager = () => {
                         />
                       </div>
                     )}
-                    <div
-                      className={`bg-gradient-to-br ${getFileGradient(file.mime_type)} border ${
-                        viewMode === "grid"
-                          ? "w-14 h-14 rounded-xl flex items-center justify-center mb-3 mx-auto"
-                          : "w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-                      }`}
-                    >
-                      <IconComponent className={`w-7 h-7 ${getFileIconColor(file.mime_type)}`} />
-                    </div>
+                    {/* Thumbnail with LazyImage for images/videos */}
+                    {file.mime_type.startsWith("image/") || file.mime_type.startsWith("video/") ? (
+                      <div
+                        className={`overflow-hidden ${
+                          viewMode === "grid"
+                            ? "w-full aspect-square rounded-xl mb-3 mx-auto"
+                            : "w-12 h-12 rounded-xl flex-shrink-0"
+                        }`}
+                      >
+                        <LazyImage
+                          src={file.thumbnail_url || `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`}
+                          alt={file.name}
+                          className="w-full h-full object-cover"
+                          aspectRatio="square"
+                          placeholderColor={file.mime_type.startsWith("image/") ? "rgba(236,72,153,0.1)" : "rgba(139,92,246,0.1)"}
+                        />
+                        {/* Video play indicator */}
+                        {file.mime_type.startsWith("video/") && (
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center border border-white/20">
+                              <FileVideo className="w-5 h-5 text-white" />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div
+                        className={`bg-gradient-to-br ${getFileGradient(file.mime_type)} border ${
+                          viewMode === "grid"
+                            ? "w-14 h-14 rounded-xl flex items-center justify-center mb-3 mx-auto"
+                            : "w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                        }`}
+                      >
+                        <IconComponent className={`w-7 h-7 ${getFileIconColor(file.mime_type)}`} />
+                      </div>
+                    )}
                     <div className={viewMode === "grid" ? "text-center" : "flex-1 min-w-0"}>
                       <p className="font-medium text-white truncate text-sm">{file.name}</p>
                       <p className="text-xs text-white/40 mt-0.5">{formatFileSize(file.size_bytes)}</p>
