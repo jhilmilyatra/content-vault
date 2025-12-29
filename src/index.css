@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,85 +6,94 @@
 
 /* 
   CloudVault Design System
-  Premium mobile-first dark theme with refined glass effects
+  Apple iOS-inspired luxury mobile-first dark theme
+  Aligned with Apple Human Interface Guidelines
 */
 
 @layer base {
   :root {
-    --background: 222 47% 6%;
-    --foreground: 210 40% 98%;
+    /* Apple-inspired color palette - refined and luxurious */
+    --background: 220 20% 4%;
+    --foreground: 0 0% 98%;
 
-    --card: 222 47% 8%;
-    --card-foreground: 210 40% 98%;
+    --card: 220 18% 7%;
+    --card-foreground: 0 0% 98%;
 
-    --popover: 222 47% 10%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 220 18% 9%;
+    --popover-foreground: 0 0% 98%;
 
-    --primary: 172 66% 50%;
-    --primary-foreground: 222 47% 6%;
+    /* Apple Blue as primary - the signature iOS accent */
+    --primary: 211 100% 50%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 220 14% 14%;
+    --secondary-foreground: 0 0% 95%;
 
-    --muted: 217 33% 14%;
-    --muted-foreground: 215 20% 55%;
+    --muted: 220 14% 12%;
+    --muted-foreground: 220 10% 50%;
 
-    --accent: 172 66% 50%;
-    --accent-foreground: 222 47% 6%;
+    --accent: 211 100% 50%;
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
 
     --success: 142 71% 45%;
-    --success-foreground: 222 47% 6%;
+    --success-foreground: 0 0% 100%;
 
     --warning: 38 92% 50%;
-    --warning-foreground: 222 47% 6%;
+    --warning-foreground: 220 20% 4%;
 
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 172 66% 50%;
+    --border: 220 14% 16%;
+    --input: 220 14% 14%;
+    --ring: 211 100% 50%;
 
-    --radius: 0.75rem;
+    --radius: 0.875rem;
 
-    /* Custom design tokens */
-    --gradient-primary: linear-gradient(135deg, hsl(172 66% 50%) 0%, hsl(199 89% 48%) 100%);
-    --gradient-dark: linear-gradient(180deg, hsl(222 47% 8%) 0%, hsl(222 47% 4%) 100%);
-    --gradient-glow: radial-gradient(ellipse at center, hsl(172 66% 50% / 0.15) 0%, transparent 70%);
-    --gradient-card: linear-gradient(135deg, hsl(217 33% 12%) 0%, hsl(217 33% 8%) 100%);
+    /* Apple-style design tokens */
+    --gradient-primary: linear-gradient(135deg, hsl(211 100% 50%) 0%, hsl(199 100% 48%) 100%);
+    --gradient-dark: linear-gradient(180deg, hsl(220 18% 6%) 0%, hsl(220 20% 3%) 100%);
+    --gradient-glow: radial-gradient(ellipse at center, hsl(211 100% 50% / 0.12) 0%, transparent 70%);
+    --gradient-card: linear-gradient(135deg, hsl(220 14% 10%) 0%, hsl(220 14% 7%) 100%);
     
-    --shadow-glow: 0 0 60px -15px hsl(172 66% 50% / 0.4);
-    --shadow-card: 0 4px 24px -4px hsl(222 47% 2% / 0.5);
-    --shadow-elevated: 0 8px 32px -8px hsl(222 47% 2% / 0.6);
-    --shadow-glass: 0 8px 32px -8px hsl(222 47% 2% / 0.3);
+    --shadow-glow: 0 0 80px -20px hsl(211 100% 50% / 0.35);
+    --shadow-card: 0 2px 20px -4px hsl(220 20% 2% / 0.6);
+    --shadow-elevated: 0 8px 40px -8px hsl(220 20% 2% / 0.7);
+    --shadow-glass: 0 4px 24px -4px hsl(220 20% 2% / 0.4);
 
-    /* Glass design tokens */
-    --glass-bg: hsl(217 33% 12% / 0.12);
-    --glass-border: hsl(210 40% 98% / 0.08);
-    --glass-blur: 12px;
+    /* Apple Glass design tokens - refined materials */
+    --glass-bg: hsl(220 14% 12% / 0.65);
+    --glass-bg-subtle: hsl(220 14% 12% / 0.35);
+    --glass-bg-elevated: hsl(220 14% 14% / 0.75);
+    --glass-border: hsl(0 0% 100% / 0.08);
+    --glass-border-subtle: hsl(0 0% 100% / 0.04);
+    --glass-blur: 20px;
+    --glass-blur-heavy: 40px;
 
-    --sidebar-background: 222 47% 7%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 172 66% 50%;
-    --sidebar-primary-foreground: 222 47% 6%;
-    --sidebar-accent: 217 33% 14%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 217 33% 15%;
-    --sidebar-ring: 172 66% 50%;
+    /* Sidebar */
+    --sidebar-background: 220 18% 5%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 211 100% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 12%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 220 14% 14%;
+    --sidebar-ring: 211 100% 50%;
 
-    /* Motion timing tokens */
-    --duration-micro: 150ms;
-    --duration-fast: 200ms;
+    /* Apple motion timing tokens */
+    --duration-micro: 120ms;
+    --duration-fast: 180ms;
     --duration-normal: 250ms;
-    --duration-slow: 300ms;
+    --duration-slow: 350ms;
     --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-    --ease-natural: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-natural: cubic-bezier(0.22, 1, 0.36, 1);
     --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --ease-ios: cubic-bezier(0.25, 0.1, 0.25, 1);
   }
 
   .dark {
-    --background: 222 47% 6%;
-    --foreground: 210 40% 98%;
+    --background: 220 20% 4%;
+    --foreground: 0 0% 98%;
   }
 }
 
@@ -95,16 +104,36 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
     @apply font-semibold tracking-tight;
+    letter-spacing: -0.022em;
+  }
+
+  h1 {
+    @apply text-3xl font-bold;
+    letter-spacing: -0.03em;
+  }
+
+  h2 {
+    @apply text-2xl font-semibold;
+    letter-spacing: -0.025em;
+  }
+
+  h3 {
+    @apply text-xl font-semibold;
+    letter-spacing: -0.02em;
   }
 
   code, pre {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
   }
 }
 
@@ -512,29 +541,51 @@
   animation: shimmer 1.5s ease-in-out infinite;
 }
 
-/* iOS glass material variants */
+/* iOS glass material variants - Apple-grade quality */
 .ios-glass {
-  background: hsl(0 0% 0% / 0.4);
+  background: hsl(220 14% 8% / 0.65);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   border: 1px solid hsl(0 0% 100% / 0.08);
 }
 
 .ios-glass-light {
-  background: hsl(0 0% 100% / 0.1);
+  background: hsl(0 0% 100% / 0.08);
   backdrop-filter: blur(20px) saturate(150%);
   -webkit-backdrop-filter: blur(20px) saturate(150%);
-  border: 1px solid hsl(0 0% 100% / 0.12);
+  border: 1px solid hsl(0 0% 100% / 0.1);
+}
+
+.ios-glass-subtle {
+  background: hsl(220 14% 12% / 0.4);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid hsl(0 0% 100% / 0.05);
 }
 
 .ios-glass-elevated {
-  background: hsl(0 0% 0% / 0.5);
-  backdrop-filter: blur(32px) saturate(200%);
-  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  background: hsl(220 14% 10% / 0.75);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
   border: 1px solid hsl(0 0% 100% / 0.1);
   box-shadow: 
     0 8px 32px hsl(0 0% 0% / 0.4),
     0 0 0 1px hsl(0 0% 100% / 0.05) inset;
+}
+
+.ios-glass-card {
+  background: hsl(220 14% 10% / 0.6);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  border: 1px solid hsl(0 0% 100% / 0.08);
+  border-radius: 1.25rem;
+  transition: all 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ios-glass-card:hover {
+  background: hsl(220 14% 12% / 0.7);
+  border-color: hsl(0 0% 100% / 0.12);
+  transform: translateY(-1px);
 }
 
 /* iOS modal glass */
