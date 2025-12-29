@@ -65,6 +65,8 @@ export interface UploadProgress {
   adaptiveParallelChunks?: number;
   // Speed history for graph visualization
   speedHistory?: SpeedDataPoint[];
+  // Chunk status visualization
+  uploadedChunks?: number[];
 }
 
 export interface ChunkedUploadState {
@@ -653,6 +655,7 @@ const uploadChunked = async (
         adaptiveChunkSize: speedTracker.getChunkSize(),
         adaptiveParallelChunks: speedTracker.getParallelChunks(),
         speedHistory: speedTracker.getSpeedHistory(),
+        uploadedChunks: [...uploadedChunks],
       });
     }
 

@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Loader2, CheckCircle2, AlertCircle, Upload, X, Pause, Play, 
-  Layers, Zap, FileUp, Sparkles, CloudUpload, BarChart3, Gauge, Clock, HardDrive
+  Layers, Zap, FileUp, Sparkles, CloudUpload, BarChart3, Gauge, Clock, HardDrive, Grid3X3
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatFileSize, formatSpeed, formatTime, type UploadProgress, type SpeedDataPoint } from "@/lib/fileService";
 import { lightHaptic } from "@/lib/haptics";
 import UploadSpeedGraph from "./UploadSpeedGraph";
+import ChunkStatusGrid from "./ChunkStatusGrid";
 
 interface UploadProgressBarProps {
   uploads: UploadProgress[];
@@ -16,6 +17,7 @@ interface UploadProgressBarProps {
 
 const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
   const [showGraph, setShowGraph] = useState(true);
+  const [showChunkGrid, setShowChunkGrid] = useState(true);
   const [peakSpeed, setPeakSpeed] = useState(0);
   const [uploadStartTime, setUploadStartTime] = useState<number | null>(null);
   const [uploadEndTime, setUploadEndTime] = useState<number | null>(null);
@@ -314,6 +316,19 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
                 ~{formatTime((totalSize - totalLoaded) / avgSpeed)} remaining
               </span>
             )}
+            {hasChunkedUploads && !isComplete && !hasError && activeChunkedUpload?.totalChunks && (
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShowChunkGrid(!showChunkGrid)}
+                className={`p-1 rounded-md transition-colors ${
+                  showChunkGrid ? 'bg-cyan-500/20 text-cyan-400' : 'bg-white/5 text-white/40 hover:text-white/60'
+                }`}
+                title="Toggle chunk grid"
+              >
+                <Grid3X3 className="w-3 h-3" />
+              </motion.button>
+            )}
             {hasChunkedUploads && !isComplete && !hasError && speedHistory.length > 0 && (
               <motion.button
                 whileHover={{ scale: 1.1 }}
@@ -322,6 +337,7 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
                 className={`p-1 rounded-md transition-colors ${
                   showGraph ? 'bg-gold/20 text-gold' : 'bg-white/5 text-white/40 hover:text-white/60'
                 }`}
+                title="Toggle speed graph"
               >
                 <BarChart3 className="w-3 h-3" />
               </motion.button>
@@ -329,6 +345,25 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
           </div>
         </div>
       </div>
+
+      {/* Chunk Status Grid */}
+      <AnimatePresence>
+        {showChunkGrid && hasChunkedUploads && !isComplete && !hasError && activeChunkedUpload?.totalChunks && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="px-4 pb-3 border-t border-white/[0.05] pt-3"
+          >
+            <ChunkStatusGrid 
+              totalChunks={activeChunkedUpload.totalChunks}
+              uploadedChunks={activeChunkedUpload.uploadedChunks || []}
+              currentChunk={activeChunkedUpload.currentChunk}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Speed Graph */}
       <AnimatePresence>
