@@ -1,10 +1,10 @@
-import { useState, useEffect, memo } from "react";
-import { motion } from "framer-motion";
+import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Cloud, Eye, EyeOff, Loader2, MessageCircle } from "lucide-react";
+import { Cloud, Eye, EyeOff, Loader2, MessageCircle, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { CelestialHorizon } from "@/components/visuals/CelestialHorizon";
 
 const emailSchema = z.string().email("Please enter a valid email address");
 const passwordSchema = z.string().min(6, "Password must be at least 6 characters");
@@ -127,181 +128,242 @@ const Auth = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      <div className="min-h-screen bg-[#0b0b0d] flex items-center justify-center">
+        <div className="relative">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-teal-400 to-blue-600 flex items-center justify-center shadow-[0_0_50px_rgba(20,184,166,0.3)]">
+            <Loader2 className="w-8 h-8 animate-spin text-white" />
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-dvh bg-background flex items-center justify-center px-4 py-8 sm:py-12 safe-area-inset">
-      {/* Background effects - optimized for GPU */}
-      <div className="fixed inset-0 bg-gradient-radial pointer-events-none will-change-auto" aria-hidden="true" />
+    <div className="min-h-dvh bg-[#0b0b0d] flex items-center justify-center px-4 py-8 sm:py-12 safe-area-inset relative overflow-hidden">
+      {/* Background */}
+      <CelestialHorizon />
+      
+      {/* Scanline overlay */}
+      <div 
+        className="fixed inset-0 z-[1] pointer-events-none opacity-[0.03]"
+        style={{
+          backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.03) 2px, rgba(255,255,255,0.03) 4px)'
+        }}
+      />
       
       <motion.div
-        initial={{ opacity: 0, y: 16 }}
+        initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, ease: "easeOut" }}
+        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
         className="w-full max-w-md relative z-10"
       >
-        {/* Logo */}
-        <Link to="/" className="flex items-center justify-center gap-2 mb-6 sm:mb-8 touch-manipulation">
-          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl gradient-primary flex items-center justify-center shadow-lg">
-            <Cloud className="w-6 h-6 sm:w-7 sm:h-7 text-primary-foreground" />
-          </div>
+        {/* Back to home */}
+        <Link 
+          to="/" 
+          className="inline-flex items-center gap-2 text-white/40 hover:text-white/70 transition-colors mb-8 text-sm"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to home
         </Link>
 
-        <div className="p-6 sm:p-8 rounded-2xl bg-card border border-border shadow-xl">
-          <div className="text-center mb-6 sm:mb-8">
-            <h1 className="text-xl sm:text-2xl font-bold text-foreground mb-2">
-              {isLogin ? "Welcome back" : "Create your account"}
-            </h1>
-            <p className="text-sm sm:text-base text-muted-foreground">
-              {isLogin ? "Sign in to your account to continue" : "Get started with CloudVault today"}
-            </p>
-          </div>
+        {/* Logo */}
+        <div className="flex items-center gap-3 mb-8">
+          <motion.div 
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ delay: 0.2, duration: 0.5, ease: "easeOut" }}
+            className="w-12 h-12 rounded-2xl bg-gradient-to-br from-teal-400 to-blue-600 flex items-center justify-center shadow-[0_0_30px_rgba(20,184,166,0.3)]"
+          >
+            <Cloud className="w-7 h-7 text-white" />
+          </motion.div>
+          <motion.span 
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.3 }}
+            className="text-xl font-bold text-white"
+          >
+            CloudVault
+          </motion.span>
+        </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {!isLogin && (
-              <div className="space-y-1.5 sm:space-y-2">
-                <Label htmlFor="fullName" className="text-sm">Full Name</Label>
-                <Input
-                  id="fullName"
-                  type="text"
-                  placeholder="John Doe"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className={`h-11 sm:h-12 bg-muted border-border text-base ${errors.fullName ? 'border-destructive' : ''}`}
-                  disabled={isSubmitting}
-                  autoComplete="name"
-                />
-                {errors.fullName && (
-                  <p className="text-xs sm:text-sm text-destructive">{errors.fullName}</p>
-                )}
-              </div>
-            )}
-
-            <div className="space-y-1.5 sm:space-y-2">
-              <Label htmlFor="email" className="text-sm">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                inputMode="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className={`h-11 sm:h-12 bg-muted border-border text-base ${errors.email ? 'border-destructive' : ''}`}
-                disabled={isSubmitting}
-                autoComplete="email"
-              />
-              {errors.email && (
-                <p className="text-xs sm:text-sm text-destructive">{errors.email}</p>
-              )}
+        {/* Glass Card */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1, duration: 0.6 }}
+          className="glass-card p-8 relative overflow-hidden"
+        >
+          {/* Subtle glow */}
+          <div className="absolute -top-20 -right-20 w-40 h-40 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
+          
+          <div className="relative z-10">
+            <div className="text-center mb-8">
+              <h1 className="text-2xl font-bold text-white mb-2">
+                {isLogin ? "Welcome back" : "Create your account"}
+              </h1>
+              <p className="text-white/50 text-sm">
+                {isLogin ? "Sign in to access your vault" : "Get started with CloudVault today"}
+              </p>
             </div>
 
-            <div className="space-y-1.5 sm:space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-sm">Password</Label>
-                {isLogin && (
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <AnimatePresence mode="wait">
+                {!isLogin && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="space-y-1.5 overflow-hidden"
+                  >
+                    <Label htmlFor="fullName" className="text-white/70 text-sm">Full Name</Label>
+                    <Input
+                      id="fullName"
+                      type="text"
+                      placeholder="John Doe"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      className={`h-12 bg-white/5 border-white/10 text-white placeholder:text-white/30 focus:border-teal-500/50 focus:bg-white/10 transition-all ${errors.fullName ? 'border-red-500/50' : ''}`}
+                      disabled={isSubmitting}
+                      autoComplete="name"
+                    />
+                    {errors.fullName && (
+                      <p className="text-xs text-red-400">{errors.fullName}</p>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="email" className="text-white/70 text-sm">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  inputMode="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className={`h-12 bg-white/5 border-white/10 text-white placeholder:text-white/30 focus:border-teal-500/50 focus:bg-white/10 transition-all ${errors.email ? 'border-red-500/50' : ''}`}
+                  disabled={isSubmitting}
+                  autoComplete="email"
+                />
+                {errors.email && (
+                  <p className="text-xs text-red-400">{errors.email}</p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password" className="text-white/70 text-sm">Password</Label>
+                  {isLogin && (
+                    <button
+                      type="button"
+                      onClick={() => setForgotPasswordOpen(true)}
+                      className="text-xs text-teal-400 hover:text-teal-300 transition-colors"
+                    >
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className={`h-12 bg-white/5 border-white/10 text-white placeholder:text-white/30 pr-12 focus:border-teal-500/50 focus:bg-white/10 transition-all ${errors.password ? 'border-red-500/50' : ''}`}
+                    disabled={isSubmitting}
+                    autoComplete={isLogin ? "current-password" : "new-password"}
+                  />
                   <button
                     type="button"
-                    onClick={() => setForgotPasswordOpen(true)}
-                    className="text-xs sm:text-sm text-primary hover:underline touch-manipulation"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70 transition-colors p-1"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
                   >
-                    Forgot password?
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
+                </div>
+                {errors.password && (
+                  <p className="text-xs text-red-400">{errors.password}</p>
                 )}
               </div>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className={`h-11 sm:h-12 bg-muted border-border pr-12 text-base ${errors.password ? 'border-destructive' : ''}`}
-                  disabled={isSubmitting}
-                  autoComplete={isLogin ? "current-password" : "new-password"}
-                />
+
+              <Button 
+                type="submit" 
+                className="w-full h-12 bg-gradient-to-r from-teal-500 to-blue-600 hover:from-teal-400 hover:to-blue-500 text-white font-medium shadow-[0_0_20px_rgba(20,184,166,0.3)] transition-all duration-300"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    {isLogin ? "Signing In..." : "Creating Account..."}
+                  </>
+                ) : (
+                  isLogin ? "Sign In" : "Create Account"
+                )}
+              </Button>
+            </form>
+
+            <div className="mt-6 text-center">
+              <p className="text-sm text-white/40">
+                {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1 touch-manipulation"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  onClick={() => {
+                    setIsLogin(!isLogin);
+                    setErrors({});
+                  }}
+                  className="text-teal-400 hover:text-teal-300 font-medium transition-colors"
                 >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {isLogin ? "Create one" : "Sign in"}
                 </button>
-              </div>
-              {errors.password && (
-                <p className="text-xs sm:text-sm text-destructive">{errors.password}</p>
-              )}
+              </p>
             </div>
 
-            <Button 
-              type="submit" 
-              variant="hero" 
-              size="lg" 
-              className="w-full h-11 sm:h-12 text-base touch-manipulation active:scale-[0.98] transition-transform"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  {isLogin ? "Signing In..." : "Creating Account..."}
-                </>
-              ) : (
-                isLogin ? "Sign In" : "Create Account"
-              )}
-            </Button>
-          </form>
-
-          <div className="mt-5 sm:mt-6 text-center">
-            <p className="text-xs sm:text-sm text-muted-foreground">
-              {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsLogin(!isLogin);
-                  setErrors({});
-                }}
-                className="text-primary hover:underline font-medium touch-manipulation"
-              >
-                {isLogin ? "Create one" : "Sign in"}
-              </button>
-            </p>
+            {/* Guest Portal Link */}
+            <div className="mt-4 pt-4 border-t border-white/5 text-center">
+              <p className="text-xs text-white/30">
+                Guest user?{' '}
+                <Link to="/guest-auth" className="text-teal-400/70 hover:text-teal-400 transition-colors">
+                  Access Guest Portal
+                </Link>
+              </p>
+            </div>
           </div>
-        </div>
+        </motion.div>
       </motion.div>
 
       {/* Forgot Password Dialog */}
       <Dialog open={forgotPasswordOpen} onOpenChange={setForgotPasswordOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md bg-[#0b0b0d]/95 border-white/10 backdrop-blur-xl">
           <DialogHeader>
-            <DialogTitle>Forgot Your Password?</DialogTitle>
-            <DialogDescription>
-              Please contact the owner to reset your password. They will help you regain access to your account.
+            <DialogTitle className="text-white">Forgot Your Password?</DialogTitle>
+            <DialogDescription className="text-white/50">
+              Please contact the owner to reset your password.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 pt-4">
+          <div className="space-y-3 pt-4">
             <a
               href="https://t.me/riturajprince"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-3 p-4 rounded-lg border border-border bg-card hover:bg-muted transition-colors"
+              className="flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
             >
               <div className="w-10 h-10 rounded-full bg-[#0088cc] flex items-center justify-center">
                 <MessageCircle className="w-5 h-5 text-white" />
               </div>
               <div>
-                <p className="font-medium text-foreground">Telegram</p>
-                <p className="text-sm text-muted-foreground">@riturajprince</p>
+                <p className="font-medium text-white">Telegram</p>
+                <p className="text-sm text-white/50">@riturajprince</p>
               </div>
             </a>
             <a
               href="https://instagram.com/theriturajprince"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-3 p-4 rounded-lg border border-border bg-card hover:bg-muted transition-colors"
+              className="flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
             >
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#833ab4] via-[#fd1d1d] to-[#fcb045] flex items-center justify-center">
                 <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
@@ -309,13 +371,17 @@ const Auth = () => {
                 </svg>
               </div>
               <div>
-                <p className="font-medium text-foreground">Instagram</p>
-                <p className="text-sm text-muted-foreground">@theriturajprince</p>
+                <p className="font-medium text-white">Instagram</p>
+                <p className="text-sm text-white/50">@theriturajprince</p>
               </div>
             </a>
           </div>
           <div className="pt-4">
-            <Button variant="outline" className="w-full" onClick={() => setForgotPasswordOpen(false)}>
+            <Button 
+              variant="outline" 
+              className="w-full bg-white/5 border-white/10 text-white hover:bg-white/10" 
+              onClick={() => setForgotPasswordOpen(false)}
+            >
               Close
             </Button>
           </div>
