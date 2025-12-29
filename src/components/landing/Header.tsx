@@ -4,6 +4,7 @@ import { Menu, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import Magnetic from "./Magnetic";
+import logo from "@/assets/logo.png";
 
 const Header = () => {
   const { user } = useAuth();
@@ -32,6 +33,7 @@ const Header = () => {
         <div className="flex items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
+            <img src={logo} alt="CloudVault" className="h-9 w-auto" />
             <span className="text-xl font-bold tracking-tighter text-white">CloudVault</span>
           </Link>
 
