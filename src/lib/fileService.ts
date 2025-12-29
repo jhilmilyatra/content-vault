@@ -709,6 +709,71 @@ const uploadChunked = async (
     batchStart += parallelCount;
   }
 
+  // Verify all chunks are uploaded on server before finalizing
+  // This handles race conditions where DB updates complete after batch promises resolve
+  let verifyAttempts = 0;
+  const maxVerifyAttempts = 5;
+  
+  while (verifyAttempts < maxVerifyAttempts) {
+    const statusResponse = await fetch(
+      `${supabaseUrl}/functions/v1/vps-chunked-upload?action=status&uploadId=${uploadId}`,
+      {
+        headers: { "Authorization": `Bearer ${accessToken}` },
+      }
+    );
+
+    if (statusResponse.ok) {
+      const statusResult = await statusResponse.json();
+      const serverUploadedChunks: number[] = statusResult.uploadedChunks || [];
+      
+      if (serverUploadedChunks.length === totalChunks) {
+        console.log(`✅ All ${totalChunks} chunks verified on server`);
+        break;
+      }
+      
+      // Find missing chunks and re-upload them
+      const missingChunks = Array.from({ length: totalChunks }, (_, i) => i)
+        .filter(i => !serverUploadedChunks.includes(i));
+      
+      if (missingChunks.length > 0) {
+        console.log(`🔄 Re-uploading ${missingChunks.length} missing chunks: ${missingChunks.slice(0, 10).join(', ')}${missingChunks.length > 10 ? '...' : ''}`);
+        
+        // Re-upload missing chunks
+        for (const chunkIndex of missingChunks) {
+          const chunkStart = chunkIndex * chunkSize;
+          const chunkEnd = Math.min(chunkStart + chunkSize, file.size);
+          const chunk = file.slice(chunkStart, chunkEnd);
+
+          const formData = new FormData();
+          formData.append("chunk", new Blob([chunk]));
+          formData.append("uploadId", uploadId!);
+          formData.append("chunkIndex", String(chunkIndex));
+
+          const chunkResponse = await fetch(
+            `${supabaseUrl}/functions/v1/vps-chunked-upload?action=chunk`,
+            {
+              method: "POST",
+              headers: { "Authorization": `Bearer ${accessToken}` },
+              body: formData,
+            }
+          );
+
+          if (!chunkResponse.ok) {
+            console.error(`Failed to re-upload chunk ${chunkIndex}`);
+          } else {
+            console.log(`✅ Re-uploaded chunk ${chunkIndex}`);
+          }
+        }
+      }
+    }
+    
+    verifyAttempts++;
+    if (verifyAttempts < maxVerifyAttempts) {
+      // Wait a bit before next verification
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+
   // Finalize upload
   if (onProgress) {
     onProgress({
