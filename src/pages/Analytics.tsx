@@ -4,21 +4,16 @@ import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { PageTransition } from "@/components/ui/PageTransition";
+import { GlassCard, StatCard } from "@/components/ios/GlassCard";
+import { IosSegmentedControl } from "@/components/ios";
+import { SkeletonStats } from "@/components/ios/SkeletonLoader";
 import {
   BarChart3,
   TrendingUp,
   Download,
   Eye,
   HardDrive,
-  Calendar,
 } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   LineChart,
   Line,
@@ -60,6 +55,13 @@ const Analytics = () => {
   const [loading, setLoading] = useState(true);
 
   const { user, role } = useAuth();
+
+  const timeRangeOptions = [
+    { value: "7", label: "7 Days" },
+    { value: "14", label: "14 Days" },
+    { value: "30", label: "30 Days" },
+    { value: "90", label: "90 Days" },
+  ];
 
   useEffect(() => {
     if (user) {
@@ -192,49 +194,11 @@ const Analytics = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  const statCards = [
-    {
-      label: "Total Downloads",
-      value: stats.totalDownloads.toLocaleString(),
-      icon: Download,
-      gradient: "from-teal-500 to-cyan-500",
-      glow: "shadow-teal-500/20",
-      change: "+12%",
-    },
-    {
-      label: "Total Views",
-      value: stats.totalViews.toLocaleString(),
-      icon: Eye,
-      gradient: "from-violet-500 to-purple-500",
-      glow: "shadow-violet-500/20",
-      change: "+18%",
-    },
-    {
-      label: "Bandwidth Used",
-      value: formatBytes(stats.bandwidthUsed),
-      icon: TrendingUp,
-      gradient: "from-amber-500 to-orange-500",
-      glow: "shadow-amber-500/20",
-      change: "+8%",
-    },
-    {
-      label: "Storage Used",
-      value: formatBytes(stats.storageUsed),
-      icon: HardDrive,
-      gradient: "from-emerald-500 to-teal-500",
-      glow: "shadow-emerald-500/20",
-      change: "+5%",
-    },
-  ];
-
-  // Glass card style
-  const glassCard = "bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-2xl";
-
   // Custom tooltip styles
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-[#0b0b0d]/90 backdrop-blur-xl border border-white/10 rounded-xl p-3 shadow-xl">
+        <div className="ios-glass rounded-xl p-3 shadow-xl">
           <p className="text-white/50 text-xs mb-2">{label}</p>
           {payload.map((entry: any, index: number) => (
             <p key={index} className="text-sm" style={{ color: entry.color }}>
@@ -269,45 +233,53 @@ const Analytics = () => {
                 {role === "owner" ? "Global platform analytics" : "Your content performance"}
               </p>
             </div>
-            <Select value={timeRange} onValueChange={setTimeRange}>
-              <SelectTrigger className="w-[150px] bg-white/5 border-white/10 text-white">
-                <Calendar className="w-4 h-4 mr-2 text-white/50" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-[#0b0b0d] border-white/10">
-                <SelectItem value="7">Last 7 days</SelectItem>
-                <SelectItem value="14">Last 14 days</SelectItem>
-                <SelectItem value="30">Last 30 days</SelectItem>
-                <SelectItem value="90">Last 90 days</SelectItem>
-              </SelectContent>
-            </Select>
+            <IosSegmentedControl
+              segments={timeRangeOptions}
+              value={timeRange}
+              onChange={setTimeRange}
+              size="sm"
+            />
           </motion.div>
 
           {/* Stats Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {statCards.map((stat, index) => (
-              <motion.div
-                key={stat.label}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1, duration: 0.4 }}
-                className={`${glassCard} p-6 hover:border-white/20 transition-all duration-300 group`}
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${stat.gradient} p-3 shadow-lg ${stat.glow}`}>
-                    <stat.icon className="w-full h-full text-white" />
-                  </div>
-                  <span className="text-xs font-medium px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    {stat.change}
-                  </span>
-                </div>
-                <p className="text-sm text-white/50">{stat.label}</p>
-                <p className="text-2xl font-bold text-white mt-1">
-                  {loading ? "..." : stat.value}
-                </p>
-              </motion.div>
-            ))}
-          </div>
+          {loading ? (
+            <SkeletonStats count={4} />
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatCard
+                title="Total Downloads"
+                value={stats.totalDownloads.toLocaleString()}
+                icon={<Download className="w-5 h-5 text-teal-400" />}
+                trend="up"
+                trendValue="+12% this week"
+                style={{ animationDelay: "0ms" }}
+              />
+              <StatCard
+                title="Total Views"
+                value={stats.totalViews.toLocaleString()}
+                icon={<Eye className="w-5 h-5 text-violet-400" />}
+                trend="up"
+                trendValue="+18% this week"
+                style={{ animationDelay: "50ms" }}
+              />
+              <StatCard
+                title="Bandwidth Used"
+                value={formatBytes(stats.bandwidthUsed)}
+                icon={<TrendingUp className="w-5 h-5 text-amber-400" />}
+                trend="up"
+                trendValue="+8% this week"
+                style={{ animationDelay: "100ms" }}
+              />
+              <StatCard
+                title="Storage Used"
+                value={formatBytes(stats.storageUsed)}
+                icon={<HardDrive className="w-5 h-5 text-emerald-400" />}
+                trend="neutral"
+                trendValue="+5% this week"
+                style={{ animationDelay: "150ms" }}
+              />
+            </div>
+          )}
 
           {/* Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -316,12 +288,11 @@ const Analytics = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
-              className={glassCard}
             >
-              <div className="p-6 border-b border-white/5">
-                <h3 className="text-lg font-semibold text-white">Downloads & Views</h3>
-              </div>
-              <div className="p-6">
+              <GlassCard>
+                <div className="mb-4">
+                  <h3 className="text-lg font-semibold text-white">Downloads & Views</h3>
+                </div>
                 <div className="h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={chartData}>
@@ -357,7 +328,7 @@ const Analytics = () => {
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
-              </div>
+              </GlassCard>
             </motion.div>
 
             {/* Bandwidth Usage Chart */}
@@ -365,12 +336,11 @@ const Analytics = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.5 }}
-              className={glassCard}
             >
-              <div className="p-6 border-b border-white/5">
-                <h3 className="text-lg font-semibold text-white">Bandwidth Usage (GB)</h3>
-              </div>
-              <div className="p-6">
+              <GlassCard>
+                <div className="mb-4">
+                  <h3 className="text-lg font-semibold text-white">Bandwidth Usage (GB)</h3>
+                </div>
                 <div className="h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData}>
@@ -392,7 +362,7 @@ const Analytics = () => {
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-              </div>
+              </GlassCard>
             </motion.div>
           </div>
 
@@ -401,12 +371,11 @@ const Analytics = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.6 }}
-            className={glassCard}
           >
-            <div className="p-6 border-b border-white/5">
-              <h3 className="text-lg font-semibold text-white">Daily Activity Trend</h3>
-            </div>
-            <div className="p-6">
+            <GlassCard>
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold text-white">Daily Activity Trend</h3>
+              </div>
               <div className="h-[250px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData}>
@@ -434,7 +403,7 @@ const Analytics = () => {
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-            </div>
+            </GlassCard>
           </motion.div>
         </div>
       </PageTransition>
