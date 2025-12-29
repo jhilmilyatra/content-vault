@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Upload, FolderPlus, X } from "lucide-react";
+import { Plus, Upload, FolderPlus, X, CloudUpload, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 
 interface UploadFABProps {
   onUploadClick: () => void;
@@ -31,16 +32,19 @@ const UploadFAB = ({ onUploadClick, onNewFolderClick, disabled }: UploadFABProps
 
   const toggleMenu = () => {
     if (!disabled) {
+      lightHaptic();
       setIsOpen(!isOpen);
     }
   };
 
   const handleUpload = () => {
+    mediumHaptic();
     setIsOpen(false);
     onUploadClick();
   };
 
   const handleNewFolder = () => {
+    lightHaptic();
     setIsOpen(false);
     onNewFolderClick();
   };
@@ -56,9 +60,9 @@ const UploadFAB = ({ onUploadClick, onNewFolderClick, disabled }: UploadFABProps
           <>
             {/* Upload Files */}
             <motion.button
-              initial={{ opacity: 0, scale: 0.8, y: 20 }}
+              initial={{ opacity: 0, scale: 0.5, y: 30 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.8, y: 20 }}
+              exit={{ opacity: 0, scale: 0.5, y: 30 }}
               transition={{ 
                 type: "spring", 
                 stiffness: 400, 
@@ -68,22 +72,25 @@ const UploadFAB = ({ onUploadClick, onNewFolderClick, disabled }: UploadFABProps
               onClick={handleUpload}
               className={cn(
                 "flex items-center gap-3 px-4 py-3 rounded-2xl",
-                "glass-elevated",
-                "touch-manipulation press-scale",
-                "shadow-lg"
+                "bg-black/80 backdrop-blur-2xl border border-white/10",
+                "touch-manipulation active:scale-95 transition-transform",
+                "shadow-2xl shadow-gold/20"
               )}
             >
-              <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-                <Upload className="w-5 h-5 text-primary-foreground" />
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-gold to-gold-dark flex items-center justify-center shadow-lg shadow-gold/30">
+                <CloudUpload className="w-5 h-5 text-black" />
               </div>
-              <span className="text-sm font-medium text-foreground pr-2">Upload Files</span>
+              <div className="pr-2">
+                <span className="text-sm font-semibold text-white block">Upload Files</span>
+                <span className="text-[10px] text-white/40">Drag & drop or browse</span>
+              </div>
             </motion.button>
 
             {/* New Folder */}
             <motion.button
-              initial={{ opacity: 0, scale: 0.8, y: 20 }}
+              initial={{ opacity: 0, scale: 0.5, y: 30 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.8, y: 20 }}
+              exit={{ opacity: 0, scale: 0.5, y: 30 }}
               transition={{ 
                 type: "spring", 
                 stiffness: 400, 
@@ -93,15 +100,18 @@ const UploadFAB = ({ onUploadClick, onNewFolderClick, disabled }: UploadFABProps
               onClick={handleNewFolder}
               className={cn(
                 "flex items-center gap-3 px-4 py-3 rounded-2xl",
-                "glass-elevated",
-                "touch-manipulation press-scale",
-                "shadow-lg"
+                "bg-black/80 backdrop-blur-2xl border border-white/10",
+                "touch-manipulation active:scale-95 transition-transform",
+                "shadow-2xl"
               )}
             >
-              <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center">
-                <FolderPlus className="w-5 h-5 text-secondary-foreground" />
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 flex items-center justify-center">
+                <FolderPlus className="w-5 h-5 text-amber-400" />
               </div>
-              <span className="text-sm font-medium text-foreground pr-2">New Folder</span>
+              <div className="pr-2">
+                <span className="text-sm font-semibold text-white block">New Folder</span>
+                <span className="text-[10px] text-white/40">Organize your files</span>
+              </div>
             </motion.button>
           </>
         )}
@@ -109,34 +119,65 @@ const UploadFAB = ({ onUploadClick, onNewFolderClick, disabled }: UploadFABProps
 
       {/* Main FAB */}
       <motion.button
-        whileTap={{ scale: 0.92 }}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.9 }}
         onClick={toggleMenu}
         disabled={disabled}
         className={cn(
-          "w-14 h-14 rounded-2xl",
-          "glass-elevated",
+          "relative w-16 h-16 rounded-2xl overflow-hidden",
           "flex items-center justify-center",
           "touch-manipulation",
-          "shadow-lg",
-          "transition-all duration-fast ease-natural",
-          isOpen && "rotate-45",
+          "transition-all duration-300",
           disabled && "opacity-50 cursor-not-allowed"
         )}
-        style={{
-          boxShadow: isOpen 
-            ? "0 8px 32px -8px hsl(var(--primary) / 0.3)" 
-            : "0 8px 32px -8px hsl(222 47% 2% / 0.4)"
-        }}
       >
+        {/* Gradient background */}
+        <div className={cn(
+          "absolute inset-0 transition-all duration-300",
+          isOpen 
+            ? "bg-gradient-to-br from-red-500 to-rose-600" 
+            : "bg-gradient-to-br from-gold via-gold-light to-amber-400"
+        )} />
+        
+        {/* Shimmer effect */}
+        <motion.div
+          animate={!isOpen ? { 
+            x: ['-100%', '100%']
+          } : {}}
+          transition={{ 
+            duration: 2, 
+            repeat: Infinity, 
+            ease: "linear",
+            repeatDelay: 1
+          }}
+          className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent"
+        />
+        
+        {/* Shadow */}
+        <div className={cn(
+          "absolute inset-0 transition-all duration-300",
+          isOpen 
+            ? "shadow-lg shadow-red-500/30" 
+            : "shadow-lg shadow-gold/40"
+        )} />
+
+        {/* Icon */}
         <motion.div
           animate={{ rotate: isOpen ? 45 : 0 }}
           transition={{ type: "spring", stiffness: 400, damping: 25 }}
+          className="relative z-10"
         >
-          <Plus className={cn(
-            "w-6 h-6 transition-colors duration-fast",
-            isOpen ? "text-destructive" : "text-primary"
-          )} />
+          <Plus className="w-7 h-7 text-black" />
         </motion.div>
+        
+        {/* Pulse ring when closed */}
+        {!isOpen && !disabled && (
+          <motion.div
+            animate={{ scale: [1, 1.3], opacity: [0.5, 0] }}
+            transition={{ duration: 1.5, repeat: Infinity }}
+            className="absolute inset-0 rounded-2xl border-2 border-gold"
+          />
+        )}
       </motion.button>
 
       {/* Backdrop when open */}
@@ -146,8 +187,8 @@ const UploadFAB = ({ onUploadClick, onNewFolderClick, disabled }: UploadFABProps
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="fixed inset-0 bg-background/40 backdrop-blur-sm -z-10"
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm -z-10"
             onClick={() => setIsOpen(false)}
           />
         )}
