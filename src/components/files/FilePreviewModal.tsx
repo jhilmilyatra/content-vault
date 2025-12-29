@@ -1,12 +1,16 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { FileItem, getFileUrl } from "@/lib/fileService";
+import { FileItem, getFileUrl, formatFileSize } from "@/lib/fileService";
 import { supabase } from "@/integrations/supabase/client";
+import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { 
   Download, X, FileText, File, Loader2, ZoomIn, ZoomOut, RotateCw,
-  Play, Pause, Volume2, VolumeX, Maximize, SkipBack, SkipForward
+  Play, Pause, Volume2, VolumeX, Maximize, SkipBack, SkipForward,
+  ChevronLeft, ChevronRight, Image, Minimize, Share2, Info, Music,
+  FileVideo, Sparkles
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -14,19 +18,30 @@ interface FilePreviewModalProps {
   file: FileItem | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  allFiles?: FileItem[];
+  onNavigate?: (file: FileItem) => void;
 }
 
-export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalProps) {
+export function FilePreviewModal({ 
+  file, 
+  open, 
+  onOpenChange,
+  allFiles = [],
+  onNavigate 
+}: FilePreviewModalProps) {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
+  const [showInfo, setShowInfo] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Video/Audio player state
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
+  const modalContainerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -36,12 +51,35 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
+  const [buffered, setBuffered] = useState(0);
+  
+  // Gallery state
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [thumbnails, setThumbnails] = useState<Map<string, string>>(new Map());
+  const [touchStart, setTouchStart] = useState<number | null>(null);
   
   // Double-tap seek state
   const lastTapRef = useRef<{ time: number; x: number } | null>(null);
   const [seekIndicator, setSeekIndicator] = useState<{ side: 'left' | 'right'; visible: boolean }>({ side: 'left', visible: false });
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
+  // Filter media files for gallery navigation
+  const mediaFiles = allFiles.filter(f => 
+    f.mime_type.startsWith('image/') || 
+    f.mime_type.startsWith('video/')
+  );
+
+  // Find current index in media files
+  useEffect(() => {
+    if (file && mediaFiles.length > 0) {
+      const index = mediaFiles.findIndex(f => f.id === file.id);
+      if (index !== -1) {
+        setCurrentIndex(index);
+      }
+    }
+  }, [file, mediaFiles]);
   
   // Get current media ref (video or audio)
   const getMediaRef = () => {
@@ -49,10 +87,24 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
     return fileType === 'audio' ? audioRef.current : videoRef.current;
   };
 
+  // Handle controls auto-hide
+  const resetControlsTimeout = useCallback(() => {
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    setShowControls(true);
+    if (isPlaying) {
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowControls(false);
+      }, 3000);
+    }
+  }, [isPlaying]);
+
   useEffect(() => {
     if (open && file) {
       loadFileUrl();
       setMediaError(null);
+      resetControlsTimeout();
     } else {
       // Clean up blob URL to prevent memory leaks
       if (fileUrl && fileUrl.startsWith("blob:")) {
@@ -67,20 +119,47 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
       setPlaybackSpeed(1);
       setShowSpeedMenu(false);
       setMediaError(null);
+      setShowInfo(false);
+      setIsFullscreen(false);
     }
+    
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    };
   }, [open, file]);
 
-  // Keyboard shortcuts for video/audio player
+  // Keyboard shortcuts
   useEffect(() => {
     if (!open || !file) return;
     
     const fileType = getFileType(file.mime_type);
-    if (fileType !== 'video' && fileType !== 'audio') return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is typing in an input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       
+      const isMediaFile = fileType === 'image' || fileType === 'video' || fileType === 'audio';
+      
+      // Gallery navigation for images/videos
+      if (e.code === 'ArrowLeft' && !e.ctrlKey && !e.metaKey && isMediaFile) {
+        e.preventDefault();
+        if (mediaFiles.length > 1 && currentIndex > 0) {
+          navigateGallery(-1);
+        } else if (fileType === 'video' || fileType === 'audio') {
+          skipBackward();
+        }
+      }
+      if (e.code === 'ArrowRight' && !e.ctrlKey && !e.metaKey && isMediaFile) {
+        e.preventDefault();
+        if (mediaFiles.length > 1 && currentIndex < mediaFiles.length - 1) {
+          navigateGallery(1);
+        } else if (fileType === 'video' || fileType === 'audio') {
+          skipForward();
+        }
+      }
+      
+      // Media controls
       const media = getMediaRef();
       if (!media) return;
       
@@ -88,14 +167,6 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
         case 'Space':
           e.preventDefault();
           togglePlay();
-          break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          skipBackward();
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          skipForward();
           break;
         case 'ArrowUp':
           e.preventDefault();
@@ -123,24 +194,73 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
           e.preventDefault();
           if (fileType === 'video') toggleFullscreen();
           break;
+        case 'Escape':
+          if (isFullscreen) {
+            e.preventDefault();
+            toggleFullscreen();
+          }
+          break;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, file, volume, isPlaying, duration]);
+  }, [open, file, volume, isPlaying, duration, currentIndex, mediaFiles.length, isFullscreen]);
+
+  // Fullscreen change listener
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const navigateGallery = (direction: number) => {
+    const newIndex = currentIndex + direction;
+    if (newIndex >= 0 && newIndex < mediaFiles.length) {
+      lightHaptic();
+      const newFile = mediaFiles[newIndex];
+      if (onNavigate) {
+        onNavigate(newFile);
+      }
+      setCurrentIndex(newIndex);
+    }
+  };
+
+  // Touch swipe for gallery
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStart(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStart === null) return;
+    
+    const touchEnd = e.changedTouches[0].clientX;
+    const diff = touchStart - touchEnd;
+    const threshold = 50;
+    
+    if (Math.abs(diff) > threshold) {
+      if (diff > 0 && currentIndex < mediaFiles.length - 1) {
+        navigateGallery(1);
+      } else if (diff < 0 && currentIndex > 0) {
+        navigateGallery(-1);
+      }
+    }
+    
+    setTouchStart(null);
+  };
 
   const loadFileUrl = async () => {
     if (!file) return;
     setLoading(true);
     try {
-      // Get auth session for authenticated request
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData.session) {
         throw new Error("Not authenticated");
       }
 
-      // Track the file view (async, don't wait)
       supabase.functions.invoke('track-file-view', {
         body: {
           fileId: file.id,
@@ -149,7 +269,6 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
         }
       }).catch((err) => console.error('Failed to track view:', err));
 
-      // Fetch file directly via edge function
       const fileResponse = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`,
         {
@@ -182,14 +301,13 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
     if (!file) return;
     
     setDownloading(true);
+    mediumHaptic();
     try {
-      // Get auth session for authenticated request
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData.session) {
         throw new Error("Not authenticated");
       }
 
-      // Track the download (async, don't wait)
       supabase.functions.invoke('track-file-view', {
         body: {
           fileId: file.id,
@@ -198,7 +316,6 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
         }
       }).catch((err) => console.error('Failed to track download:', err));
 
-      // Get file via edge function
       const downloadUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`;
       
       const response = await fetch(downloadUrl, {
@@ -219,7 +336,6 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
       a.click();
       document.body.removeChild(a);
       
-      // Clean up blob URL
       URL.revokeObjectURL(blobUrl);
       
       toast({
@@ -243,7 +359,6 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
     if (mimeType.startsWith("video/")) return "video";
     if (mimeType.startsWith("audio/")) return "audio";
     if (mimeType === "application/pdf") return "pdf";
-    // Handle common video formats that might have wrong mime types
     const videoExtensions = ['.mp4', '.webm', '.ogg', '.ogv', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v'];
     const audioExtensions = ['.mp3', '.wav', '.ogg', '.oga', '.flac', '.aac', '.m4a', '.wma'];
     if (file) {
@@ -254,10 +369,11 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
     return "other";
   };
 
-  // Media player controls - work for both video and audio
+  // Media player controls
   const togglePlay = () => {
     const media = getMediaRef();
     if (media) {
+      lightHaptic();
       if (isPlaying) {
         media.pause();
       } else {
@@ -267,12 +383,14 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
         });
       }
       setIsPlaying(!isPlaying);
+      resetControlsTimeout();
     }
   };
 
   const toggleMute = () => {
     const media = getMediaRef();
     if (media) {
+      lightHaptic();
       media.muted = !isMuted;
       setIsMuted(!isMuted);
     }
@@ -300,6 +418,10 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
     const media = getMediaRef();
     if (media) {
       setCurrentTime(media.currentTime);
+      // Update buffered
+      if (media.buffered.length > 0) {
+        setBuffered(media.buffered.end(media.buffered.length - 1));
+      }
     }
   };
 
@@ -312,6 +434,7 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
 
   const handleMediaEnded = () => {
     setIsPlaying(false);
+    setShowControls(true);
   };
 
   const handleMediaError = () => {
@@ -321,6 +444,7 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
   const skipForward = () => {
     const media = getMediaRef();
     if (media) {
+      lightHaptic();
       media.currentTime = Math.min(media.currentTime + 10, duration);
     }
   };
@@ -328,16 +452,17 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
   const skipBackward = () => {
     const media = getMediaRef();
     if (media) {
+      lightHaptic();
       media.currentTime = Math.max(media.currentTime - 10, 0);
     }
   };
 
   const toggleFullscreen = () => {
-    if (videoRef.current) {
+    if (modalContainerRef.current) {
       if (document.fullscreenElement) {
         document.exitFullscreen();
       } else {
-        videoRef.current.requestFullscreen();
+        modalContainerRef.current.requestFullscreen();
       }
     }
   };
@@ -345,6 +470,7 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
   const changePlaybackSpeed = (speed: number) => {
     const media = getMediaRef();
     if (media) {
+      lightHaptic();
       media.playbackRate = speed;
       setPlaybackSpeed(speed);
       setShowSpeedMenu(false);
@@ -352,8 +478,12 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
   };
 
   const formatTime = (time: number) => {
-    const minutes = Math.floor(time / 60);
+    const hours = Math.floor(time / 3600);
+    const minutes = Math.floor((time % 3600) / 60);
     const seconds = Math.floor(time % 60);
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+    }
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
 
@@ -368,11 +498,10 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
     const x = clientX - rect.left;
     const isLeftSide = x < rect.width / 2;
 
-    // Check for double-tap (within 300ms and same side)
     if (lastTapRef.current && now - lastTapRef.current.time < 300) {
       const wasLeftSide = lastTapRef.current.x < rect.width / 2;
       if (isLeftSide === wasLeftSide) {
-        // Double-tap detected
+        mediumHaptic();
         if (isLeftSide) {
           videoRef.current.currentTime = Math.max(videoRef.current.currentTime - 10, 0);
           setSeekIndicator({ side: 'left', visible: true });
@@ -380,7 +509,6 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
           videoRef.current.currentTime = Math.min(videoRef.current.currentTime + 10, duration);
           setSeekIndicator({ side: 'right', visible: true });
         }
-        // Hide indicator after animation
         setTimeout(() => setSeekIndicator(prev => ({ ...prev, visible: false })), 500);
         lastTapRef.current = null;
         return;
@@ -388,8 +516,8 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
     }
 
     lastTapRef.current = { time: now, x };
+    resetControlsTimeout();
     
-    // Single tap toggles play/pause after a delay (if not double-tap)
     setTimeout(() => {
       if (lastTapRef.current && now === lastTapRef.current.time) {
         togglePlay();
@@ -406,37 +534,81 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
     switch (fileType) {
       case "image":
         return (
-          <div className="flex-1 flex items-center justify-center overflow-hidden bg-black/20 rounded-lg">
-            <img
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            className="relative flex-1 flex items-center justify-center overflow-hidden"
+            onTouchStart={mediaFiles.length > 1 ? handleTouchStart : undefined}
+            onTouchEnd={mediaFiles.length > 1 ? handleTouchEnd : undefined}
+          >
+            <motion.img
+              key={file.id}
+              initial={{ opacity: 0, x: 50 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -50 }}
+              transition={{ duration: 0.3 }}
               src={fileUrl}
               alt={file.name}
-              className="max-w-full max-h-[70vh] object-contain transition-transform duration-200"
+              className="max-w-full max-h-[75vh] object-contain select-none"
               style={{
                 transform: `scale(${zoom}) rotate(${rotation}deg)`,
+                transition: 'transform 0.2s ease-out',
               }}
+              draggable={false}
             />
-          </div>
+            
+            {/* Gallery navigation arrows */}
+            {mediaFiles.length > 1 && (
+              <>
+                <motion.button
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: currentIndex > 0 ? 1 : 0.3, x: 0 }}
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => navigateGallery(-1)}
+                  disabled={currentIndex === 0}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/50 backdrop-blur-xl border border-white/10 flex items-center justify-center text-white hover:bg-black/70 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </motion.button>
+                <motion.button
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: currentIndex < mediaFiles.length - 1 ? 1 : 0.3, x: 0 }}
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => navigateGallery(1)}
+                  disabled={currentIndex === mediaFiles.length - 1}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/50 backdrop-blur-xl border border-white/10 flex items-center justify-center text-white hover:bg-black/70 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </motion.button>
+              </>
+            )}
+          </motion.div>
         );
 
       case "video":
         return (
-          <div 
-            className="flex-1 flex flex-col bg-black rounded-lg overflow-hidden"
-            onMouseEnter={() => setShowControls(true)}
-            onMouseLeave={() => setShowControls(isPlaying ? false : true)}
-            onTouchStart={() => setShowControls(true)}
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex-1 flex flex-col bg-black rounded-2xl overflow-hidden"
+            onMouseMove={resetControlsTimeout}
+            onTouchStart={resetControlsTimeout}
           >
             {/* Video Element */}
             <div 
               ref={videoContainerRef}
-              className="relative flex-1 flex items-center justify-center"
+              className="relative flex-1 flex items-center justify-center cursor-pointer"
               onClick={handleVideoTap}
               onTouchEnd={handleVideoTap}
             >
               <video
                 ref={videoRef}
                 src={fileUrl}
-                className="max-w-full max-h-[60vh] sm:max-h-[60vh] object-contain pointer-events-none"
+                className="max-w-full max-h-[65vh] object-contain pointer-events-none"
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
                 onEnded={handleMediaEnded}
@@ -448,136 +620,162 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
               />
               
               {/* Double-tap seek indicators */}
-              {seekIndicator.visible && (
-                <div 
-                  className={`absolute top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 animate-fade-in ${
-                    seekIndicator.side === 'left' ? 'left-8' : 'right-8'
-                  }`}
-                >
-                  <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                    {seekIndicator.side === 'left' ? (
-                      <SkipBack className="w-7 h-7 text-white" />
-                    ) : (
-                      <SkipForward className="w-7 h-7 text-white" />
-                    )}
-                  </div>
-                  <span className="text-white text-sm font-medium">
-                    {seekIndicator.side === 'left' ? '-10s' : '+10s'}
-                  </span>
-                </div>
-              )}
+              <AnimatePresence>
+                {seekIndicator.visible && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className={`absolute top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 ${
+                      seekIndicator.side === 'left' ? 'left-12' : 'right-12'
+                    }`}
+                  >
+                    <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-xl flex items-center justify-center">
+                      {seekIndicator.side === 'left' ? (
+                        <SkipBack className="w-8 h-8 text-white" />
+                      ) : (
+                        <SkipForward className="w-8 h-8 text-white" />
+                      )}
+                    </div>
+                    <span className="text-white text-sm font-semibold">
+                      {seekIndicator.side === 'left' ? '-10s' : '+10s'}
+                    </span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
               
               {/* Play overlay button */}
-              {!isPlaying && !seekIndicator.visible && (
-                <div
-                  className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity hover:bg-black/40 touch-manipulation pointer-events-none"
-                >
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-primary/90 flex items-center justify-center">
-                    <Play className="w-8 h-8 sm:w-10 sm:h-10 text-primary-foreground ml-1" />
-                  </div>
-                </div>
-              )}
+              <AnimatePresence>
+                {!isPlaying && !seekIndicator.visible && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none"
+                  >
+                    <motion.div 
+                      whileHover={{ scale: 1.1 }}
+                      className="w-20 h-20 rounded-full bg-gradient-to-br from-gold to-gold-dark flex items-center justify-center shadow-2xl shadow-gold/30"
+                    >
+                      <Play className="w-10 h-10 text-black ml-1" />
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
-            {/* Video Controls - Always visible on mobile */}
-            <div 
-              className={`p-3 sm:p-4 bg-gradient-to-t from-black/90 to-transparent transition-opacity ${
-                showControls ? "opacity-100" : "sm:opacity-0"
-              }`}
+            {/* Premium Video Controls */}
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: showControls ? 1 : 0, y: showControls ? 0 : 20 }}
+              className="p-4 sm:p-5 bg-gradient-to-t from-black via-black/90 to-transparent"
             >
-              {/* Progress bar */}
-              <div className="mb-2 sm:mb-3">
+              {/* Progress bar with buffer */}
+              <div className="mb-4 relative">
+                <div className="absolute inset-0 h-1.5 rounded-full bg-white/10" />
+                <div 
+                  className="absolute h-1.5 rounded-full bg-white/20"
+                  style={{ width: `${(buffered / duration) * 100}%` }}
+                />
                 <Slider
                   value={[currentTime]}
                   min={0}
                   max={duration || 100}
                   step={0.1}
                   onValueChange={handleSeek}
-                  className="cursor-pointer touch-manipulation"
+                  className="cursor-pointer touch-manipulation relative z-10"
                 />
               </div>
 
               {/* Control buttons */}
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1 sm:gap-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
                     onClick={skipBackward}
-                    className="text-white hover:bg-white/20 h-9 w-9 sm:h-10 sm:w-10 touch-manipulation active:scale-95"
+                    className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all"
                   >
-                    <SkipBack className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </Button>
+                    <SkipBack className="w-5 h-5" />
+                  </motion.button>
                   
-                  <Button
-                    variant="ghost"
-                    size="icon"
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
                     onClick={togglePlay}
-                    className="text-white hover:bg-white/20 h-10 w-10 sm:h-10 sm:w-10 touch-manipulation active:scale-95"
+                    className="w-12 h-12 rounded-full bg-gradient-to-br from-gold to-gold-dark flex items-center justify-center shadow-lg shadow-gold/30"
                   >
                     {isPlaying ? (
-                      <Pause className="w-5 h-5 sm:w-6 sm:h-6" />
+                      <Pause className="w-6 h-6 text-black" />
                     ) : (
-                      <Play className="w-5 h-5 sm:w-6 sm:h-6" />
+                      <Play className="w-6 h-6 text-black ml-0.5" />
                     )}
-                  </Button>
+                  </motion.button>
                   
-                  <Button
-                    variant="ghost"
-                    size="icon"
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
                     onClick={skipForward}
-                    className="text-white hover:bg-white/20 h-9 w-9 sm:h-10 sm:w-10 touch-manipulation active:scale-95"
+                    className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all"
                   >
-                    <SkipForward className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </Button>
+                    <SkipForward className="w-5 h-5" />
+                  </motion.button>
 
-                  <span className="text-white text-xs sm:text-sm ml-1 sm:ml-2 whitespace-nowrap">
-                    {formatTime(currentTime)} / {formatTime(duration)}
+                  <span className="text-white/70 text-sm ml-3 font-medium tabular-nums">
+                    {formatTime(currentTime)} <span className="text-white/40">/</span> {formatTime(duration)}
                   </span>
                 </div>
 
-                <div className="flex items-center gap-1 sm:gap-2">
-                  {/* Playback speed control */}
+                <div className="flex items-center gap-2">
+                  {/* Playback speed */}
                   <div className="relative">
-                    <Button
-                      variant="ghost"
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
                       onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                      className="text-white hover:bg-white/20 h-8 px-2 text-xs sm:text-sm font-medium touch-manipulation"
+                      className="h-8 px-3 rounded-lg bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-all"
                     >
                       {playbackSpeed}x
-                    </Button>
-                    {showSpeedMenu && (
-                      <div className="absolute bottom-full mb-2 right-0 bg-black/90 rounded-lg border border-white/20 overflow-hidden min-w-[80px]">
-                        {playbackSpeeds.map((speed) => (
-                          <button
-                            key={speed}
-                            onClick={() => changePlaybackSpeed(speed)}
-                            className={`w-full px-3 py-2 text-sm text-left hover:bg-white/20 transition-colors ${
-                              playbackSpeed === speed ? 'text-primary bg-white/10' : 'text-white'
-                            }`}
-                          >
-                            {speed}x
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    </motion.button>
+                    <AnimatePresence>
+                      {showSpeedMenu && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                          className="absolute bottom-full mb-2 right-0 bg-black/95 backdrop-blur-xl rounded-xl border border-white/10 overflow-hidden min-w-[90px] shadow-xl"
+                        >
+                          {playbackSpeeds.map((speed) => (
+                            <button
+                              key={speed}
+                              onClick={() => changePlaybackSpeed(speed)}
+                              className={`w-full px-4 py-2.5 text-sm text-left hover:bg-white/10 transition-colors ${
+                                playbackSpeed === speed ? 'text-gold bg-gold/10' : 'text-white'
+                              }`}
+                            >
+                              {speed}x
+                            </button>
+                          ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
 
-                  {/* Volume control - hidden on mobile */}
+                  {/* Volume control */}
                   <div className="hidden sm:flex items-center gap-2 group">
-                    <Button
-                      variant="ghost"
-                      size="icon"
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
                       onClick={toggleMute}
-                      className="text-white hover:bg-white/20"
+                      className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all"
                     >
                       {isMuted || volume === 0 ? (
-                        <VolumeX className="w-5 h-5" />
+                        <VolumeX className="w-4 h-4" />
                       ) : (
-                        <Volume2 className="w-5 h-5" />
+                        <Volume2 className="w-4 h-4" />
                       )}
-                    </Button>
-                    <div className="w-24 opacity-0 group-hover:opacity-100 transition-opacity">
+                    </motion.button>
+                    <div className="w-20 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Slider
                         value={[isMuted ? 0 : volume]}
                         min={0}
@@ -588,52 +786,91 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
                     </div>
                   </div>
 
-                  {/* Mute button for mobile */}
-                  <Button
-                    variant="ghost"
-                    size="icon"
+                  {/* Mobile mute */}
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
                     onClick={toggleMute}
-                    className="sm:hidden text-white hover:bg-white/20 h-9 w-9 touch-manipulation active:scale-95"
+                    className="sm:hidden w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all"
                   >
                     {isMuted || volume === 0 ? (
                       <VolumeX className="w-4 h-4" />
                     ) : (
                       <Volume2 className="w-4 h-4" />
                     )}
-                  </Button>
+                  </motion.button>
 
-                  <Button
-                    variant="ghost"
-                    size="icon"
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
                     onClick={toggleFullscreen}
-                    className="text-white hover:bg-white/20 h-9 w-9 sm:h-10 sm:w-10 touch-manipulation active:scale-95"
+                    className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all"
                   >
-                    <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </Button>
+                    {isFullscreen ? (
+                      <Minimize className="w-4 h-4" />
+                    ) : (
+                      <Maximize className="w-4 h-4" />
+                    )}
+                  </motion.button>
                 </div>
               </div>
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
         );
 
       case "audio":
         return (
-          <div className="flex-1 flex flex-col items-center justify-center gap-6 p-4 sm:p-8">
-            {/* Audio visualization circle */}
-            <div className={`w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center transition-transform ${isPlaying ? 'animate-pulse' : ''}`}>
-              <button
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex-1 flex flex-col items-center justify-center gap-8 p-8"
+          >
+            {/* Audio visualization */}
+            <motion.div 
+              animate={isPlaying ? { 
+                boxShadow: ['0 0 60px rgba(212,175,55,0.3)', '0 0 80px rgba(212,175,55,0.5)', '0 0 60px rgba(212,175,55,0.3)']
+              } : {}}
+              transition={{ duration: 2, repeat: Infinity }}
+              className="relative w-40 h-40 rounded-full bg-gradient-to-br from-gold/20 via-gold/10 to-transparent border border-gold/20 flex items-center justify-center"
+            >
+              <div className="absolute inset-4 rounded-full bg-gradient-to-br from-white/[0.03] to-transparent" />
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
                 onClick={togglePlay}
-                className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-primary/90 flex items-center justify-center hover:bg-primary transition-all active:scale-95 touch-manipulation"
+                className="relative z-10 w-24 h-24 rounded-full bg-gradient-to-br from-gold to-gold-dark flex items-center justify-center shadow-2xl shadow-gold/30"
               >
                 {isPlaying ? (
-                  <Pause className="w-8 h-8 sm:w-10 sm:h-10 text-primary-foreground" />
+                  <Pause className="w-10 h-10 text-black" />
                 ) : (
-                  <Play className="w-8 h-8 sm:w-10 sm:h-10 text-primary-foreground ml-1" />
+                  <Play className="w-10 h-10 text-black ml-1" />
                 )}
-              </button>
-            </div>
+              </motion.button>
+              
+              {/* Animated rings */}
+              {isPlaying && (
+                <>
+                  <motion.div
+                    animate={{ scale: [1, 1.5], opacity: [0.3, 0] }}
+                    transition={{ duration: 2, repeat: Infinity }}
+                    className="absolute inset-0 rounded-full border-2 border-gold/30"
+                  />
+                  <motion.div
+                    animate={{ scale: [1, 1.8], opacity: [0.2, 0] }}
+                    transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
+                    className="absolute inset-0 rounded-full border border-gold/20"
+                  />
+                </>
+              )}
+            </motion.div>
             
-            <p className="text-lg font-medium text-foreground text-center">{file.name}</p>
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <Music className="w-5 h-5 text-gold" />
+                <p className="text-xl font-semibold text-white font-outfit">{file.name}</p>
+              </div>
+              <p className="text-white/40 text-sm">{formatFileSize(file.size_bytes)}</p>
+            </div>
             
             {/* Hidden audio element */}
             <audio
@@ -648,17 +885,15 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
               className="hidden"
             />
             
-            {/* Error message */}
             {mediaError && (
-              <div className="text-destructive text-sm text-center px-4">
+              <div className="text-red-400 text-sm text-center px-4 bg-red-500/10 py-2 rounded-lg border border-red-500/20">
                 {mediaError}
               </div>
             )}
             
             {/* Audio controls */}
-            <div className="w-full max-w-md space-y-3">
-              {/* Progress bar */}
-              <div className="space-y-1">
+            <div className="w-full max-w-md space-y-4">
+              <div className="space-y-2">
                 <Slider
                   value={[currentTime]}
                   min={0}
@@ -667,89 +902,92 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
                   onValueChange={handleSeek}
                   className="cursor-pointer touch-manipulation"
                 />
-                <div className="flex justify-between text-xs text-muted-foreground">
+                <div className="flex justify-between text-xs text-white/40 font-medium tabular-nums">
                   <span>{formatTime(currentTime)}</span>
                   <span>{formatTime(duration)}</span>
                 </div>
               </div>
               
-              {/* Control buttons */}
-              <div className="flex items-center justify-center gap-2 sm:gap-4">
-                <Button
-                  variant="ghost"
-                  size="icon"
+              <div className="flex items-center justify-center gap-4">
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
                   onClick={skipBackward}
-                  className="h-10 w-10 touch-manipulation active:scale-95"
+                  className="w-12 h-12 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center text-white hover:bg-white/10 transition-all"
                 >
                   <SkipBack className="w-5 h-5" />
-                </Button>
+                </motion.button>
                 
-                <Button
-                  variant="ghost"
-                  size="icon"
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
                   onClick={togglePlay}
-                  className="h-12 w-12 touch-manipulation active:scale-95"
+                  className="w-14 h-14 rounded-full bg-gradient-to-br from-gold to-gold-dark flex items-center justify-center shadow-lg shadow-gold/30"
                 >
                   {isPlaying ? (
-                    <Pause className="w-6 h-6" />
+                    <Pause className="w-6 h-6 text-black" />
                   ) : (
-                    <Play className="w-6 h-6" />
+                    <Play className="w-6 h-6 text-black ml-0.5" />
                   )}
-                </Button>
+                </motion.button>
                 
-                <Button
-                  variant="ghost"
-                  size="icon"
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
                   onClick={skipForward}
-                  className="h-10 w-10 touch-manipulation active:scale-95"
+                  className="w-12 h-12 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center text-white hover:bg-white/10 transition-all"
                 >
                   <SkipForward className="w-5 h-5" />
-                </Button>
+                </motion.button>
               </div>
               
-              {/* Speed and volume controls */}
-              <div className="flex items-center justify-between gap-4">
-                {/* Speed control */}
+              <div className="flex items-center justify-between gap-4 pt-2">
                 <div className="relative">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                    className="text-xs font-medium"
+                    className="text-xs font-medium rounded-lg border-white/10 bg-white/[0.03] text-white/70 hover:text-white hover:bg-white/10"
                   >
                     {playbackSpeed}x
                   </Button>
-                  {showSpeedMenu && (
-                    <div className="absolute bottom-full mb-2 left-0 bg-popover rounded-lg border shadow-lg overflow-hidden min-w-[80px] z-10">
-                      {playbackSpeeds.map((speed) => (
-                        <button
-                          key={speed}
-                          onClick={() => changePlaybackSpeed(speed)}
-                          className={`w-full px-3 py-2 text-sm text-left hover:bg-muted transition-colors ${
-                            playbackSpeed === speed ? 'text-primary bg-muted' : ''
-                          }`}
-                        >
-                          {speed}x
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <AnimatePresence>
+                    {showSpeedMenu && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        className="absolute bottom-full mb-2 left-0 bg-black/95 backdrop-blur-xl rounded-xl border border-white/10 overflow-hidden min-w-[80px] z-10 shadow-xl"
+                      >
+                        {playbackSpeeds.map((speed) => (
+                          <button
+                            key={speed}
+                            onClick={() => changePlaybackSpeed(speed)}
+                            className={`w-full px-3 py-2 text-sm text-left hover:bg-white/10 transition-colors ${
+                              playbackSpeed === speed ? 'text-gold bg-gold/10' : 'text-white'
+                            }`}
+                          >
+                            {speed}x
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
                 
-                {/* Volume control */}
                 <div className="flex items-center gap-2 flex-1 max-w-[150px]">
-                  <Button
-                    variant="ghost"
-                    size="icon"
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
                     onClick={toggleMute}
-                    className="h-8 w-8 flex-shrink-0"
+                    className="w-8 h-8 rounded-full bg-white/[0.05] flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-all flex-shrink-0"
                   >
                     {isMuted || volume === 0 ? (
                       <VolumeX className="w-4 h-4" />
                     ) : (
                       <Volume2 className="w-4 h-4" />
                     )}
-                  </Button>
+                  </motion.button>
                   <Slider
                     value={[isMuted ? 0 : volume]}
                     min={0}
@@ -761,33 +999,46 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
                 </div>
               </div>
             </div>
-          </div>
+          </motion.div>
         );
 
       case "pdf":
         return (
-          <div className="flex-1 w-full h-[70vh] bg-muted rounded-lg overflow-hidden">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex-1 w-full h-[75vh] rounded-2xl overflow-hidden border border-white/10"
+          >
             <iframe
               src={`${fileUrl}#toolbar=1&navpanes=0`}
-              className="w-full h-full border-0"
+              className="w-full h-full border-0 bg-white"
               title={file.name}
             />
-          </div>
+          </motion.div>
         );
 
       default:
         return (
-          <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
-            <div className="w-24 h-24 rounded-2xl bg-muted flex items-center justify-center">
-              <File className="w-12 h-12 text-muted-foreground" />
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex-1 flex flex-col items-center justify-center gap-6 p-8"
+          >
+            <div className="w-28 h-28 rounded-3xl bg-gradient-to-br from-white/[0.05] to-white/[0.02] border border-white/10 flex items-center justify-center">
+              <File className="w-14 h-14 text-white/30" />
             </div>
             <div className="text-center">
-              <p className="text-lg font-medium text-foreground">{file.name}</p>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="text-xl font-semibold text-white font-outfit">{file.name}</p>
+              <p className="text-white/40 mt-1">{formatFileSize(file.size_bytes)}</p>
+              <p className="text-sm text-white/30 mt-3">
                 Preview not available for this file type
               </p>
             </div>
-            <Button onClick={handleDownload} className="mt-4" disabled={downloading}>
+            <Button 
+              onClick={handleDownload} 
+              disabled={downloading}
+              className="mt-4 rounded-xl bg-gradient-to-r from-gold to-gold-light text-black font-semibold px-6"
+            >
               {downloading ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : (
@@ -795,7 +1046,7 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
               )}
               Download to View
             </Button>
-          </div>
+          </motion.div>
         );
     }
   };
@@ -804,75 +1055,232 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] p-0 gap-0 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b bg-background">
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-foreground truncate">
-              {file?.name || "File Preview"}
-            </h3>
-            <p className="text-xs text-muted-foreground">{file?.mime_type}</p>
+      <DialogContent 
+        ref={modalContainerRef}
+        className="max-w-6xl w-[95vw] max-h-[95vh] p-0 gap-0 overflow-hidden bg-black/95 backdrop-blur-2xl border-white/10 rounded-3xl"
+      >
+        {/* Premium Header */}
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center justify-between p-4 sm:p-5 border-b border-white/[0.06] bg-white/[0.02]"
+        >
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-gold/20 to-gold/5 border border-gold/20">
+              {fileType === 'image' ? <Image className="w-5 h-5 text-gold" /> :
+               fileType === 'video' ? <FileVideo className="w-5 h-5 text-gold" /> :
+               fileType === 'audio' ? <Music className="w-5 h-5 text-gold" /> :
+               <File className="w-5 h-5 text-gold" />}
+            </div>
+            <div className="min-w-0">
+              <h3 className="font-semibold text-white truncate font-outfit">
+                {file?.name || "File Preview"}
+              </h3>
+              <p className="text-xs text-white/40">{file?.mime_type} • {file ? formatFileSize(file.size_bytes) : ''}</p>
+            </div>
           </div>
+          
+          {/* Gallery counter */}
+          {mediaFiles.length > 1 && (fileType === 'image' || fileType === 'video') && (
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] mr-4">
+              <Image className="w-4 h-4 text-white/40" />
+              <span className="text-sm text-white/60 font-medium">
+                {currentIndex + 1} / {mediaFiles.length}
+              </span>
+            </div>
+          )}
+          
           <div className="flex items-center gap-2">
             {fileType === "image" && (
               <>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => {
+                    lightHaptic();
+                    setZoom((z) => Math.max(0.5, z - 0.25));
+                  }}
                   disabled={zoom <= 0.5}
+                  className="w-9 h-9 rounded-xl bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-all disabled:opacity-30"
                 >
                   <ZoomOut className="w-4 h-4" />
-                </Button>
-                <span className="text-sm text-muted-foreground min-w-[3rem] text-center">
+                </motion.button>
+                <span className="text-sm text-white/50 min-w-[3rem] text-center font-medium tabular-nums">
                   {Math.round(zoom * 100)}%
                 </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setZoom((z) => Math.min(3, z + 0.25))}
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => {
+                    lightHaptic();
+                    setZoom((z) => Math.min(3, z + 0.25));
+                  }}
                   disabled={zoom >= 3}
+                  className="w-9 h-9 rounded-xl bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-all disabled:opacity-30"
                 >
                   <ZoomIn className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setRotation((r) => (r + 90) % 360)}
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => {
+                    lightHaptic();
+                    setRotation((r) => (r + 90) % 360);
+                  }}
+                  className="w-9 h-9 rounded-xl bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-all"
                 >
                   <RotateCw className="w-4 h-4" />
-                </Button>
-                <div className="w-px h-6 bg-border mx-2" />
+                </motion.button>
+                <div className="w-px h-6 bg-white/10 mx-1" />
               </>
             )}
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={handleDownload} 
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={() => {
+                lightHaptic();
+                setShowInfo(!showInfo);
+              }}
+              className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-all ${
+                showInfo 
+                  ? 'bg-gold/20 border-gold/30 text-gold' 
+                  : 'bg-white/[0.05] border-white/[0.08] text-white/70 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <Info className="w-4 h-4" />
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={handleDownload}
               disabled={!fileUrl || downloading}
+              className="w-9 h-9 rounded-xl bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-all disabled:opacity-30"
             >
               {downloading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <Download className="w-4 h-4" />
               )}
-            </Button>
-            <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)}>
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={() => onOpenChange(false)}
+              className="w-9 h-9 rounded-xl bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-all"
+            >
               <X className="w-4 h-4" />
-            </Button>
+            </motion.button>
           </div>
-        </div>
+        </motion.div>
 
         {/* Content */}
-        <div className="flex-1 p-4 overflow-auto bg-background/50">
-          {loading ? (
-            <div className="flex-1 flex items-center justify-center h-[60vh]">
-              <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            </div>
-          ) : (
-            renderPreview()
-          )}
+        <div className="flex-1 p-4 overflow-auto">
+          <AnimatePresence mode="wait">
+            {loading ? (
+              <motion.div 
+                key="loader"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex-1 flex flex-col items-center justify-center h-[65vh] gap-4"
+              >
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  className="relative"
+                >
+                  <div className="w-16 h-16 rounded-full border-2 border-white/10" />
+                  <div className="absolute inset-0 w-16 h-16 rounded-full border-2 border-gold border-t-transparent animate-spin" />
+                </motion.div>
+                <p className="text-white/40 text-sm">Loading preview...</p>
+              </motion.div>
+            ) : (
+              <motion.div key="content" className="h-full">
+                {renderPreview()}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
+
+        {/* File Info Panel */}
+        <AnimatePresence>
+          {showInfo && file && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="border-t border-white/[0.06] bg-white/[0.02] overflow-hidden"
+            >
+              <div className="p-4 sm:p-5 grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div>
+                  <p className="text-xs text-white/40 mb-1">File Name</p>
+                  <p className="text-sm text-white font-medium truncate">{file.original_name}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-white/40 mb-1">Size</p>
+                  <p className="text-sm text-white font-medium">{formatFileSize(file.size_bytes)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-white/40 mb-1">Type</p>
+                  <p className="text-sm text-white font-medium">{file.mime_type}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-white/40 mb-1">Created</p>
+                  <p className="text-sm text-white font-medium">
+                    {new Date(file.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Gallery Thumbnails */}
+        {mediaFiles.length > 1 && (fileType === 'image' || fileType === 'video') && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="border-t border-white/[0.06] bg-white/[0.02] p-3 overflow-x-auto"
+          >
+            <div className="flex items-center gap-2 justify-center min-w-max">
+              {mediaFiles.slice(Math.max(0, currentIndex - 5), Math.min(mediaFiles.length, currentIndex + 6)).map((mediaFile, idx) => {
+                const actualIndex = Math.max(0, currentIndex - 5) + idx;
+                const isActive = actualIndex === currentIndex;
+                return (
+                  <motion.button
+                    key={mediaFile.id}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => {
+                      if (onNavigate) {
+                        lightHaptic();
+                        onNavigate(mediaFile);
+                        setCurrentIndex(actualIndex);
+                      }
+                    }}
+                    className={`relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 transition-all ${
+                      isActive 
+                        ? 'ring-2 ring-gold ring-offset-2 ring-offset-black' 
+                        : 'opacity-50 hover:opacity-80'
+                    }`}
+                  >
+                    <div className={`absolute inset-0 flex items-center justify-center ${
+                      mediaFile.mime_type.startsWith('video/') 
+                        ? 'bg-gradient-to-br from-violet-500/30 to-purple-500/30' 
+                        : 'bg-gradient-to-br from-pink-500/30 to-rose-500/30'
+                    }`}>
+                      {mediaFile.mime_type.startsWith('video/') ? (
+                        <FileVideo className="w-6 h-6 text-white/70" />
+                      ) : (
+                        <Image className="w-6 h-6 text-white/70" />
+                      )}
+                    </div>
+                  </motion.button>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
       </DialogContent>
     </Dialog>
   );
