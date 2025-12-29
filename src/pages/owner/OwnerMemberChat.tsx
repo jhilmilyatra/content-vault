@@ -15,6 +15,7 @@ import { Send, MessageSquare, Users, Search } from "lucide-react";
 import { format } from "date-fns";
 import TypingIndicator from "@/components/chat/TypingIndicator";
 import ReadReceipt from "@/components/chat/ReadReceipt";
+import { GlassCard, SkeletonChatList, SkeletonStats } from "@/components/ios";
 
 interface Member {
   user_id: string;
@@ -424,7 +425,7 @@ const OwnerMemberChat = () => {
                 </div>
                 <ScrollArea className="flex-1">
                   {loading ? (
-                    <div className="p-4 text-center text-white/50">Loading...</div>
+                    <div className="p-2"><SkeletonChatList count={5} /></div>
                   ) : filteredMembers.length === 0 ? (
                     <div className="p-4 text-center text-white/50">No members found</div>
                   ) : (

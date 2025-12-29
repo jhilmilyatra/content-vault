@@ -9,5 +9,8 @@ export {
   SkeletonList, 
   SkeletonText, 
   SkeletonAvatar,
-  SkeletonTable 
+  SkeletonTable,
+  SkeletonStats,
+  SkeletonChatList,
+  SkeletonButton
 } from './SkeletonLoader';
