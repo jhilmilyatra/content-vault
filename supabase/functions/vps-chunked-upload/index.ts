@@ -421,28 +421,77 @@ Deno.serve(async (req) => {
 
       console.log(`🔧 Assembling ${totalChunks} chunks for ${session.file_name}...`);
 
-      // Fetch and combine all chunks
+      // Helper function to fetch chunk with retries
+      const fetchChunkWithRetry = async (chunkIndex: number, maxRetries = 3): Promise<Uint8Array> => {
+        const chunkFileName = `${uploadId}_chunk_${chunkIndex}`;
+        let lastError: Error | null = null;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            const vpsResponse = await fetch(`${VPS_ENDPOINT}/files/${user.id}/${chunkFileName}`, {
+              headers: { "Authorization": `Bearer ${VPS_API_KEY}` },
+            });
+
+            if (vpsResponse.ok) {
+              const chunkData = new Uint8Array(await vpsResponse.arrayBuffer());
+              if (attempt > 1) {
+                console.log(`✅ Chunk ${chunkIndex} retrieved on attempt ${attempt}`);
+              }
+              return chunkData;
+            }
+            
+            const statusText = vpsResponse.status;
+            lastError = new Error(`VPS returned ${statusText}`);
+            console.warn(`⚠️ Chunk ${chunkIndex} fetch attempt ${attempt}/${maxRetries} failed: ${statusText}`);
+            
+            if (attempt < maxRetries) {
+              // Exponential backoff: 1s, 2s, 4s
+              await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
+            }
+          } catch (e) {
+            lastError = e instanceof Error ? e : new Error(String(e));
+            console.warn(`⚠️ Chunk ${chunkIndex} fetch attempt ${attempt}/${maxRetries} error: ${lastError.message}`);
+            
+            if (attempt < maxRetries) {
+              await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
+            }
+          }
+        }
+        
+        throw new Error(`Failed to retrieve chunk ${chunkIndex} after ${maxRetries} attempts: ${lastError?.message}`);
+      };
+
+      // Fetch and combine all chunks with retry logic
       const chunks: Uint8Array[] = [];
       let totalBytes = 0;
+      const failedChunks: number[] = [];
 
       for (let i = 0; i < totalChunks; i++) {
-        const chunkFileName = `${uploadId}_chunk_${i}`;
-        
-        const vpsResponse = await fetch(`${VPS_ENDPOINT}/files/${user.id}/${chunkFileName}`, {
-          headers: { "Authorization": `Bearer ${VPS_API_KEY}` },
-        });
-
-        if (!vpsResponse.ok) {
-          console.error(`Failed to fetch chunk ${i}`);
-          return new Response(
-            JSON.stringify({ error: `Failed to retrieve chunk ${i}` }),
-            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
+        try {
+          const chunkData = await fetchChunkWithRetry(i);
+          chunks.push(chunkData);
+          totalBytes += chunkData.length;
+          
+          if (i % 10 === 0) {
+            console.log(`📦 Fetched ${i + 1}/${totalChunks} chunks...`);
+          }
+        } catch (e) {
+          console.error(`❌ Failed to fetch chunk ${i}: ${e instanceof Error ? e.message : e}`);
+          failedChunks.push(i);
         }
+      }
 
-        const chunkData = new Uint8Array(await vpsResponse.arrayBuffer());
-        chunks.push(chunkData);
-        totalBytes += chunkData.length;
+      // If any chunks failed, return detailed error
+      if (failedChunks.length > 0) {
+        console.error(`❌ ${failedChunks.length} chunks failed to retrieve: ${failedChunks.join(', ')}`);
+        return new Response(
+          JSON.stringify({ 
+            error: `Failed to retrieve ${failedChunks.length} chunk(s)`,
+            failedChunks: failedChunks,
+            message: "Some chunks could not be retrieved from storage. The upload may need to be retried."
+          }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
 
       // Combine chunks
