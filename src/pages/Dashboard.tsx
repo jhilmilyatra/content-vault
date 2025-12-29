@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
+import DashboardPreloader from "@/components/dashboard/DashboardPreloader";
 import TrialBanner from "@/components/dashboard/TrialBanner";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,7 +14,6 @@ import {
   Users,
   TrendingUp,
   ArrowUpRight,
-  ArrowDownRight,
   MoreHorizontal,
   FolderOpen,
   FileVideo,
@@ -57,6 +57,7 @@ const Dashboard = () => {
   const [usageMetrics, setUsageMetrics] = useState<UsageMetrics | null>(null);
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showPreloader, setShowPreloader] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -143,9 +144,14 @@ const Dashboard = () => {
   ];
   
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
-        {/* Trial Banner */}
+    <>
+      <DashboardPreloader 
+        onComplete={() => setShowPreloader(false)} 
+        duration={1500} 
+      />
+      <DashboardLayout>
+        <div className="space-y-6">
+          {/* Trial Banner */}
         <TrialBanner />
 
         {/* Header */}
@@ -303,7 +309,8 @@ const Dashboard = () => {
           </motion.div>
         </div>
       </div>
-    </DashboardLayout>
+      </DashboardLayout>
+    </>
   );
 };
 
