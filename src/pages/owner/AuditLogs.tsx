@@ -5,25 +5,19 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   FileText,
   Search,
-  Filter,
   Download,
   User,
   Shield,
   Settings,
   CreditCard,
+  ChevronDown,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { PageTransition } from "@/components/ui/PageTransition";
+import { GlassCard, GlassCardHeader, IosList, IosListItem } from "@/components/ios";
+import { SkeletonList } from "@/components/ios";
+import { lightHaptic } from "@/lib/haptics";
 
 interface AuditLog {
   id: string;
@@ -123,7 +117,6 @@ const AuditLogs = () => {
   });
 
   const uniqueActions = Array.from(new Set(logs.map((log) => log.action)));
-  const glassCard = "bg-white/[0.03] backdrop-blur-xl border border-white/10";
 
   return (
     <DashboardLayout>
@@ -141,14 +134,17 @@ const AuditLogs = () => {
                 <FileText className="w-6 h-6 text-teal-400" />
                 Audit Logs
               </h1>
-              <p className="text-white/50">
+              <p className="text-white/50 text-sm">
                 Track all system actions and changes
               </p>
             </div>
-            <Button variant="outline" className="border-white/10 text-white/70 hover:text-white hover:bg-white/10">
-              <Download className="w-4 h-4 mr-2" />
+            <button 
+              onClick={() => lightHaptic()}
+              className="ios-button-secondary px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2"
+            >
+              <Download className="w-4 h-4" />
               Export
-            </Button>
+            </button>
           </motion.div>
 
           {/* Filters */}
@@ -159,79 +155,75 @@ const AuditLogs = () => {
                 placeholder="Search logs..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/30"
+                className="pl-10 ios-input"
               />
             </div>
-            <Select value={filterAction} onValueChange={setFilterAction}>
-              <SelectTrigger className="w-[180px] bg-white/5 border-white/10 text-white">
-                <Filter className="w-4 h-4 mr-2" />
-                <SelectValue placeholder="Filter by action" />
-              </SelectTrigger>
-              <SelectContent className="bg-gray-900 border-white/10">
-                <SelectItem value="all">All Actions</SelectItem>
+            <div className="relative">
+              <select
+                value={filterAction}
+                onChange={(e) => {
+                  lightHaptic();
+                  setFilterAction(e.target.value);
+                }}
+                className="ios-input appearance-none pr-10 cursor-pointer min-w-[180px]"
+              >
+                <option value="all">All Actions</option>
                 {uniqueActions.map((action) => (
-                  <SelectItem key={action} value={action}>
+                  <option key={action} value={action}>
                     {action.replace(/_/g, " ")}
-                  </SelectItem>
+                  </option>
                 ))}
-              </SelectContent>
-            </Select>
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 pointer-events-none" />
+            </div>
           </div>
 
-          {/* Logs Table */}
-          <Card className={glassCard}>
-            <CardHeader>
-              <CardTitle className="text-white">Activity Log ({filteredLogs.length})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="text-center py-8 text-white/50">
-                  Loading logs...
-                </div>
-              ) : filteredLogs.length === 0 ? (
-                <div className="text-center py-8 text-white/50">
-                  No audit logs found
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {filteredLogs.map((log, index) => (
-                    <motion.div
-                      key={log.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.02 }}
-                      className="flex items-start gap-4 p-4 rounded-xl border bg-white/5 border-white/10 hover:bg-white/10 transition-colors"
-                    >
-                      <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center text-white/50">
-                        {getActionIcon(log.action)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {getActionBadge(log.action)}
-                          <span className="text-sm text-white/50">
-                            by {log.actor_email}
-                          </span>
-                          {log.target_email && (
-                            <span className="text-sm text-white/50">
-                              → {log.target_email}
-                            </span>
-                          )}
+          {/* Logs */}
+          <GlassCard>
+            <GlassCardHeader 
+              title={`Activity Log (${filteredLogs.length})`} 
+              icon={<FileText className="w-5 h-5 text-teal-400" />} 
+            />
+            
+            {loading ? (
+              <SkeletonList count={8} />
+            ) : filteredLogs.length === 0 ? (
+              <div className="text-center py-12 text-white/50">
+                <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>No audit logs found</p>
+              </div>
+            ) : (
+              <IosList>
+                {filteredLogs.map((log, index) => (
+                  <motion.div
+                    key={log.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: Math.min(index * 0.02, 0.5) }}
+                  >
+                    <IosListItem
+                      leftContent={
+                        <div className="w-10 h-10 rounded-xl bg-white/[0.08] border border-white/[0.1] flex items-center justify-center text-white/50">
+                          {getActionIcon(log.action)}
                         </div>
-                        {log.details && typeof log.details === 'object' && (
-                          <p className="text-sm text-white/40 mt-1">
-                            {(log.details as Record<string, unknown>).reason as string || JSON.stringify(log.details)}
-                          </p>
-                        )}
-                      </div>
-                      <span className="text-xs text-white/40 whitespace-nowrap">
-                        {formatDate(log.created_at)}
-                      </span>
-                    </motion.div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                      }
+                      title={`${log.action.replace(/_/g, " ")} by ${log.actor_email}${log.target_email ? ` → ${log.target_email}` : ""}`}
+                      subtitle={
+                        log.details && typeof log.details === 'object' 
+                          ? (log.details as Record<string, unknown>).reason as string || ""
+                          : ""
+                      }
+                      rightContent={
+                        <span className="text-xs text-white/40 whitespace-nowrap">
+                          {formatDate(log.created_at)}
+                        </span>
+                      }
+                    />
+                  </motion.div>
+                ))}
+              </IosList>
+            )}
+          </GlassCard>
         </div>
       </PageTransition>
     </DashboardLayout>

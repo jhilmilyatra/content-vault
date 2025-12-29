@@ -12,19 +12,8 @@ import {
   Search,
   ArrowUpDown,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   BarChart,
   Bar,
@@ -38,6 +27,9 @@ import {
   Cell,
 } from "recharts";
 import { PageTransition } from "@/components/ui/PageTransition";
+import { GlassCard, GlassCardHeader, StatCard } from "@/components/ios";
+import { SkeletonStats, SkeletonTable } from "@/components/ios";
+import { lightHaptic } from "@/lib/haptics";
 
 interface UserMetrics {
   user_id: string;
@@ -169,7 +161,19 @@ const UserAnalytics = () => {
     }
   };
 
-  const glassCard = "bg-white/[0.03] backdrop-blur-xl border border-white/10";
+  const handleCycleSort = () => {
+    lightHaptic();
+    setSortBy((prev) => prev === "storage" ? "bandwidth" : prev === "bandwidth" ? "downloads" : "storage");
+  };
+
+  const statCards = [
+    { label: "Total Users", value: platformStats.totalUsers, icon: Users, gradient: "from-teal-500 to-cyan-400" },
+    { label: "Total Storage", value: formatBytes(platformStats.totalStorage), icon: HardDrive, gradient: "from-violet-500 to-purple-400" },
+    { label: "Total Bandwidth", value: formatBytes(platformStats.totalBandwidth), icon: Download, gradient: "from-amber-500 to-orange-400" },
+    { label: "Downloads", value: platformStats.totalDownloads.toLocaleString(), icon: Download, gradient: "from-emerald-500 to-teal-400" },
+    { label: "Views", value: platformStats.totalViews.toLocaleString(), icon: Eye, gradient: "from-rose-500 to-pink-400" },
+    { label: "Active Links", value: platformStats.totalLinks.toLocaleString(), icon: Link2, gradient: "from-indigo-500 to-blue-400" },
+  ];
 
   return (
     <DashboardLayout>
@@ -180,159 +184,191 @@ const UserAnalytics = () => {
               <BarChart3 className="w-6 h-6 text-teal-400" />
               User Analytics
             </h1>
-            <p className="text-white/50">Detailed storage, bandwidth, and usage statistics per user</p>
+            <p className="text-white/50 text-sm">Detailed storage, bandwidth, and usage statistics per user</p>
           </motion.div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-            {[
-              { label: "Total Users", value: platformStats.totalUsers, icon: Users, color: "from-teal-500 to-cyan-400" },
-              { label: "Total Storage", value: formatBytes(platformStats.totalStorage), icon: HardDrive, color: "from-violet-500 to-purple-400" },
-              { label: "Total Bandwidth", value: formatBytes(platformStats.totalBandwidth), icon: Download, color: "from-amber-500 to-orange-400" },
-              { label: "Downloads", value: platformStats.totalDownloads.toLocaleString(), icon: Download, color: "from-emerald-500 to-teal-400" },
-              { label: "Views", value: platformStats.totalViews.toLocaleString(), icon: Eye, color: "from-rose-500 to-pink-400" },
-              { label: "Active Links", value: platformStats.totalLinks.toLocaleString(), icon: Link2, color: "from-indigo-500 to-blue-400" },
-            ].map((stat, index) => (
-              <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }}>
-                <Card className={glassCard}>
-                  <CardContent className="pt-4 pb-4">
-                    <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${stat.color} p-2 mb-2`}>
+          {/* Stats Grid */}
+          {loading ? (
+            <SkeletonStats count={6} />
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+              {statCards.map((stat, index) => (
+                <motion.div 
+                  key={stat.label} 
+                  initial={{ opacity: 0, y: 20 }} 
+                  animate={{ opacity: 1, y: 0 }} 
+                  transition={{ delay: index * 0.05 }}
+                  className="animate-fade-up"
+                  style={{ animationDelay: `${index * 50}ms` }}
+                >
+                  <GlassCard className="ios-card-hover">
+                    <div className={`w-8 h-8 rounded-xl bg-gradient-to-br ${stat.gradient} p-2 mb-3`}>
                       <stat.icon className="w-full h-full text-white" />
                     </div>
                     <p className="text-xs text-white/50">{stat.label}</p>
-                    <p className="text-lg font-bold text-white">{loading ? "..." : stat.value}</p>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
+                    <p className="text-lg font-bold text-white">{stat.value}</p>
+                  </GlassCard>
+                </motion.div>
+              ))}
+            </div>
+          )}
 
+          {/* Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <Card className={`${glassCard} lg:col-span-2`}>
-              <CardHeader>
-                <CardTitle className="text-white">Top Users by Usage (MB)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={topUsersChartData} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                      <XAxis type="number" stroke="rgba(255,255,255,0.5)" fontSize={12} />
-                      <YAxis type="category" dataKey="name" stroke="rgba(255,255,255,0.5)" fontSize={12} width={80} />
-                      <Tooltip contentStyle={{ backgroundColor: "rgba(0,0,0,0.8)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px" }} />
-                      <Bar dataKey="storage" fill="#14b8a6" name="Storage (MB)" radius={[0, 4, 4, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
+            <GlassCard className="lg:col-span-2">
+              <GlassCardHeader title="Top Users by Usage (MB)" icon={<BarChart3 className="w-5 h-5 text-teal-400" />} />
+              <div className="h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={topUsersChartData} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                    <XAxis type="number" stroke="rgba(255,255,255,0.3)" fontSize={12} />
+                    <YAxis type="category" dataKey="name" stroke="rgba(255,255,255,0.3)" fontSize={12} width={80} />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: "rgba(0,0,0,0.9)", 
+                        border: "1px solid rgba(255,255,255,0.1)", 
+                        borderRadius: "12px",
+                        backdropFilter: "blur(20px)"
+                      }} 
+                    />
+                    <Bar dataKey="storage" fill="#14b8a6" name="Storage (MB)" radius={[0, 6, 6, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </GlassCard>
 
-            <Card className={glassCard}>
-              <CardHeader>
-                <CardTitle className="text-white">Plan Distribution</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={platformStats.planDistribution} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value">
-                        {platformStats.planDistribution.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip contentStyle={{ backgroundColor: "rgba(0,0,0,0.8)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px" }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex justify-center gap-4 mt-2">
-                  {platformStats.planDistribution.map((item, index) => (
-                    <div key={item.name} className="flex items-center gap-2 text-sm">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index] }} />
-                      <span className="text-white/50">{item.name}: {item.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+            <GlassCard>
+              <GlassCardHeader title="Plan Distribution" icon={<Users className="w-5 h-5 text-teal-400" />} />
+              <div className="h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie 
+                      data={platformStats.planDistribution} 
+                      cx="50%" 
+                      cy="50%" 
+                      innerRadius={60} 
+                      outerRadius={100} 
+                      paddingAngle={5} 
+                      dataKey="value"
+                    >
+                      {platformStats.planDistribution.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: "rgba(0,0,0,0.9)", 
+                        border: "1px solid rgba(255,255,255,0.1)", 
+                        borderRadius: "12px",
+                        backdropFilter: "blur(20px)"
+                      }} 
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex justify-center gap-4 mt-2">
+                {platformStats.planDistribution.map((item, index) => (
+                  <div key={item.name} className="flex items-center gap-2 text-sm">
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index] }} />
+                    <span className="text-white/50">{item.name}: {item.value}</span>
+                  </div>
+                ))}
+              </div>
+            </GlassCard>
           </div>
 
-          <Card className={glassCard}>
-            <CardHeader>
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <CardTitle className="text-white">All Users</CardTitle>
-                <div className="flex items-center gap-2">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
-                    <Input placeholder="Search users..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 w-64 bg-white/5 border-white/10 text-white placeholder:text-white/30" />
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => setSortBy((prev) => prev === "storage" ? "bandwidth" : prev === "bandwidth" ? "downloads" : "storage")} className="border-white/10 text-white/70 hover:text-white hover:bg-white/10">
-                    <ArrowUpDown className="w-4 h-4 mr-2" />
-                    Sort: {sortBy}
-                  </Button>
+          {/* Users Table */}
+          <GlassCard>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+              <GlassCardHeader title="All Users" icon={<Users className="w-5 h-5 text-teal-400" />} />
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="relative flex-1 sm:flex-none">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                  <Input 
+                    placeholder="Search users..." 
+                    value={searchQuery} 
+                    onChange={(e) => setSearchQuery(e.target.value)} 
+                    className="pl-10 w-full sm:w-64 ios-input" 
+                  />
                 </div>
+                <button 
+                  onClick={handleCycleSort}
+                  className="ios-button-secondary px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2 whitespace-nowrap"
+                >
+                  <ArrowUpDown className="w-4 h-4" />
+                  {sortBy}
+                </button>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-white/10">
-                      <TableHead className="text-white/50">User</TableHead>
-                      <TableHead className="text-white/50">Plan</TableHead>
-                      <TableHead className="text-white/50">Storage</TableHead>
-                      <TableHead className="text-white/50">Bandwidth</TableHead>
-                      <TableHead className="text-white/50">Downloads</TableHead>
-                      <TableHead className="text-white/50">Views</TableHead>
-                      <TableHead className="text-white/50">Links</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {loading ? (
-                      <TableRow><TableCell colSpan={7} className="text-center py-8 text-white/50">Loading...</TableCell></TableRow>
-                    ) : filteredUsers.length === 0 ? (
-                      <TableRow><TableCell colSpan={7} className="text-center py-8 text-white/50">No users found</TableCell></TableRow>
+            </div>
+
+            {loading ? (
+              <SkeletonTable rows={5} />
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-white/[0.05]">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-white/[0.05]">
+                      <th className="text-left p-4 text-sm font-medium text-white/50">User</th>
+                      <th className="text-left p-4 text-sm font-medium text-white/50">Plan</th>
+                      <th className="text-left p-4 text-sm font-medium text-white/50">Storage</th>
+                      <th className="text-left p-4 text-sm font-medium text-white/50">Bandwidth</th>
+                      <th className="text-center p-4 text-sm font-medium text-white/50">Downloads</th>
+                      <th className="text-center p-4 text-sm font-medium text-white/50">Views</th>
+                      <th className="text-center p-4 text-sm font-medium text-white/50">Links</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredUsers.length === 0 ? (
+                      <tr><td colSpan={7} className="text-center py-12 text-white/50">No users found</td></tr>
                     ) : (
-                      filteredUsers.map((user) => (
-                        <TableRow key={user.user_id} className="border-white/10">
-                          <TableCell>
+                      filteredUsers.map((user, index) => (
+                        <motion.tr 
+                          key={user.user_id} 
+                          className="border-b border-white/[0.05] hover:bg-white/[0.02] transition-colors"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: Math.min(index * 0.02, 0.3) }}
+                        >
+                          <td className="p-4">
                             <div>
                               <p className="font-medium text-white">{user.full_name || "No name"}</p>
                               <p className="text-xs text-white/50">{user.email}</p>
                             </div>
-                          </TableCell>
-                          <TableCell>{getPlanBadge(user.plan)}</TableCell>
-                          <TableCell>
+                          </td>
+                          <td className="p-4">{getPlanBadge(user.plan)}</td>
+                          <td className="p-4">
                             <div className="w-32">
                               <div className="flex justify-between text-xs mb-1">
                                 <span className="text-white">{formatBytes(user.storage_used_bytes)}</span>
                                 <span className="text-white/50">{user.storage_limit_gb}GB</span>
                               </div>
-                              <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                <div className="h-full bg-teal-500 rounded-full" style={{ width: `${getStoragePercentage(user.storage_used_bytes, user.storage_limit_gb)}%` }} />
+                              <div className="h-1.5 bg-white/[0.05] rounded-full overflow-hidden">
+                                <div className="h-full bg-teal-500 rounded-full transition-all duration-500" style={{ width: `${getStoragePercentage(user.storage_used_bytes, user.storage_limit_gb)}%` }} />
                               </div>
                             </div>
-                          </TableCell>
-                          <TableCell>
+                          </td>
+                          <td className="p-4">
                             <div className="w-32">
                               <div className="flex justify-between text-xs mb-1">
                                 <span className="text-white">{formatBytes(user.bandwidth_used_bytes)}</span>
                                 <span className="text-white/50">{user.bandwidth_limit_gb}GB</span>
                               </div>
-                              <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                <div className="h-full bg-violet-500 rounded-full" style={{ width: `${getStoragePercentage(user.bandwidth_used_bytes, user.bandwidth_limit_gb)}%` }} />
+                              <div className="h-1.5 bg-white/[0.05] rounded-full overflow-hidden">
+                                <div className="h-full bg-violet-500 rounded-full transition-all duration-500" style={{ width: `${getStoragePercentage(user.bandwidth_used_bytes, user.bandwidth_limit_gb)}%` }} />
                               </div>
                             </div>
-                          </TableCell>
-                          <TableCell className="text-center text-white">{user.total_downloads}</TableCell>
-                          <TableCell className="text-center text-white">{user.total_views}</TableCell>
-                          <TableCell className="text-center text-white">{user.active_links_count}</TableCell>
-                        </TableRow>
+                          </td>
+                          <td className="text-center p-4 text-white">{user.total_downloads}</td>
+                          <td className="text-center p-4 text-white">{user.total_views}</td>
+                          <td className="text-center p-4 text-white">{user.active_links_count}</td>
+                        </motion.tr>
                       ))
                     )}
-                  </TableBody>
-                </Table>
+                  </tbody>
+                </table>
               </div>
-            </CardContent>
-          </Card>
+            )}
+          </GlassCard>
         </div>
       </PageTransition>
     </DashboardLayout>
