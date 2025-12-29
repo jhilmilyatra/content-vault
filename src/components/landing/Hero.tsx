@@ -3,8 +3,16 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import Magnetic from "./Magnetic";
 
-const Hero = () => {
+interface HeroProps {
+  onWarpTrigger?: () => void;
+}
+
+const Hero = ({ onWarpTrigger }: HeroProps) => {
   const { user } = useAuth();
+
+  const handleCtaClick = () => {
+    onWarpTrigger?.();
+  };
 
   return (
     <section className="relative min-h-screen flex items-center justify-center pt-20 px-6">
@@ -32,7 +40,7 @@ const Hero = () => {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
             <Magnetic>
-              <Link to={user ? "/dashboard" : "/auth"}>
+              <Link to={user ? "/dashboard" : "/auth"} onClick={handleCtaClick}>
                 <button className="px-10 py-4 rounded-full bg-white text-black font-bold hover:scale-105 transition-all duration-500 shadow-xl shadow-white/5">
                   {user ? "Enter Dashboard" : "Start Deploying"}
                 </button>
