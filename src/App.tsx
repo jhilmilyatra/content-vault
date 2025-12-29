@@ -23,6 +23,7 @@ const Settings = lazy(() => import("./pages/Settings"));
 const Plans = lazy(() => import("./pages/Plans"));
 const SharedFile = lazy(() => import("./pages/SharedFile"));
 const TelegramGuide = lazy(() => import("./pages/TelegramGuide"));
+const Documentation = lazy(() => import("./pages/Documentation"));
 
 // Lazy loaded routes - Owner
 const OwnerDashboard = lazy(() => import("./pages/owner/OwnerDashboard"));
@@ -85,6 +86,7 @@ function App() {
                   <Route path="/" element={<Index />} />
                   <Route path="/auth" element={<Auth />} />
                   <Route path="/login" element={<Auth />} />
+                  <Route path="/documentation" element={<Documentation />} />
                   <Route path="/share/:shortCode" element={<SharedFile />} />
                   
                   {/* Guest Portal Routes */}

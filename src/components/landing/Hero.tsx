@@ -48,9 +48,11 @@ const Hero = ({ onWarpTrigger }: HeroProps) => {
             </Magnetic>
 
             <Magnetic>
-              <button className="px-10 py-4 rounded-full border border-white/10 text-white font-medium hover:bg-white/5 backdrop-blur-md transition-all">
-                Documentation
-              </button>
+              <Link to="/documentation">
+                <button className="px-10 py-4 rounded-full border border-white/10 text-white font-medium hover:bg-white/5 backdrop-blur-md transition-all">
+                  Documentation
+                </button>
+              </Link>
             </Magnetic>
           </div>
         </motion.div>
