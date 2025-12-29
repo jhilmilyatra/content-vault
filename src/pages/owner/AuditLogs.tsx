@@ -202,22 +202,14 @@ const AuditLogs = () => {
                     transition={{ delay: Math.min(index * 0.02, 0.5) }}
                   >
                     <IosListItem
-                      leftContent={
-                        <div className="w-10 h-10 rounded-xl bg-white/[0.08] border border-white/[0.1] flex items-center justify-center text-white/50">
-                          {getActionIcon(log.action)}
-                        </div>
-                      }
+                      icon={getActionIcon(log.action)}
                       title={`${log.action.replace(/_/g, " ")} by ${log.actor_email}${log.target_email ? ` → ${log.target_email}` : ""}`}
                       subtitle={
                         log.details && typeof log.details === 'object' 
                           ? (log.details as Record<string, unknown>).reason as string || ""
                           : ""
                       }
-                      rightContent={
-                        <span className="text-xs text-white/40 whitespace-nowrap">
-                          {formatDate(log.created_at)}
-                        </span>
-                      }
+                      value={formatDate(log.created_at)}
                     />
                   </motion.div>
                 ))}
