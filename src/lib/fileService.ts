@@ -65,14 +65,17 @@ export interface ChunkedUploadState {
   createdAt: string;
 }
 
-// Chunk size: 10MB (larger chunks = fewer requests = faster upload)
-const CHUNK_SIZE = 10 * 1024 * 1024;
+// Chunk size: 5MB (smaller chunks = better parallelization = faster perceived speed)
+const CHUNK_SIZE = 5 * 1024 * 1024;
 
-// Threshold for chunked upload: 50MB (lower threshold for better reliability)
-const CHUNKED_UPLOAD_THRESHOLD = 50 * 1024 * 1024;
+// Threshold for chunked upload: 20MB (lower threshold for better speed on medium files)
+const CHUNKED_UPLOAD_THRESHOLD = 20 * 1024 * 1024;
 
-// Parallel chunk uploads (upload multiple chunks simultaneously)
-const PARALLEL_CHUNKS = 3;
+// Parallel chunk uploads (upload multiple chunks simultaneously) - increased for speed
+const PARALLEL_CHUNKS = 6;
+
+// Parallel file uploads for batch uploads
+const PARALLEL_FILES = 3;
 
 // Storage key for resumable uploads
 const RESUMABLE_UPLOADS_KEY = "resumable_uploads";
@@ -622,23 +625,44 @@ const updateNodeUsage = (nodeId: string, bytesAdded: number) => {
   }
 };
 
+/**
+ * Upload multiple files with parallel processing for faster batch uploads
+ */
 export const uploadMultipleFiles = async (
   files: File[],
   userId: string,
   folderId: string | null,
   onProgress?: (fileIndex: number, progress: UploadProgress | number) => void
 ): Promise<FileItem[]> => {
-  const results: FileItem[] = [];
+  const results: FileItem[] = new Array(files.length);
+  const fileQueue = files.map((file, index) => ({ file, index }));
+  let currentIndex = 0;
 
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    const result = await uploadFile(file, userId, folderId, (progress) => {
-      if (onProgress) onProgress(i, progress);
-    });
-    results.push(result);
-  }
+  // Process files in parallel batches
+  const uploadWorker = async (): Promise<void> => {
+    while (currentIndex < fileQueue.length) {
+      const { file, index } = fileQueue[currentIndex++];
+      try {
+        const result = await uploadFile(file, userId, folderId, (progress) => {
+          if (onProgress) onProgress(index, progress);
+        });
+        results[index] = result;
+      } catch (error) {
+        console.error(`Failed to upload file ${index}:`, error);
+        throw error;
+      }
+    }
+  };
 
-  return results;
+  // Start parallel workers
+  const workers = Array.from(
+    { length: Math.min(PARALLEL_FILES, files.length) },
+    () => uploadWorker()
+  );
+
+  await Promise.all(workers);
+
+  return results.filter(Boolean);
 };
 
 export const deleteFile = async (fileId: string, storagePath: string): Promise<void> => {
