@@ -777,62 +777,172 @@ const uploadChunked = async (
     }
   }
 
-  // Finalize upload
-  if (onProgress) {
-    onProgress({
-      loaded: file.size,
-      total: file.size,
-      percentage: 99,
-      speed: 0,
-      remainingTime: 0,
-      fileName: file.name,
-      status: 'processing',
-      chunked: true,
-      currentChunk: totalChunks,
-      totalChunks,
-      uploadId,
-    });
-  }
-
-  const finalizeResponse = await fetch(
-    `${supabaseUrl}/functions/v1/vps-chunked-upload?action=finalize`,
-    {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ uploadId }),
+  // Finalize upload with automatic retry for missing chunks
+  const MAX_FINALIZE_RETRIES = 3;
+  let finalizeAttempt = 0;
+  
+  while (finalizeAttempt < MAX_FINALIZE_RETRIES) {
+    finalizeAttempt++;
+    
+    if (onProgress) {
+      onProgress({
+        loaded: file.size,
+        total: file.size,
+        percentage: 99,
+        speed: 0,
+        remainingTime: 0,
+        fileName: file.name,
+        status: 'processing',
+        chunked: true,
+        currentChunk: totalChunks,
+        totalChunks,
+        uploadId,
+      });
     }
-  );
 
-  if (!finalizeResponse.ok) {
-    const error = await finalizeResponse.json();
-    throw new Error(error.error || "Failed to finalize upload");
+    const finalizeResponse = await fetch(
+      `${supabaseUrl}/functions/v1/vps-chunked-upload?action=finalize`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ uploadId }),
+      }
+    );
+
+    if (finalizeResponse.ok) {
+      const result = await finalizeResponse.json();
+      
+      // Clean up localStorage
+      removeResumableUpload(uploadId!);
+
+      if (onProgress) {
+        onProgress({
+          loaded: file.size,
+          total: file.size,
+          percentage: 100,
+          speed: 0,
+          remainingTime: 0,
+          fileName: file.name,
+          status: 'complete',
+          chunked: true,
+          currentChunk: totalChunks,
+          totalChunks,
+          uploadId,
+        });
+      }
+
+      return result.file as FileItem;
+    }
+
+    // Handle finalization error
+    const errorData = await finalizeResponse.json();
+    
+    // Check if error contains failedChunks (missing chunks on VPS storage)
+    if (errorData.failedChunks && Array.isArray(errorData.failedChunks) && errorData.failedChunks.length > 0) {
+      const missingChunks: number[] = errorData.failedChunks;
+      console.log(`🔄 Finalize attempt ${finalizeAttempt}/${MAX_FINALIZE_RETRIES}: Re-uploading ${missingChunks.length} missing chunks from VPS storage`);
+      
+      if (onProgress) {
+        onProgress({
+          loaded: totalUploaded,
+          total: file.size,
+          percentage: Math.round((totalUploaded / file.size) * 95), // Show slightly lower during retry
+          speed: 0,
+          remainingTime: 0,
+          fileName: file.name,
+          status: 'uploading',
+          chunked: true,
+          currentChunk: uploadedChunks.length,
+          totalChunks,
+          uploadId,
+        });
+      }
+      
+      // Re-upload missing chunks
+      for (const chunkIndex of missingChunks) {
+        const chunkStart = chunkIndex * chunkSize;
+        const chunkEnd = Math.min(chunkStart + chunkSize, file.size);
+        const chunk = file.slice(chunkStart, chunkEnd);
+
+        const formData = new FormData();
+        formData.append("chunk", new Blob([chunk]));
+        formData.append("uploadId", uploadId!);
+        formData.append("chunkIndex", String(chunkIndex));
+
+        try {
+          const chunkResponse = await fetch(
+            `${supabaseUrl}/functions/v1/vps-chunked-upload?action=chunk`,
+            {
+              method: "POST",
+              headers: { "Authorization": `Bearer ${accessToken}` },
+              body: formData,
+            }
+          );
+
+          if (chunkResponse.ok) {
+            console.log(`✅ Re-uploaded missing chunk ${chunkIndex}`);
+          } else {
+            console.error(`❌ Failed to re-upload chunk ${chunkIndex}`);
+          }
+        } catch (e) {
+          console.error(`❌ Error re-uploading chunk ${chunkIndex}:`, e);
+        }
+      }
+      
+      // Wait a bit before retrying finalization
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      continue; // Retry finalization
+    }
+    
+    // Check if error contains missingChunks (DB tracking issue - chunks not recorded)
+    if (errorData.missingChunks && Array.isArray(errorData.missingChunks) && errorData.missingChunks.length > 0) {
+      const missingChunks: number[] = errorData.missingChunks;
+      console.log(`🔄 Finalize attempt ${finalizeAttempt}/${MAX_FINALIZE_RETRIES}: Re-uploading ${missingChunks.length} untracked chunks`);
+      
+      // Re-upload missing chunks (this will also record them in DB)
+      for (const chunkIndex of missingChunks) {
+        const chunkStart = chunkIndex * chunkSize;
+        const chunkEnd = Math.min(chunkStart + chunkSize, file.size);
+        const chunk = file.slice(chunkStart, chunkEnd);
+
+        const formData = new FormData();
+        formData.append("chunk", new Blob([chunk]));
+        formData.append("uploadId", uploadId!);
+        formData.append("chunkIndex", String(chunkIndex));
+
+        try {
+          const chunkResponse = await fetch(
+            `${supabaseUrl}/functions/v1/vps-chunked-upload?action=chunk`,
+            {
+              method: "POST",
+              headers: { "Authorization": `Bearer ${accessToken}` },
+              body: formData,
+            }
+          );
+
+          if (chunkResponse.ok) {
+            console.log(`✅ Re-uploaded chunk ${chunkIndex}`);
+          } else {
+            console.error(`❌ Failed to re-upload chunk ${chunkIndex}`);
+          }
+        } catch (e) {
+          console.error(`❌ Error re-uploading chunk ${chunkIndex}:`, e);
+        }
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      continue; // Retry finalization
+    }
+    
+    // No recoverable error, throw
+    throw new Error(errorData.error || "Failed to finalize upload");
   }
-
-  const result = await finalizeResponse.json();
-
-  // Clean up localStorage
-  removeResumableUpload(uploadId!);
-
-  if (onProgress) {
-    onProgress({
-      loaded: file.size,
-      total: file.size,
-      percentage: 100,
-      speed: 0,
-      remainingTime: 0,
-      fileName: file.name,
-      status: 'complete',
-      chunked: true,
-      currentChunk: totalChunks,
-      totalChunks,
-      uploadId,
-    });
-  }
-
-  return result.file as FileItem;
+  
+  // All retries exhausted
+  throw new Error(`Failed to finalize upload after ${MAX_FINALIZE_RETRIES} attempts`);
 };
 
 /**
