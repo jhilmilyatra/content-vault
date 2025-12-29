@@ -547,6 +547,7 @@ const uploadChunked = async (
   
   let uploadId = existingUploadId;
   let uploadedChunks: number[] = [];
+  let storageFileName = ''; // The final filename on VPS (for direct append)
 
   // Initialize or resume upload
   if (!uploadId) {
@@ -591,6 +592,7 @@ const uploadChunked = async (
 
     const initResult = await initResponse.json();
     uploadId = initResult.uploadId;
+    storageFileName = initResult.storageFileName || ''; // Get storage filename from server
 
     saveResumableUpload({
       uploadId: uploadId!,
@@ -613,6 +615,7 @@ const uploadChunked = async (
     if (statusResponse.ok) {
       const statusResult = await statusResponse.json();
       uploadedChunks = statusResult.uploadedChunks || [];
+      storageFileName = statusResult.storageFileName || '';
       console.log(`📦 Resuming upload: ${uploadedChunks.length}/${totalChunks} chunks already uploaded`);
     }
   }
@@ -669,6 +672,7 @@ const uploadChunked = async (
       formData.append("chunk", new Blob([chunk]));
       formData.append("uploadId", uploadId!);
       formData.append("chunkIndex", String(chunkIndex));
+      formData.append("storageFileName", storageFileName); // Send storage filename for direct append
 
       const chunkStartTime = performance.now();
       
@@ -685,13 +689,18 @@ const uploadChunked = async (
       
       // Track speed for adaptive adjustment
       speedTracker.addSample(chunkBytes, chunkDuration);
-
-      if (!chunkResponse.ok) {
+      
+      // Update storageFileName from response if provided (first chunk sets it)
+      if (chunkResponse.ok) {
+        const chunkResult = await chunkResponse.json();
+        if (chunkResult.storageFileName && !storageFileName) {
+          storageFileName = chunkResult.storageFileName;
+        }
+        return { chunkIndex, chunkSize: chunkBytes };
+      } else {
         const error = await chunkResponse.json();
         throw new Error(error.error || `Failed to upload chunk ${chunkIndex}`);
       }
-
-      return { chunkIndex, chunkSize: chunkBytes };
     });
 
     // Wait for all chunks in batch to complete
@@ -751,6 +760,7 @@ const uploadChunked = async (
           formData.append("chunk", new Blob([chunk]));
           formData.append("uploadId", uploadId!);
           formData.append("chunkIndex", String(chunkIndex));
+          formData.append("storageFileName", storageFileName);
 
           const chunkResponse = await fetch(
             `${supabaseUrl}/functions/v1/vps-chunked-upload?action=chunk`,
@@ -808,7 +818,7 @@ const uploadChunked = async (
           "Authorization": `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ uploadId }),
+        body: JSON.stringify({ uploadId, storageFileName }), // Include storageFileName
       }
     );
 
@@ -871,6 +881,7 @@ const uploadChunked = async (
         formData.append("chunk", new Blob([chunk]));
         formData.append("uploadId", uploadId!);
         formData.append("chunkIndex", String(chunkIndex));
+        formData.append("storageFileName", storageFileName);
 
         try {
           const chunkResponse = await fetch(
@@ -912,6 +923,7 @@ const uploadChunked = async (
         formData.append("chunk", new Blob([chunk]));
         formData.append("uploadId", uploadId!);
         formData.append("chunkIndex", String(chunkIndex));
+        formData.append("storageFileName", storageFileName);
 
         try {
           const chunkResponse = await fetch(

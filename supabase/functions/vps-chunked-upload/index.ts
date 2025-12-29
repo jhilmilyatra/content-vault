@@ -73,7 +73,7 @@ Deno.serve(async (req) => {
     const url = new URL(req.url);
     const action = url.searchParams.get("action") || "upload";
 
-    // Initialize a new chunked upload
+    // Initialize a new chunked upload - generates unique storage filename
     if (action === "init") {
       const body = await req.json();
       const { fileName, mimeType, totalSize, totalChunks, folderId } = body;
@@ -88,8 +88,14 @@ Deno.serve(async (req) => {
       const uploadId = crypto.randomUUID();
       const now = new Date();
       const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours
+      
+      // Generate the final storage filename upfront (used for direct append)
+      const timestamp = Date.now().toString(16).padStart(16, '0');
+      const randomPart = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+      const ext = fileName.split('.').pop() || '';
+      const storageFileName = `file_${timestamp}${randomPart}${ext ? '.' + ext : ''}`;
 
-      // Store session in database (uploaded_chunks array kept for backward compat but not used)
+      // Store session in database with storage filename
       const { error: insertError } = await supabase
         .from("chunked_upload_sessions")
         .insert({
@@ -99,7 +105,7 @@ Deno.serve(async (req) => {
           mime_type: mimeType || "application/octet-stream",
           total_size: totalSize,
           total_chunks: totalChunks,
-          uploaded_chunks: [], // Legacy, not used anymore
+          uploaded_chunks: [], // Legacy field, not used
           folder_id: folderId || null,
           expires_at: expiresAt.toISOString(),
         });
@@ -112,11 +118,12 @@ Deno.serve(async (req) => {
         );
       }
 
-      console.log(`📦 Initialized chunked upload: ${uploadId} for ${fileName} (${totalChunks} chunks)`);
+      console.log(`📦 Initialized chunked upload: ${uploadId} for ${fileName} -> ${storageFileName} (${totalChunks} chunks)`);
 
       return new Response(
         JSON.stringify({
           uploadId,
+          storageFileName, // Send back for client to use
           chunkSize: CHUNK_SIZE,
           totalChunks,
           expiresAt: expiresAt.toISOString(),
@@ -125,7 +132,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get upload status (for resume) - NOW USES DATABASE-DERIVED PROGRESS
+    // Get upload status (for resume)
     if (action === "status") {
       const uploadId = url.searchParams.get("uploadId");
       
@@ -136,7 +143,6 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Verify session exists and user owns it
       const { data: session, error: fetchError } = await supabase
         .from("chunked_upload_sessions")
         .select("*")
@@ -166,7 +172,6 @@ Deno.serve(async (req) => {
 
       if (progressError) {
         console.error("Failed to get progress:", progressError);
-        // Fallback to legacy array
         return new Response(
           JSON.stringify({
             uploadId: session.upload_id,
@@ -195,12 +200,13 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Upload a chunk - NOW USES ATOMIC INSERT
+    // Upload a chunk - NOW APPENDS DIRECTLY TO FINAL FILE
     if (action === "chunk") {
       const formData = await req.formData();
       const chunk = formData.get("chunk") as File;
       const uploadId = formData.get("uploadId") as string;
       const chunkIndex = parseInt(formData.get("chunkIndex") as string);
+      const storageFileName = formData.get("storageFileName") as string;
 
       if (!chunk || !uploadId || isNaN(chunkIndex)) {
         return new Response(
@@ -238,9 +244,8 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (existingChunk) {
-        console.log(`⏭️ Chunk ${chunkIndex} already uploaded, skipping`);
+        console.log(`⏭️ Chunk ${chunkIndex} already uploaded, skipping VPS upload`);
         
-        // Get current progress
         const { data: skipProgressRaw } = await supabase
           .rpc('get_upload_progress', { p_upload_id: uploadId })
           .single();
@@ -259,37 +264,50 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Upload chunk to VPS
+      // DIRECT APPEND: Upload chunk directly to final file using chunk-append endpoint
       const chunkData = new Uint8Array(await chunk.arrayBuffer());
       const base64Data = uint8ArrayToBase64(chunkData);
 
-      const chunkFileName = `${uploadId}_chunk_${chunkIndex}`;
+      // Use provided storageFileName or generate one
+      const finalFileName = storageFileName || (() => {
+        const timestamp = Date.now().toString(16).padStart(16, '0');
+        const randomPart = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+        const ext = session.file_name.split('.').pop() || '';
+        return `file_${timestamp}${randomPart}${ext ? '.' + ext : ''}`;
+      })();
       
-      const vpsResponse = await fetch(`${VPS_ENDPOINT}/upload-base64`, {
+      const isFirstChunk = chunkIndex === 0;
+      const isLastChunk = chunkIndex === session.total_chunks - 1;
+
+      const vpsResponse = await fetch(`${VPS_ENDPOINT}/chunk-append`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${VPS_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          fileName: chunkFileName,
-          originalName: chunkFileName,
-          mimeType: "application/octet-stream",
+          fileName: finalFileName,
           data: base64Data,
           userId: user.id,
+          chunkIndex,
+          totalChunks: session.total_chunks,
+          isFirstChunk,
+          isLastChunk,
         }),
       });
 
       if (!vpsResponse.ok) {
         const errorText = await vpsResponse.text();
-        console.error(`VPS chunk upload failed: ${errorText}`);
+        console.error(`VPS chunk append failed: ${errorText}`);
         return new Response(
-          JSON.stringify({ error: "Failed to upload chunk" }),
+          JSON.stringify({ error: "Failed to upload chunk", details: errorText }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      // ATOMIC INSERT: Use RPC for race-condition-free chunk recording
+      const vpsResult = await vpsResponse.json();
+
+      // Record chunk in database using atomic RPC
       const { data: recordResultRaw, error: recordError } = await supabase
         .rpc('record_chunk_upload', { 
           p_upload_id: uploadId, 
@@ -301,25 +319,20 @@ Deno.serve(async (req) => {
 
       if (recordError) {
         console.error(`Failed to record chunk: ${recordError.message}`);
-        // Fallback: Direct atomic insert with ON CONFLICT DO NOTHING
-        const { error: directInsertError } = await supabase
+        // Fallback: Direct insert
+        await supabase
           .from("upload_chunks")
           .insert({ upload_id: uploadId, chunk_index: chunkIndex })
           .select()
           .maybeSingle();
 
-        if (directInsertError && !directInsertError.message.includes('duplicate')) {
-          console.error(`Direct insert also failed: ${directInsertError.message}`);
-        }
-
-        // Get progress after insert
         const { data: fallbackProgressRaw } = await supabase
           .rpc('get_upload_progress', { p_upload_id: uploadId })
           .single();
         const fallbackProgress = fallbackProgressRaw as UploadProgress | null;
 
         const progress = fallbackProgress?.progress || 0;
-        console.log(`✅ Chunk ${chunkIndex + 1}/${session.total_chunks} uploaded (${progress.toFixed(1)}%) [fallback]`);
+        console.log(`✅ Chunk ${chunkIndex + 1}/${session.total_chunks} appended (${progress.toFixed(1)}%) [fallback]`);
 
         return new Response(
           JSON.stringify({
@@ -329,13 +342,15 @@ Deno.serve(async (req) => {
             totalChunks: session.total_chunks,
             progress,
             isComplete: fallbackProgress?.is_complete || false,
+            currentFileSize: vpsResult.currentSize,
+            storageFileName: finalFileName,
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
       const progress = recordResult?.progress || 0;
-      console.log(`✅ Chunk ${chunkIndex + 1}/${session.total_chunks} uploaded (${progress.toFixed(1)}%)`);
+      console.log(`✅ Chunk ${chunkIndex + 1}/${session.total_chunks} appended directly (${progress.toFixed(1)}%)`);
 
       return new Response(
         JSON.stringify({
@@ -345,15 +360,17 @@ Deno.serve(async (req) => {
           totalChunks: recordResult?.total_chunks || session.total_chunks,
           progress,
           isComplete: recordResult?.is_complete || false,
+          currentFileSize: vpsResult.currentSize,
+          storageFileName: finalFileName,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Finalize and assemble the file - NOW USES DATABASE-DERIVED COMPLETION CHECK
+    // Finalize - NOW JUST VERIFIES AND CREATES DB RECORD (no chunk retrieval needed!)
     if (action === "finalize") {
       const body = await req.json();
-      const { uploadId } = body;
+      const { uploadId, storageFileName } = body;
 
       if (!uploadId) {
         return new Response(
@@ -382,7 +399,7 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Get accurate progress from normalized table (database-derived, always accurate)
+      // Get progress from database
       const { data: finalProgressRaw, error: progressError } = await supabase
         .rpc('get_upload_progress', { p_upload_id: uploadId })
         .single();
@@ -401,12 +418,12 @@ Deno.serve(async (req) => {
       const totalChunks = finalProgress?.total_chunks || session.total_chunks;
       const uploadedIndices: number[] = finalProgress?.uploaded_indices || [];
 
-      // Check all chunks are uploaded (database-derived, no race conditions)
+      // Check all chunks are recorded
       if (uploadedCount !== totalChunks) {
         const missingChunks = Array.from({ length: totalChunks }, (_, i) => i)
           .filter(i => !uploadedIndices.includes(i));
         
-        console.log(`❌ Finalization failed: ${uploadedCount}/${totalChunks} chunks uploaded. Missing: ${missingChunks.join(', ')}`);
+        console.log(`❌ Finalization failed: ${uploadedCount}/${totalChunks} chunks recorded. Missing: ${missingChunks.join(', ')}`);
         
         return new Response(
           JSON.stringify({ 
@@ -419,126 +436,44 @@ Deno.serve(async (req) => {
         );
       }
 
-      console.log(`🔧 Assembling ${totalChunks} chunks for ${session.file_name}...`);
+      console.log(`🔧 Verifying file ${storageFileName} on VPS...`);
 
-      // Helper function to fetch chunk with retries
-      const fetchChunkWithRetry = async (chunkIndex: number, maxRetries = 3): Promise<Uint8Array> => {
-        const chunkFileName = `${uploadId}_chunk_${chunkIndex}`;
-        let lastError: Error | null = null;
-        
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          try {
-            const vpsResponse = await fetch(`${VPS_ENDPOINT}/files/${user.id}/${chunkFileName}`, {
-              headers: { "Authorization": `Bearer ${VPS_API_KEY}` },
-            });
-
-            if (vpsResponse.ok) {
-              const chunkData = new Uint8Array(await vpsResponse.arrayBuffer());
-              if (attempt > 1) {
-                console.log(`✅ Chunk ${chunkIndex} retrieved on attempt ${attempt}`);
-              }
-              return chunkData;
-            }
-            
-            const statusText = vpsResponse.status;
-            lastError = new Error(`VPS returned ${statusText}`);
-            console.warn(`⚠️ Chunk ${chunkIndex} fetch attempt ${attempt}/${maxRetries} failed: ${statusText}`);
-            
-            if (attempt < maxRetries) {
-              // Exponential backoff: 1s, 2s, 4s
-              await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
-            }
-          } catch (e) {
-            lastError = e instanceof Error ? e : new Error(String(e));
-            console.warn(`⚠️ Chunk ${chunkIndex} fetch attempt ${attempt}/${maxRetries} error: ${lastError.message}`);
-            
-            if (attempt < maxRetries) {
-              await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
-            }
-          }
-        }
-        
-        throw new Error(`Failed to retrieve chunk ${chunkIndex} after ${maxRetries} attempts: ${lastError?.message}`);
-      };
-
-      // Fetch and combine all chunks with retry logic
-      const chunks: Uint8Array[] = [];
-      let totalBytes = 0;
-      const failedChunks: number[] = [];
-
-      for (let i = 0; i < totalChunks; i++) {
-        try {
-          const chunkData = await fetchChunkWithRetry(i);
-          chunks.push(chunkData);
-          totalBytes += chunkData.length;
-          
-          if (i % 10 === 0) {
-            console.log(`📦 Fetched ${i + 1}/${totalChunks} chunks...`);
-          }
-        } catch (e) {
-          console.error(`❌ Failed to fetch chunk ${i}: ${e instanceof Error ? e.message : e}`);
-          failedChunks.push(i);
-        }
-      }
-
-      // If any chunks failed, return detailed error
-      if (failedChunks.length > 0) {
-        console.error(`❌ ${failedChunks.length} chunks failed to retrieve: ${failedChunks.join(', ')}`);
-        return new Response(
-          JSON.stringify({ 
-            error: `Failed to retrieve ${failedChunks.length} chunk(s)`,
-            failedChunks: failedChunks,
-            message: "Some chunks could not be retrieved from storage. The upload may need to be retried."
-          }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Combine chunks
-      const combinedData = new Uint8Array(totalBytes);
-      let offset = 0;
-      for (const chunk of chunks) {
-        combinedData.set(chunk, offset);
-        offset += chunk.length;
-      }
-
-      console.log(`📦 Combined file size: ${totalBytes} bytes`);
-
-      // Upload final combined file
-      const base64Data = uint8ArrayToBase64(combinedData);
-      const timestamp = Date.now().toString(16).padStart(16, '0');
-      const randomPart = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-      const ext = session.file_name.split('.').pop() || '';
-      const storageName = `file_${timestamp}${randomPart}${ext ? '.' + ext : ''}`;
-
-      const vpsResponse = await fetch(`${VPS_ENDPOINT}/upload-base64`, {
+      // Verify the file exists and has correct size on VPS
+      const verifyResponse = await fetch(`${VPS_ENDPOINT}/verify-file`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${VPS_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          fileName: storageName,
-          originalName: session.file_name,
-          mimeType: session.mime_type,
-          data: base64Data,
+          fileName: storageFileName,
           userId: user.id,
+          expectedSize: session.total_size,
         }),
       });
 
-      if (!vpsResponse.ok) {
-        const errorText = await vpsResponse.text();
-        console.error(`VPS final upload failed: ${errorText}`);
+      if (!verifyResponse.ok) {
+        const errorText = await verifyResponse.text();
+        console.error(`VPS verification failed: ${errorText}`);
         return new Response(
-          JSON.stringify({ error: "Failed to upload final file" }),
+          JSON.stringify({ error: "File verification failed on storage server" }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      const vpsResult = await vpsResponse.json();
-      const storagePath = vpsResult.path;
+      const verifyResult = await verifyResponse.json();
+      
+      if (!verifyResult.exists) {
+        console.error(`❌ File not found on VPS: ${storageFileName}`);
+        return new Response(
+          JSON.stringify({ error: "File not found on storage server" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
 
-      // Create file record in database
+      // File exists on VPS - create database record
+      const storagePath = `${user.id}/${storageFileName}`;
+
       const { data: fileRecord, error: dbError } = await supabase
         .from("files")
         .insert({
@@ -547,7 +482,7 @@ Deno.serve(async (req) => {
           name: session.file_name,
           original_name: session.file_name,
           mime_type: session.mime_type,
-          size_bytes: totalBytes,
+          size_bytes: verifyResult.size || session.total_size,
           storage_path: storagePath,
         })
         .select()
@@ -561,43 +496,33 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Clean up chunks and session (fire and forget)
-      const cleanupChunks = async () => {
-        for (let i = 0; i < totalChunks; i++) {
-          const chunkFileName = `${uploadId}_chunk_${i}`;
-          try {
-            await fetch(`${VPS_ENDPOINT}/delete`, {
-              method: "DELETE",
-              headers: {
-                "Authorization": `Bearer ${VPS_API_KEY}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ path: `${user.id}/${chunkFileName}` }),
-            });
-          } catch (e) {
-            console.error(`Failed to delete chunk ${i}:`, e);
-          }
-        }
-        
-        // Delete session from database (this will cascade-delete upload_chunks via trigger)
+      // Clean up session (fire and forget)
+      const cleanup = async () => {
+        // Delete upload_chunks records
+        await supabase
+          .from("upload_chunks")
+          .delete()
+          .eq("upload_id", uploadId);
+          
+        // Delete session
         await supabase
           .from("chunked_upload_sessions")
           .delete()
           .eq("upload_id", uploadId);
           
-        console.log(`🧹 Cleaned up ${totalChunks} chunks for upload ${uploadId}`);
+        console.log(`🧹 Cleaned up session for upload ${uploadId}`);
       };
       
-      // Start cleanup in background
-      cleanupChunks().catch(console.error);
+      cleanup().catch(console.error);
 
-      console.log(`✅ Chunked upload complete: ${session.file_name}`);
+      console.log(`✅ Chunked upload complete: ${session.file_name} (${verifyResult.size} bytes)`);
 
       return new Response(
         JSON.stringify({
           success: true,
           file: fileRecord,
           storageType: "vps",
+          fileSize: verifyResult.size,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
