@@ -17,3 +17,6 @@ export {
 export { IosModal } from './IosModal';
 export { IosSheet } from './IosSheet';
 export { IosActionSheet } from './IosActionSheet';
+export { IosSegmentedControl } from './IosSegmentedControl';
+export { IosToggle } from './IosToggle';
+export { IosSlider } from './IosSlider';
