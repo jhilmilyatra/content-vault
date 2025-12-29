@@ -17,6 +17,10 @@ export default {
         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
+      letterSpacing: {
+        tighter: '-0.03em',
+        tightest: '-0.05em',
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

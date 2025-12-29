@@ -120,6 +120,21 @@
     background-clip: text;
   }
 
+  /* Apple-style Glass Card */
+  .glass-card {
+    background: hsl(0 0% 0% / 0.4);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid hsl(0 0% 100% / 0.08);
+    border-radius: 1.25rem;
+    transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .glass-card:hover {
+    border-color: hsl(0 0% 100% / 0.12);
+    background: hsl(0 0% 100% / 0.03);
+  }
+
   /* Premium Glass Effect - Selective Use Only */
   .glass {
     background: var(--glass-bg);
