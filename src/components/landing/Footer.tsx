@@ -1,72 +1,61 @@
-import { Cloud } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Github, Twitter, Instagram } from "lucide-react";
+import Magnetic from "./Magnetic";
 
 const Footer = () => {
   return (
-    <footer className="border-t border-border py-12 px-4">
+    <footer className="relative pt-32 pb-12 px-6 border-t border-white/5">
       <div className="container max-w-6xl mx-auto">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
-          {/* Brand */}
-          <div className="md:col-span-1">
-            <Link to="/" className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center">
-                <Cloud className="w-5 h-5 text-primary-foreground" />
-              </div>
-              <span className="text-lg font-bold text-foreground">CloudVault</span>
-            </Link>
-            <p className="text-sm text-muted-foreground">
-              Enterprise-grade content distribution platform with multi-tenant architecture.
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-12 mb-24">
+          <div className="col-span-2">
+            <h3 className="text-xl font-bold tracking-tighter mb-4">CloudVault</h3>
+            <p className="text-white/50 text-sm max-w-xs leading-relaxed font-light">
+              High-performance content distribution infrastructure. 
+              Engineered for absolute security and sub-millisecond sync.
             </p>
           </div>
-
-          {/* Product */}
-          <div>
-            <h4 className="font-semibold text-foreground mb-4">Product</h4>
-            <ul className="space-y-2">
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Features</a></li>
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Pricing</a></li>
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Security</a></li>
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Enterprise</a></li>
-            </ul>
+          
+          <div className="flex flex-col gap-3">
+            <span className="text-[10px] uppercase tracking-widest font-bold text-white/20 mb-2">Platform</span>
+            <a href="#features" className="text-sm text-white/50 hover:text-white transition-colors font-light">Features</a>
+            <a href="#pricing" className="text-sm text-white/50 hover:text-white transition-colors font-light">Infrastructure</a>
+            <a href="#" className="text-sm text-white/50 hover:text-white transition-colors font-light">Security</a>
           </div>
 
-          {/* Resources */}
-          <div>
-            <h4 className="font-semibold text-foreground mb-4">Resources</h4>
-            <ul className="space-y-2">
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Documentation</a></li>
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">API Reference</a></li>
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Status</a></li>
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Changelog</a></li>
-            </ul>
-          </div>
-
-          {/* Legal */}
-          <div>
-            <h4 className="font-semibold text-foreground mb-4">Legal</h4>
-            <ul className="space-y-2">
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Privacy Policy</a></li>
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Terms of Service</a></li>
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">DMCA</a></li>
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">GDPR</a></li>
-            </ul>
+          <div className="flex flex-col gap-3">
+            <span className="text-[10px] uppercase tracking-widest font-bold text-white/20 mb-2">Developer</span>
+            <a href="https://instagram.com/theriturajprince" target="_blank" rel="noopener noreferrer" className="text-sm text-white/50 hover:text-white transition-colors font-light">Instagram</a>
+            <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="text-sm text-white/50 hover:text-white transition-colors font-light">GitHub</a>
+            <a href="https://t.me/riturajprince" target="_blank" rel="noopener noreferrer" className="text-sm text-white/50 hover:text-white transition-colors font-light">Telegram</a>
           </div>
         </div>
 
-        <div className="border-t border-border pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-sm text-muted-foreground">
-            © 2024 CloudVault. All rights reserved.
-          </p>
-          <div className="flex items-center gap-4">
-            <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              Twitter
-            </a>
-            <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              GitHub
-            </a>
-            <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              Discord
-            </a>
+        <div className="flex flex-col md:flex-row justify-between items-center pt-8 border-t border-white/5 gap-6">
+          <div className="flex items-center gap-6 text-[10px] tracking-widest text-white/20 uppercase font-bold">
+            <span>© 2025 CloudVault</span>
+            <span className="hidden md:block">///</span>
+            <span>All Rights Reserved</span>
+          </div>
+          
+          <div className="flex items-center gap-6 opacity-30 hover:opacity-100 transition-opacity duration-500">
+            <Magnetic>
+              <a href="https://github.com" target="_blank" rel="noopener noreferrer">
+                <Github className="w-4 h-4 cursor-pointer" strokeWidth={1.5} />
+              </a>
+            </Magnetic>
+            <Magnetic>
+              <a href="https://twitter.com" target="_blank" rel="noopener noreferrer">
+                <Twitter className="w-4 h-4 cursor-pointer" strokeWidth={1.5} />
+              </a>
+            </Magnetic>
+            <Magnetic>
+              <a href="https://instagram.com/theriturajprince" target="_blank" rel="noopener noreferrer">
+                <Instagram className="w-4 h-4 cursor-pointer" strokeWidth={1.5} />
+              </a>
+            </Magnetic>
+            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Systems Nominal
+            </div>
           </div>
         </div>
       </div>
