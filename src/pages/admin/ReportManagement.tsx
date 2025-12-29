@@ -10,13 +10,11 @@ import {
   Filter,
   CheckCircle,
   XCircle,
-  Clock,
   Eye,
   AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -25,16 +23,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { GlassCard, GlassCardHeader } from "@/components/ios/GlassCard";
+import { SkeletonList } from "@/components/ios/SkeletonLoader";
+import { IosSheet } from "@/components/ios/IosSheet";
+import { staggerContainer, staggerItem } from "@/lib/motion";
+import { lightHaptic } from "@/lib/haptics";
 
 interface Report {
   id: string;
@@ -55,7 +50,7 @@ const ReportManagement = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
+  const [resolveSheetOpen, setResolveSheetOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [resolution, setResolution] = useState<"resolved" | "dismissed">("resolved");
   const [resolutionNotes, setResolutionNotes] = useState("");
@@ -76,7 +71,6 @@ const ReportManagement = () => {
 
       if (error) throw error;
 
-      // Fetch related user emails
       const userIds = new Set<string>();
       data?.forEach((r) => {
         if (r.reporter_id) userIds.add(r.reporter_id);
@@ -134,7 +128,6 @@ const ReportManagement = () => {
 
       if (error) throw error;
 
-      // Log audit
       await supabase.from("audit_logs").insert({
         actor_id: user?.id,
         target_user_id: selectedReport.reported_user_id,
@@ -145,7 +138,7 @@ const ReportManagement = () => {
       });
 
       toast({ title: `Report ${resolution}` });
-      setResolveDialogOpen(false);
+      setResolveSheetOpen(false);
       setSelectedReport(null);
       setResolutionNotes("");
       fetchReports();
@@ -160,6 +153,7 @@ const ReportManagement = () => {
   };
 
   const handleStartReview = async (report: Report) => {
+    lightHaptic();
     try {
       const { error } = await supabase
         .from("reports")
@@ -181,7 +175,11 @@ const ReportManagement = () => {
       resolved: "bg-emerald-500/20 text-emerald-500 border-emerald-500/30",
       dismissed: "bg-muted text-muted-foreground border-muted",
     };
-    return <Badge className={styles[status] || ""}>{status}</Badge>;
+    return (
+      <Badge className={`${styles[status] || ""} rounded-full px-2.5 text-xs font-medium border`}>
+        {status}
+      </Badge>
+    );
   };
 
   const getTypeBadge = (type: string) => {
@@ -192,7 +190,11 @@ const ReportManagement = () => {
       inappropriate: "bg-rose-500/20 text-rose-400",
       other: "bg-muted text-muted-foreground",
     };
-    return <Badge variant="outline" className={styles[type] || ""}>{type}</Badge>;
+    return (
+      <Badge variant="outline" className={`${styles[type] || ""} rounded-full px-2.5 text-xs`}>
+        {type}
+      </Badge>
+    );
   };
 
   const filteredReports = reports.filter((r) => {
@@ -206,176 +208,195 @@ const ReportManagement = () => {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <motion.div 
+        className="space-y-6 px-1"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+      >
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <FileWarning className="w-6 h-6 text-amber-500" />
+        <div className="animate-fade-up">
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl ios-glass flex items-center justify-center">
+              <FileWarning className="w-5 h-5 text-amber-500" />
+            </div>
             Report Management
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-muted-foreground mt-1 ml-13">
             Review and resolve user reports
           </p>
         </div>
 
         {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <div className="flex gap-3 animate-fade-up" style={{ animationDelay: "0.1s" }}>
+          <div className="relative flex-1">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Search reports..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
+              className="pl-11 h-12 rounded-2xl ios-glass border-0 text-base"
             />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[150px]">
+            <SelectTrigger className="w-[130px] h-12 rounded-2xl ios-glass border-0">
               <Filter className="w-4 h-4 mr-2" />
               <SelectValue placeholder="Status" />
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="reviewing">Reviewing</SelectItem>
-              <SelectItem value="resolved">Resolved</SelectItem>
-              <SelectItem value="dismissed">Dismissed</SelectItem>
+            <SelectContent className="ios-glass-elevated rounded-2xl">
+              <SelectItem value="all" className="rounded-xl">All</SelectItem>
+              <SelectItem value="pending" className="rounded-xl">Pending</SelectItem>
+              <SelectItem value="reviewing" className="rounded-xl">Reviewing</SelectItem>
+              <SelectItem value="resolved" className="rounded-xl">Resolved</SelectItem>
+              <SelectItem value="dismissed" className="rounded-xl">Dismissed</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         {/* Reports List */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Reports ({filteredReports.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <GlassCard variant="elevated" className="animate-fade-up" style={{ animationDelay: "0.15s" }}>
+          <GlassCardHeader
+            title={`Reports (${filteredReports.length})`}
+            icon={<FileWarning className="w-5 h-5" />}
+          />
+          
+          <div className="p-4">
             {loading ? (
-              <div className="text-center py-8 text-muted-foreground">
-                Loading reports...
-              </div>
+              <SkeletonList />
             ) : filteredReports.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <AlertTriangle className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                No reports found
+              <div className="text-center py-12 text-muted-foreground">
+                <AlertTriangle className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                <p>No reports found</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {filteredReports.map((report, index) => (
+              <motion.div 
+                className="space-y-3"
+                variants={staggerContainer}
+                initial="hidden"
+                animate="show"
+              >
+                {filteredReports.map((report) => (
                   <motion.div
                     key={report.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.03 }}
-                    className="p-4 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
+                    variants={staggerItem}
+                    whileTap={{ scale: 0.98 }}
+                    className="p-4 rounded-2xl ios-glass-subtle hover:bg-muted/30 transition-all duration-200"
                   >
-                    <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap mb-2">
                           {getTypeBadge(report.report_type)}
                           {getStatusBadge(report.status)}
                         </div>
-                        <p className="text-sm text-foreground mb-2">
+                        <p className="text-sm text-foreground mb-2 line-clamp-2">
                           {report.description}
                         </p>
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                          <span>Reporter: {report.reporter_email || "Anonymous"}</span>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                          <span>From: {report.reporter_email || "Anonymous"}</span>
                           {report.reported_user_email && (
-                            <span>Reported: {report.reported_user_email}</span>
+                            <span>• {report.reported_user_email}</span>
                           )}
-                          <span>
-                            {new Date(report.created_at).toLocaleDateString()}
-                          </span>
+                          <span>• {new Date(report.created_at).toLocaleDateString()}</span>
                         </div>
                         {report.resolution_notes && (
-                          <p className="text-xs text-muted-foreground mt-2 italic">
-                            Resolution: {report.resolution_notes}
+                          <p className="text-xs text-muted-foreground mt-2 italic p-2 rounded-lg bg-muted/30">
+                            {report.resolution_notes}
                           </p>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
+                    </div>
+                    
+                    {/* Actions */}
+                    {(report.status === "pending" || report.status === "reviewing") && (
+                      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/20">
                         {report.status === "pending" && (
                           <Button
-                            variant="outline"
+                            variant="ghost"
                             size="sm"
                             onClick={() => handleStartReview(report)}
+                            className="rounded-xl h-9 text-xs flex-1"
                           >
-                            <Eye className="w-4 h-4 mr-1" />
+                            <Eye className="w-3.5 h-3.5 mr-1.5" />
                             Review
                           </Button>
                         )}
-                        {(report.status === "pending" || report.status === "reviewing") && (
-                          <>
-                            <Button
-                              variant="default"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedReport(report);
-                                setResolution("resolved");
-                                setResolveDialogOpen(true);
-                              }}
-                            >
-                              <CheckCircle className="w-4 h-4 mr-1" />
-                              Resolve
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedReport(report);
-                                setResolution("dismissed");
-                                setResolveDialogOpen(true);
-                              }}
-                            >
-                              <XCircle className="w-4 h-4 mr-1" />
-                              Dismiss
-                            </Button>
-                          </>
-                        )}
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            lightHaptic();
+                            setSelectedReport(report);
+                            setResolution("resolved");
+                            setResolveSheetOpen(true);
+                          }}
+                          className="rounded-xl h-9 text-xs flex-1"
+                        >
+                          <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
+                          Resolve
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            lightHaptic();
+                            setSelectedReport(report);
+                            setResolution("dismissed");
+                            setResolveSheetOpen(true);
+                          }}
+                          className="rounded-xl h-9 text-xs flex-1"
+                        >
+                          <XCircle className="w-3.5 h-3.5 mr-1.5" />
+                          Dismiss
+                        </Button>
                       </div>
-                    </div>
+                    )}
                   </motion.div>
                 ))}
-              </div>
+              </motion.div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </GlassCard>
 
-        {/* Resolve Dialog */}
-        <Dialog open={resolveDialogOpen} onOpenChange={setResolveDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {resolution === "resolved" ? "Resolve Report" : "Dismiss Report"}
-              </DialogTitle>
-              <DialogDescription>
-                Please provide notes for this action.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-4">
-              <Label htmlFor="notes">Resolution Notes *</Label>
-              <Textarea
-                id="notes"
-                placeholder="Enter notes about the resolution..."
-                value={resolutionNotes}
-                onChange={(e) => setResolutionNotes(e.target.value)}
-                className="mt-2"
-              />
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setResolveDialogOpen(false)}>
+        {/* Resolve Sheet */}
+        <IosSheet
+          open={resolveSheetOpen}
+          onClose={() => setResolveSheetOpen(false)}
+          title={resolution === "resolved" ? "Resolve Report" : "Dismiss Report"}
+          description="Please provide notes for this action."
+          footer={
+            <>
+              <Button 
+                variant="outline" 
+                onClick={() => setResolveSheetOpen(false)}
+                className="w-full rounded-xl h-12"
+              >
                 Cancel
               </Button>
               <Button
                 variant={resolution === "resolved" ? "default" : "secondary"}
                 onClick={handleResolveReport}
+                className="w-full rounded-xl h-12"
               >
-                {resolution === "resolved" ? "Resolve" : "Dismiss"}
+                {resolution === "resolved" ? "Resolve Report" : "Dismiss Report"}
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="notes" className="text-sm font-medium">
+                Resolution Notes *
+              </Label>
+              <Textarea
+                id="notes"
+                placeholder="Enter notes about the resolution..."
+                value={resolutionNotes}
+                onChange={(e) => setResolutionNotes(e.target.value)}
+                className="mt-2 rounded-xl ios-glass border-0 min-h-[120px]"
+              />
+            </div>
+          </div>
+        </IosSheet>
+      </motion.div>
     </DashboardLayout>
   );
 };

@@ -14,3 +14,6 @@ export {
   SkeletonChatList,
   SkeletonButton
 } from './SkeletonLoader';
+export { IosModal } from './IosModal';
+export { IosSheet } from './IosSheet';
+export { IosActionSheet } from './IosActionSheet';
