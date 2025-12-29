@@ -25,6 +25,7 @@ import {
 } from "@/lib/fileService";
 import UploadProgressBar from "@/components/files/UploadProgressBar";
 import UploadFAB from "@/components/files/UploadFAB";
+import { UploadZone } from "@/components/files/UploadZone";
 import {
   FolderOpen,
   FileVideo,
@@ -747,42 +748,26 @@ const FileManager = () => {
             <motion.div 
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="text-center py-20"
+              className="py-8"
             >
-              <div className="w-24 h-24 mx-auto mb-6 rounded-3xl bg-gradient-to-br from-white/[0.05] to-white/[0.02] border border-white/[0.08] flex items-center justify-center">
-                <FolderOpen className="w-12 h-12 text-white/20" />
-              </div>
-              <h3 className="text-xl font-semibold text-white mb-2 font-outfit">No files yet</h3>
-              <p className="text-white/40 mb-6 max-w-sm mx-auto">
-                Upload files or create a folder to get started with your premium storage
-              </p>
-              <div className="flex items-center justify-center gap-3">
+              {/* Upload Zone as Empty State */}
+              <UploadZone 
+                onFilesSelected={processFileUpload}
+                disabled={uploading}
+                className="min-h-[280px]"
+              />
+              
+              {/* Create Folder Option */}
+              <div className="mt-6 text-center">
+                <p className="text-white/40 text-sm mb-4">or start organizing</p>
                 <Button 
                   variant="outline" 
                   onClick={() => setCreateFolderOpen(true)}
                   className="rounded-xl border-white/10 text-white/70 hover:text-white hover:bg-white/10"
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  New Folder
+                  Create a Folder
                 </Button>
-                <label>
-                  <Button 
-                    className="cursor-pointer rounded-xl bg-gradient-to-r from-gold to-gold-light text-black font-semibold" 
-                    asChild
-                  >
-                    <span>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Upload Files
-                    </span>
-                  </Button>
-                  <input
-                    type="file"
-                    multiple
-                    className="hidden"
-                    onChange={handleFileUpload}
-                    disabled={uploading}
-                  />
-                </label>
               </div>
             </motion.div>
           ) : (
