@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
+import { motion } from "framer-motion";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
+import { PageTransition, staggerContainer, staggerItem } from "@/components/ui/PageTransition";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Search, Ban, UserX, Users, Shield, RefreshCw, KeyRound, Loader2 } from "lucide-react";
+import { Search, Ban, UserX, Users, Shield, RefreshCw, KeyRound, Loader2, UserCheck, FolderKey } from "lucide-react";
 import { format } from "date-fns";
 
 interface GuestWithAccess {
@@ -232,180 +234,223 @@ const OwnerGuestControls = () => {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Guest Controls</h1>
-          <p className="text-muted-foreground">
+      <PageTransition className="space-y-6">
+        {/* Header */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-white via-white/90 to-white/70 bg-clip-text text-transparent flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/20">
+              <Shield className="w-6 h-6 text-amber-400" />
+            </div>
+            Guest Controls
+          </h1>
+          <p className="text-white/50 mt-1">
             View and manage all guests across all members
           </p>
-        </div>
+        </motion.div>
 
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Guests</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{uniqueGuests.length}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Accesses</CardTitle>
-              <Shield className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{guests.length}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Banned</CardTitle>
-              <Ban className="h-4 w-4 text-destructive" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-destructive">{bannedCount}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Restricted</CardTitle>
-              <UserX className="h-4 w-4 text-yellow-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-yellow-500">{restrictedCount}</div>
-            </CardContent>
-          </Card>
-        </div>
+        <motion.div 
+          variants={staggerContainer}
+          initial="hidden"
+          animate="show"
+          className="grid gap-4 md:grid-cols-4"
+        >
+          <motion.div variants={staggerItem}>
+            <Card className="bg-white/[0.02] backdrop-blur-xl border-white/10">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-white/70">Total Guests</CardTitle>
+                <div className="p-2 rounded-lg bg-cyan-500/20">
+                  <Users className="h-4 w-4 text-cyan-400" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-white">{uniqueGuests.length}</div>
+              </CardContent>
+            </Card>
+          </motion.div>
+          <motion.div variants={staggerItem}>
+            <Card className="bg-white/[0.02] backdrop-blur-xl border-white/10">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-white/70">Total Accesses</CardTitle>
+                <div className="p-2 rounded-lg bg-blue-500/20">
+                  <FolderKey className="h-4 w-4 text-blue-400" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-white">{guests.length}</div>
+              </CardContent>
+            </Card>
+          </motion.div>
+          <motion.div variants={staggerItem}>
+            <Card className="bg-white/[0.02] backdrop-blur-xl border-white/10">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-white/70">Banned</CardTitle>
+                <div className="p-2 rounded-lg bg-red-500/20">
+                  <Ban className="h-4 w-4 text-red-400" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-red-400">{bannedCount}</div>
+              </CardContent>
+            </Card>
+          </motion.div>
+          <motion.div variants={staggerItem}>
+            <Card className="bg-white/[0.02] backdrop-blur-xl border-white/10">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-white/70">Restricted</CardTitle>
+                <div className="p-2 rounded-lg bg-yellow-500/20">
+                  <UserX className="h-4 w-4 text-yellow-400" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-yellow-400">{restrictedCount}</div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </motion.div>
 
         {/* Search and Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle>All Guests</CardTitle>
-            <CardDescription>
-              Manage guests from all members
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-4 mb-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by guest, member, or folder..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                />
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <Card className="bg-white/[0.02] backdrop-blur-xl border-white/10">
+            <CardHeader>
+              <CardTitle className="text-white">All Guests</CardTitle>
+              <CardDescription className="text-white/50">
+                Manage guests from all members
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-4 mb-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
+                  <Input
+                    placeholder="Search by guest, member, or folder..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/30"
+                  />
+                </div>
+                <Button 
+                  variant="outline" 
+                  onClick={fetchGuests}
+                  className="border-white/10 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh
+                </Button>
               </div>
-              <Button variant="outline" onClick={fetchGuests}>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Refresh
-              </Button>
-            </div>
 
-            {loading ? (
-              <div className="text-center py-8 text-muted-foreground">Loading guests...</div>
-            ) : filteredGuests.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">No guests found</div>
-            ) : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Guest</TableHead>
-                      <TableHead>Member</TableHead>
-                      <TableHead>Folder</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Joined</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredGuests.map((guest, idx) => (
-                      <TableRow key={`${guest.id}-${guest.member_id}-${idx}`}>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">{guest.full_name || "No name"}</div>
-                            <div className="text-sm text-muted-foreground">{guest.email}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">{guest.member_name}</div>
-                            <div className="text-sm text-muted-foreground">{guest.member_email}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell>{guest.folder_name}</TableCell>
-                        <TableCell>
-                          <div className="flex gap-1 flex-wrap">
-                            {guest.is_banned && (
-                              <Badge variant="destructive">Banned</Badge>
-                            )}
-                            {guest.is_restricted && (
-                              <Badge variant="secondary">Restricted</Badge>
-                            )}
-                            {!guest.is_banned && !guest.is_restricted && (
-                              <Badge variant="outline">Active</Badge>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {format(new Date(guest.created_at), "MMM d, yyyy")}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              variant={guest.is_banned ? "outline" : "destructive"}
-                              size="sm"
-                              onClick={() => {
-                                setSelectedGuest(guest);
-                                setBanDialogOpen(true);
-                              }}
-                            >
-                              <Ban className="h-4 w-4 mr-1" />
-                              {guest.is_banned ? "Unban" : "Ban"}
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedGuest(guest);
-                                setResetPasswordDialogOpen(true);
-                              }}
-                            >
-                              <KeyRound className="h-4 w-4 mr-1" />
-                              Reset PW
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleRemoveAccess(guest)}
-                            >
-                              <UserX className="h-4 w-4 mr-1" />
-                              Remove
-                            </Button>
-                          </div>
-                        </TableCell>
+              {loading ? (
+                <div className="text-center py-8 text-white/50">Loading guests...</div>
+              ) : filteredGuests.length === 0 ? (
+                <div className="text-center py-8 text-white/50">No guests found</div>
+              ) : (
+                <div className="rounded-lg border border-white/10 overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-white/10 hover:bg-transparent">
+                        <TableHead className="text-white/60">Guest</TableHead>
+                        <TableHead className="text-white/60">Member</TableHead>
+                        <TableHead className="text-white/60">Folder</TableHead>
+                        <TableHead className="text-white/60">Status</TableHead>
+                        <TableHead className="text-white/60">Joined</TableHead>
+                        <TableHead className="text-right text-white/60">Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredGuests.map((guest, idx) => (
+                        <TableRow key={`${guest.id}-${guest.member_id}-${idx}`} className="border-white/10 hover:bg-white/5">
+                          <TableCell>
+                            <div>
+                              <div className="font-medium text-white">{guest.full_name || "No name"}</div>
+                              <div className="text-sm text-white/50">{guest.email}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium text-white/80">{guest.member_name}</div>
+                              <div className="text-sm text-white/50">{guest.member_email}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-white/70">{guest.folder_name}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-1 flex-wrap">
+                              {guest.is_banned && (
+                                <Badge className="bg-red-500/20 text-red-400 border-red-500/30">Banned</Badge>
+                              )}
+                              {guest.is_restricted && (
+                                <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">Restricted</Badge>
+                              )}
+                              {!guest.is_banned && !guest.is_restricted && (
+                                <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Active</Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-white/60">
+                            {format(new Date(guest.created_at), "MMM d, yyyy")}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedGuest(guest);
+                                  setBanDialogOpen(true);
+                                }}
+                                className={guest.is_banned 
+                                  ? "text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10" 
+                                  : "text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                                }
+                              >
+                                {guest.is_banned ? <UserCheck className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedGuest(guest);
+                                  setResetPasswordDialogOpen(true);
+                                }}
+                                className="text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
+                              >
+                                <KeyRound className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRemoveAccess(guest)}
+                                className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/10"
+                              >
+                                <UserX className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      </PageTransition>
 
       {/* Ban Dialog */}
       <Dialog open={banDialogOpen} onOpenChange={setBanDialogOpen}>
-        <DialogContent>
+        <DialogContent className="bg-black/90 backdrop-blur-xl border-white/10">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="text-white">
               {selectedGuest?.is_banned ? "Unban Guest" : "Ban Guest"}
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-white/50">
               {selectedGuest?.is_banned
                 ? `Are you sure you want to unban ${selectedGuest?.email}?`
                 : `This will prevent ${selectedGuest?.email} from accessing any shared folders.`}
@@ -413,21 +458,29 @@ const OwnerGuestControls = () => {
           </DialogHeader>
           {!selectedGuest?.is_banned && (
             <div className="space-y-2">
-              <label className="text-sm font-medium">Reason (optional)</label>
+              <label className="text-sm font-medium text-white/70">Reason (optional)</label>
               <Textarea
                 value={banReason}
                 onChange={(e) => setBanReason(e.target.value)}
                 placeholder="Enter ban reason..."
+                className="bg-white/5 border-white/10 text-white placeholder:text-white/30"
               />
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setBanDialogOpen(false)}>
+            <Button 
+              variant="outline" 
+              onClick={() => setBanDialogOpen(false)}
+              className="border-white/10 text-white/70"
+            >
               Cancel
             </Button>
             <Button
-              variant={selectedGuest?.is_banned ? "default" : "destructive"}
               onClick={handleBanGuest}
+              className={selectedGuest?.is_banned 
+                ? "bg-emerald-500 hover:bg-emerald-400" 
+                : "bg-red-500 hover:bg-red-400"
+              }
             >
               {selectedGuest?.is_banned ? "Unban" : "Ban"}
             </Button>
@@ -437,27 +490,36 @@ const OwnerGuestControls = () => {
 
       {/* Reset Password Dialog */}
       <Dialog open={resetPasswordDialogOpen} onOpenChange={setResetPasswordDialogOpen}>
-        <DialogContent>
+        <DialogContent className="bg-black/90 backdrop-blur-xl border-white/10">
           <DialogHeader>
-            <DialogTitle>Reset Guest Password</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-white">Reset Guest Password</DialogTitle>
+            <DialogDescription className="text-white/50">
               Set a new password for {selectedGuest?.email}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <label className="text-sm font-medium">New Password</label>
+            <label className="text-sm font-medium text-white/70">New Password</label>
             <Input
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="Enter new password (min 6 characters)"
+              className="bg-white/5 border-white/10 text-white placeholder:text-white/30"
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setResetPasswordDialogOpen(false)}>
+            <Button 
+              variant="outline" 
+              onClick={() => setResetPasswordDialogOpen(false)}
+              className="border-white/10 text-white/70"
+            >
               Cancel
             </Button>
-            <Button onClick={handleResetPassword} disabled={resetting || newPassword.length < 6}>
+            <Button 
+              onClick={handleResetPassword} 
+              disabled={resetting || newPassword.length < 6}
+              className="bg-gradient-to-r from-cyan-500 to-blue-500"
+            >
               {resetting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Reset Password
             </Button>

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
+import { motion } from "framer-motion";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
+import { PageTransition, staggerContainer, staggerItem } from "@/components/ui/PageTransition";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -347,190 +349,223 @@ const OwnerMemberChat = () => {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Member Chat</h1>
-          <p className="text-muted-foreground">
+      <PageTransition className="space-y-6">
+        {/* Header */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-white via-white/90 to-white/70 bg-clip-text text-transparent flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/20">
+              <MessageSquare className="w-6 h-6 text-violet-400" />
+            </div>
+            Member Chat
+          </h1>
+          <p className="text-white/50 mt-1">
             Communicate with your members
           </p>
-        </div>
+        </motion.div>
 
         {/* Stats */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Members</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{members.length}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Unread Messages</CardTitle>
-              <MessageSquare className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{totalUnread}</div>
-            </CardContent>
-          </Card>
-        </div>
+        <motion.div 
+          variants={staggerContainer}
+          initial="hidden"
+          animate="show"
+          className="grid gap-4 md:grid-cols-2"
+        >
+          <motion.div variants={staggerItem}>
+            <Card className="bg-white/[0.02] backdrop-blur-xl border-white/10">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-white/70">Total Members</CardTitle>
+                <div className="p-2 rounded-lg bg-cyan-500/20">
+                  <Users className="h-4 w-4 text-cyan-400" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-white">{members.length}</div>
+              </CardContent>
+            </Card>
+          </motion.div>
+          <motion.div variants={staggerItem}>
+            <Card className="bg-white/[0.02] backdrop-blur-xl border-white/10">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-white/70">Unread Messages</CardTitle>
+                <div className="p-2 rounded-lg bg-violet-500/20">
+                  <MessageSquare className="h-4 w-4 text-violet-400" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-white">{totalUnread}</div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </motion.div>
 
         {/* Chat Interface */}
-        <Card className="h-[600px]">
-          <div className="flex h-full">
-            {/* Members List */}
-            <div className="w-1/3 border-r flex flex-col">
-              <div className="p-4 border-b">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search members..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-              </div>
-              <ScrollArea className="flex-1">
-                {loading ? (
-                  <div className="p-4 text-center text-muted-foreground">Loading...</div>
-                ) : filteredMembers.length === 0 ? (
-                  <div className="p-4 text-center text-muted-foreground">No members found</div>
-                ) : (
-                  filteredMembers.map((member) => (
-                    <div
-                      key={member.user_id}
-                      className={`p-4 border-b cursor-pointer hover:bg-muted/50 transition-colors ${
-                        selectedMember?.user_id === member.user_id ? "bg-muted" : ""
-                      }`}
-                      onClick={() => setSelectedMember(member)}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Avatar>
-                          <AvatarFallback>
-                            {getInitials(member.full_name, member.email)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium truncate">
-                              {member.full_name || member.email}
-                            </span>
-                            {member.unread_count > 0 && (
-                              <Badge variant="default" className="ml-2">
-                                {member.unread_count}
-                              </Badge>
-                            )}
-                          </div>
-                          {member.last_message && (
-                            <p className="text-sm text-muted-foreground truncate">
-                              {member.last_message}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </ScrollArea>
-            </div>
-
-            {/* Chat Area */}
-            <div className="flex-1 flex flex-col">
-              {selectedMember ? (
-                <>
-                  <div className="p-4 border-b">
-                    <div className="flex items-center gap-3">
-                      <Avatar>
-                        <AvatarFallback>
-                          {getInitials(selectedMember.full_name, selectedMember.email)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <div className="font-medium">
-                          {selectedMember.full_name || selectedMember.email}
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {memberTyping ? <TypingIndicator /> : selectedMember.email}
-                        </div>
-                      </div>
-                    </div>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <Card className="h-[600px] bg-white/[0.02] backdrop-blur-xl border-white/10 overflow-hidden">
+            <div className="flex h-full">
+              {/* Members List */}
+              <div className="w-1/3 border-r border-white/10 flex flex-col">
+                <div className="p-4 border-b border-white/10">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
+                    <Input
+                      placeholder="Search members..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/30"
+                    />
                   </div>
-                  <ScrollArea className="flex-1 p-4">
-                    <div className="space-y-4">
-                      {messages.map((msg) => (
-                        <div
-                          key={msg.id}
-                          className={`flex ${
-                            msg.sender_type === "owner" ? "justify-end" : "justify-start"
-                          }`}
-                        >
-                          <div
-                            className={`max-w-[70%] rounded-lg px-4 py-2 ${
-                              msg.sender_type === "owner"
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-muted"
-                            }`}
-                          >
-                            <p>{msg.message}</p>
-                            <div
-                              className={`flex items-center justify-end gap-1 text-xs mt-1 ${
-                                msg.sender_type === "owner"
-                                  ? "text-primary-foreground/70"
-                                  : "text-muted-foreground"
-                              }`}
-                            >
-                              <span>{format(new Date(msg.created_at), "MMM d, h:mm a")}</span>
-                              {msg.sender_type === "owner" && (
-                                <ReadReceipt isRead={msg.is_read} readAt={msg.read_at} />
+                </div>
+                <ScrollArea className="flex-1">
+                  {loading ? (
+                    <div className="p-4 text-center text-white/50">Loading...</div>
+                  ) : filteredMembers.length === 0 ? (
+                    <div className="p-4 text-center text-white/50">No members found</div>
+                  ) : (
+                    filteredMembers.map((member) => (
+                      <div
+                        key={member.user_id}
+                        className={`p-4 border-b border-white/5 cursor-pointer transition-all duration-200 ${
+                          selectedMember?.user_id === member.user_id 
+                            ? "bg-gradient-to-r from-violet-500/10 to-purple-500/10 border-l-2 border-l-violet-500" 
+                            : "hover:bg-white/5"
+                        }`}
+                        onClick={() => setSelectedMember(member)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Avatar className="border border-white/10">
+                            <AvatarFallback className="bg-gradient-to-br from-violet-500/30 to-purple-500/30 text-white">
+                              {getInitials(member.full_name, member.email)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-white truncate">
+                                {member.full_name || member.email}
+                              </span>
+                              {member.unread_count > 0 && (
+                                <Badge className="ml-2 bg-violet-500 text-white">
+                                  {member.unread_count}
+                                </Badge>
                               )}
                             </div>
+                            {member.last_message && (
+                              <p className="text-sm text-white/50 truncate">
+                                {member.last_message}
+                              </p>
+                            )}
                           </div>
                         </div>
-                      ))}
-                      {memberTyping && (
-                        <div className="flex justify-start">
-                          <div className="bg-muted rounded-lg px-4 py-2">
-                            <TypingIndicator name={selectedMember.full_name || selectedMember.email.split("@")[0]} />
+                      </div>
+                    ))
+                  )}
+                </ScrollArea>
+              </div>
+
+              {/* Chat Area */}
+              <div className="flex-1 flex flex-col bg-black/20">
+                {selectedMember ? (
+                  <>
+                    <div className="p-4 border-b border-white/10 bg-white/[0.02]">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="border border-white/10">
+                          <AvatarFallback className="bg-gradient-to-br from-violet-500/30 to-purple-500/30 text-white">
+                            {getInitials(selectedMember.full_name, selectedMember.email)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <div className="font-medium text-white">
+                            {selectedMember.full_name || selectedMember.email}
+                          </div>
+                          <div className="text-sm text-white/50">
+                            {memberTyping ? <TypingIndicator /> : selectedMember.email}
                           </div>
                         </div>
-                      )}
-                      <div ref={messagesEndRef} />
+                      </div>
                     </div>
-                  </ScrollArea>
-                  <div className="p-4 border-t">
-                    <div className="flex gap-2">
-                      <Input
-                        value={newMessage}
-                        onChange={(e) => handleInputChange(e.target.value)}
-                        placeholder="Type a message..."
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSendMessage();
-                          }
-                        }}
-                      />
-                      <Button onClick={handleSendMessage} disabled={sending || !newMessage.trim()}>
-                        <Send className="h-4 w-4" />
-                      </Button>
+                    <ScrollArea className="flex-1 p-4">
+                      <div className="space-y-4">
+                        {messages.map((msg) => (
+                          <div
+                            key={msg.id}
+                            className={`flex ${
+                              msg.sender_type === "owner" ? "justify-end" : "justify-start"
+                            }`}
+                          >
+                            <div
+                              className={`max-w-[70%] rounded-2xl px-4 py-3 ${
+                                msg.sender_type === "owner"
+                                  ? "bg-gradient-to-r from-violet-500 to-purple-500 text-white"
+                                  : "bg-white/10 text-white"
+                              }`}
+                            >
+                              <p>{msg.message}</p>
+                              <div
+                                className={`flex items-center justify-end gap-1 text-xs mt-1 ${
+                                  msg.sender_type === "owner"
+                                    ? "text-white/70"
+                                    : "text-white/50"
+                                }`}
+                              >
+                                <span>{format(new Date(msg.created_at), "MMM d, h:mm a")}</span>
+                                {msg.sender_type === "owner" && (
+                                  <ReadReceipt isRead={msg.is_read} readAt={msg.read_at} />
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {memberTyping && (
+                          <div className="flex justify-start">
+                            <div className="bg-white/10 rounded-2xl px-4 py-3">
+                              <TypingIndicator name={selectedMember.full_name || selectedMember.email.split("@")[0]} />
+                            </div>
+                          </div>
+                        )}
+                        <div ref={messagesEndRef} />
+                      </div>
+                    </ScrollArea>
+                    <div className="p-4 border-t border-white/10 bg-white/[0.02]">
+                      <div className="flex gap-3">
+                        <Input
+                          placeholder="Type a message..."
+                          value={newMessage}
+                          onChange={(e) => handleInputChange(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSendMessage()}
+                          className="flex-1 bg-white/5 border-white/10 text-white placeholder:text-white/30"
+                        />
+                        <Button 
+                          onClick={handleSendMessage} 
+                          disabled={sending || !newMessage.trim()}
+                          className="bg-gradient-to-r from-violet-500 to-purple-500 hover:from-violet-400 hover:to-purple-400"
+                        >
+                          <Send className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="p-4 rounded-2xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/20 w-fit mx-auto mb-4">
+                        <MessageSquare className="h-8 w-8 text-violet-400" />
+                      </div>
+                      <h3 className="text-lg font-medium text-white">Select a member to chat</h3>
+                      <p className="text-white/50 text-sm mt-1">Choose a member from the list to start messaging</p>
                     </div>
                   </div>
-                </>
-              ) : (
-                <div className="flex-1 flex items-center justify-center text-muted-foreground">
-                  <div className="text-center">
-                    <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>Select a member to start chatting</p>
-                  </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
-        </Card>
-      </div>
+          </Card>
+        </motion.div>
+      </PageTransition>
     </DashboardLayout>
   );
 };
