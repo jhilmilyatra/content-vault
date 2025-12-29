@@ -3,6 +3,8 @@ import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Github, Instagram, Code, Heart, Zap, Shield, Users, Send, Mail, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { GlassCard } from "@/components/ios/GlassCard";
+import { lightHaptic } from "@/lib/haptics";
 
 const Documentation = () => {
   const { toast } = useToast();
@@ -12,8 +14,8 @@ const Documentation = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    lightHaptic();
     
-    // Simulate form submission
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     toast({
@@ -35,10 +37,14 @@ const Documentation = () => {
 
       <div className="relative z-10">
         {/* Header */}
-        <header className="border-b border-white/5 bg-black/40 backdrop-blur-lg">
+        <header className="ios-glass border-b border-white/5 sticky top-0 z-50">
           <div className="container max-w-6xl mx-auto px-6 py-4">
             <div className="flex items-center justify-between">
-              <Link to="/" className="flex items-center gap-3 text-white/70 hover:text-white transition-colors">
+              <Link 
+                to="/" 
+                className="flex items-center gap-3 text-white/70 hover:text-white transition-colors ios-press"
+                onClick={() => lightHaptic()}
+              >
                 <ArrowLeft className="w-4 h-4" strokeWidth={1.5} />
                 <span className="text-sm font-light">Back to Home</span>
               </Link>
@@ -71,29 +77,26 @@ const Documentation = () => {
             className="mb-16"
           >
             <h2 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-3">
-              <Zap className="w-6 h-6 text-amber-400" strokeWidth={1.5} />
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center">
+                <Zap className="w-5 h-5 text-white" strokeWidth={1.5} />
+              </div>
               Quick Start
             </h2>
-            <div className="glass-card p-8 border-white/5 bg-black/40">
+            <GlassCard>
               <ol className="space-y-4 text-white/70 font-light">
-                <li className="flex gap-3">
-                  <span className="text-teal-400 font-mono">01</span>
-                  <span>Create an account or sign in to your existing CloudVault account</span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="text-teal-400 font-mono">02</span>
-                  <span>Upload your files through the intuitive dashboard interface</span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="text-teal-400 font-mono">03</span>
-                  <span>Generate secure share links with optional password protection</span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="text-teal-400 font-mono">04</span>
-                  <span>Share your content with anyone, anywhere in the world</span>
-                </li>
+                {[
+                  "Create an account or sign in to your existing CloudVault account",
+                  "Upload your files through the intuitive dashboard interface",
+                  "Generate secure share links with optional password protection",
+                  "Share your content with anyone, anywhere in the world"
+                ].map((step, i) => (
+                  <li key={i} className="flex gap-3">
+                    <span className="text-teal-400 font-mono">0{i + 1}</span>
+                    <span>{step}</span>
+                  </li>
+                ))}
               </ol>
-            </div>
+            </GlassCard>
           </motion.section>
 
           {/* Features Section */}
@@ -104,7 +107,9 @@ const Documentation = () => {
             className="mb-16"
           >
             <h2 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-3">
-              <Shield className="w-6 h-6 text-teal-400" strokeWidth={1.5} />
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center">
+                <Shield className="w-5 h-5 text-white" strokeWidth={1.5} />
+              </div>
               Core Features
             </h2>
             <div className="grid gap-4">
@@ -116,13 +121,13 @@ const Documentation = () => {
                 { title: "Analytics", desc: "Track views, downloads, and bandwidth usage" },
                 { title: "Multi-tenant", desc: "Isolated storage with role-based access control" },
               ].map((feature, i) => (
-                <div key={i} className="glass-card p-6 border-white/5 bg-black/40 flex items-start gap-4">
-                  <div className="w-2 h-2 rounded-full bg-teal-400 mt-2" />
+                <GlassCard key={i} variant="subtle" className="flex items-start gap-4">
+                  <div className="w-2 h-2 rounded-full bg-teal-400 mt-2 shrink-0" />
                   <div>
-                    <h3 className="font-medium mb-1">{feature.title}</h3>
+                    <h3 className="font-medium mb-1 text-white">{feature.title}</h3>
                     <p className="text-sm text-white/50 font-light">{feature.desc}</p>
                   </div>
-                </div>
+                </GlassCard>
               ))}
             </div>
           </motion.section>
@@ -135,10 +140,12 @@ const Documentation = () => {
             className="mb-16"
           >
             <h2 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-3">
-              <Users className="w-6 h-6 text-violet-400" strokeWidth={1.5} />
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+                <Users className="w-5 h-5 text-white" strokeWidth={1.5} />
+              </div>
               User Roles
             </h2>
-            <div className="glass-card p-8 border-white/5 bg-black/40 space-y-6">
+            <GlassCard className="space-y-6">
               {[
                 { role: "Owner", level: "L0", desc: "Full infrastructure control, admin management, premium grants", color: "text-amber-400" },
                 { role: "Admin", level: "L1", desc: "User moderation, abuse control, read-only analytics", color: "text-violet-400" },
@@ -148,13 +155,13 @@ const Documentation = () => {
                 <div key={i} className="flex items-center gap-6">
                   <span className={`font-mono text-xs ${r.color}`}>{r.level}</span>
                   <div className="flex-1">
-                    <span className="font-medium">{r.role}</span>
+                    <span className="font-medium text-white">{r.role}</span>
                     <span className="text-white/30 mx-3">—</span>
                     <span className="text-sm text-white/50 font-light">{r.desc}</span>
                   </div>
                 </div>
               ))}
-            </div>
+            </GlassCard>
           </motion.section>
 
           {/* DMCA Section */}
@@ -165,15 +172,17 @@ const Documentation = () => {
             className="mb-16"
           >
             <h2 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-3">
-              <AlertTriangle className="w-6 h-6 text-orange-400" strokeWidth={1.5} />
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-white" strokeWidth={1.5} />
+              </div>
               DMCA & Copyright
             </h2>
-            <div className="glass-card p-8 border-white/5 bg-black/40">
+            <GlassCard>
               <p className="text-white/70 font-light mb-4">
                 CloudVault respects intellectual property rights and complies with the Digital Millennium Copyright Act (DMCA). 
                 If you believe your copyrighted work has been infringed upon, please contact us immediately.
               </p>
-              <div className="flex items-center gap-3 p-4 rounded-lg bg-white/5 border border-white/10">
+              <div className="flex items-center gap-3 p-4 rounded-xl bg-white/[0.03] border border-white/[0.08]">
                 <Mail className="w-5 h-5 text-orange-400" strokeWidth={1.5} />
                 <div>
                   <p className="text-sm text-white/50 font-light">Report copyright infringement:</p>
@@ -188,7 +197,7 @@ const Documentation = () => {
               <p className="text-xs text-white/30 mt-4 font-light">
                 Please include detailed information about the copyrighted work and the infringing content in your report.
               </p>
-            </div>
+            </GlassCard>
           </motion.section>
 
           {/* Contact Form Section */}
@@ -199,52 +208,40 @@ const Documentation = () => {
             className="mb-16"
           >
             <h2 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-3">
-              <Send className="w-6 h-6 text-blue-400" strokeWidth={1.5} />
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                <Send className="w-5 h-5 text-white" strokeWidth={1.5} />
+              </div>
               Contact Us
             </h2>
-            <div className="glass-card p-8 border-white/5 bg-black/40">
+            <GlassCard>
               <p className="text-white/50 font-light mb-6">
                 Have questions or feedback? Reach out through any of these channels:
               </p>
               
               {/* Social Links */}
               <div className="flex flex-wrap gap-4 mb-8">
-                <a
-                  href="https://t.me/riturajprince"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white/70 hover:text-white hover:bg-white/10 transition-all"
-                >
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
-                  </svg>
-                  Telegram
-                </a>
-                <a
-                  href="https://instagram.com/theriturajprince"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white/70 hover:text-white hover:bg-white/10 transition-all"
-                >
-                  <Instagram className="w-5 h-5" strokeWidth={1.5} />
-                  Instagram
-                </a>
-                <a
-                  href="https://github.com/riturajprince"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white/70 hover:text-white hover:bg-white/10 transition-all"
-                >
-                  <Github className="w-5 h-5" strokeWidth={1.5} />
-                  GitHub
-                </a>
-                <a
-                  href="mailto:medicobhai@gmail.com"
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white/70 hover:text-white hover:bg-white/10 transition-all"
-                >
-                  <Mail className="w-5 h-5" strokeWidth={1.5} />
-                  Email
-                </a>
+                {[
+                  { href: "https://t.me/riturajprince", icon: (
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+                    </svg>
+                  ), label: "Telegram" },
+                  { href: "https://instagram.com/theriturajprince", icon: <Instagram className="w-5 h-5" strokeWidth={1.5} />, label: "Instagram" },
+                  { href: "https://github.com/riturajprince", icon: <Github className="w-5 h-5" strokeWidth={1.5} />, label: "GitHub" },
+                  { href: "mailto:medicobhai@gmail.com", icon: <Mail className="w-5 h-5" strokeWidth={1.5} />, label: "Email" },
+                ].map((link, i) => (
+                  <a
+                    key={i}
+                    href={link.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => lightHaptic()}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white/70 hover:text-white hover:bg-white/[0.06] transition-all ios-press"
+                  >
+                    {link.icon}
+                    {link.label}
+                  </a>
+                ))}
               </div>
               
               <p className="text-white/50 font-light text-sm mb-6">Or send us a message directly:</p>
@@ -259,7 +256,7 @@ const Documentation = () => {
                       required
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/30 focus:outline-none focus:border-teal-400/50 transition-colors"
+                      className="ios-input w-full"
                       placeholder="Your name"
                     />
                   </div>
@@ -271,7 +268,7 @@ const Documentation = () => {
                       required
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/30 focus:outline-none focus:border-teal-400/50 transition-colors"
+                      className="ios-input w-full"
                       placeholder="your@email.com"
                     />
                   </div>
@@ -284,14 +281,14 @@ const Documentation = () => {
                     rows={5}
                     value={formData.message}
                     onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/30 focus:outline-none focus:border-teal-400/50 transition-colors resize-none"
+                    className="ios-input w-full resize-none"
                     placeholder="Your message..."
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full md:w-auto px-8 py-3 bg-teal-500 hover:bg-teal-400 disabled:bg-teal-500/50 text-black font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                  className="ios-button-primary w-full md:w-auto px-8 py-3 flex items-center justify-center gap-2"
                 >
                   {isSubmitting ? (
                     <>Sending...</>
@@ -303,7 +300,7 @@ const Documentation = () => {
                   )}
                 </button>
               </form>
-            </div>
+            </GlassCard>
           </motion.section>
 
           {/* Credits Section */}
@@ -314,24 +311,26 @@ const Documentation = () => {
             className="mb-16"
           >
             <h2 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-3">
-              <Heart className="w-6 h-6 text-rose-400" strokeWidth={1.5} />
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center">
+                <Heart className="w-5 h-5 text-white" strokeWidth={1.5} />
+              </div>
               Credits
             </h2>
-            <div className="glass-card p-8 border-white/5 bg-black/40">
+            <GlassCard>
               <div className="text-center">
                 <p className="text-white/50 font-light mb-6">
                   CloudVault is designed and developed with passion
                 </p>
                 
                 {/* Developer Card */}
-                <div className="inline-block glass-card p-8 border-white/10 bg-white/[0.02]">
+                <div className="inline-block ios-glass-elevated rounded-2xl p-8">
                   <div className="flex flex-col items-center gap-4">
                     <div className="w-20 h-20 rounded-full bg-gradient-to-br from-teal-400 to-blue-600 flex items-center justify-center">
                       <Code className="w-8 h-8 text-white" strokeWidth={1.5} />
                     </div>
                     
                     <div className="text-center">
-                      <h3 className="text-xl font-semibold mb-1">Ritu Raj Prince</h3>
+                      <h3 className="text-xl font-semibold mb-1 text-white">Ritu Raj Prince</h3>
                       <p className="text-sm text-white/40 font-light">Full Stack Developer</p>
                     </div>
                     
@@ -341,7 +340,8 @@ const Documentation = () => {
                         href="https://instagram.com/theriturajprince" 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        className="flex items-center gap-2 text-white/50 hover:text-white transition-colors group"
+                        onClick={() => lightHaptic()}
+                        className="flex items-center gap-2 text-white/50 hover:text-white transition-colors group ios-press"
                       >
                         <Instagram className="w-5 h-5 group-hover:text-pink-400 transition-colors" strokeWidth={1.5} />
                         <span className="text-sm font-light">Instagram</span>
@@ -351,7 +351,8 @@ const Documentation = () => {
                         href="https://github.com/riturajprince" 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        className="flex items-center gap-2 text-white/50 hover:text-white transition-colors group"
+                        onClick={() => lightHaptic()}
+                        className="flex items-center gap-2 text-white/50 hover:text-white transition-colors group ios-press"
                       >
                         <Github className="w-5 h-5 group-hover:text-white transition-colors" strokeWidth={1.5} />
                         <span className="text-sm font-light">GitHub</span>
@@ -360,11 +361,11 @@ const Documentation = () => {
                   </div>
                 </div>
                 
-                <p className="text-xs text-white/20 mt-8 font-light">
-                  © 2025 CloudVault. All rights reserved.
+                <p className="text-white/30 text-xs mt-8 font-light">
+                  © 2024 CloudVault. All rights reserved.
                 </p>
               </div>
-            </div>
+            </GlassCard>
           </motion.section>
         </main>
       </div>

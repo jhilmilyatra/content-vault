@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
-import { useAuth } from '@/hooks/useAuth';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Check, Crown, HardDrive, Zap, MessageCircle, Calendar, Clock, Gift } from 'lucide-react';
+import { PageTransition } from '@/components/ui/PageTransition';
+import { GlassCard } from '@/components/ios/GlassCard';
+import { IosSegmentedControl } from '@/components/ios';
+import { lightHaptic } from '@/lib/haptics';
+import { Check, Crown, HardDrive, Zap, MessageCircle, Gift } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -100,7 +100,6 @@ const yearlyPlans = [
   },
 ];
 
-// Free trial plan
 const freePlan = {
   id: 'free-trial',
   name: 'Free Trial',
@@ -113,12 +112,13 @@ const freePlan = {
 };
 
 const Plans = () => {
-  const { profile } = useAuth();
   const [selectedPlan, setSelectedPlan] = useState<typeof monthlyPlans[0] | null>(null);
   const [contactDialogOpen, setContactDialogOpen] = useState(false);
   const [customPlanDialogOpen, setCustomPlanDialogOpen] = useState(false);
+  const [billingCycle, setBillingCycle] = useState('monthly');
 
   const handleSelectPlan = (plan: typeof monthlyPlans[0]) => {
+    lightHaptic();
     setSelectedPlan(plan);
     setContactDialogOpen(true);
   };
@@ -132,239 +132,219 @@ const Plans = () => {
     'No ads',
   ];
 
+  const currentPlans = billingCycle === 'monthly' ? monthlyPlans : yearlyPlans;
+
   return (
     <DashboardLayout>
-      <div className="space-y-8">
-        {/* Header */}
-        <div className="text-center max-w-2xl mx-auto">
-          <Badge className="mb-4 bg-primary/20 text-primary border-primary/30">
-            <Crown className="w-3 h-3 mr-1" />
-            Premium Plans
-          </Badge>
-          <h1 className="text-3xl font-bold text-foreground mb-4">
-            Upgrade Your Storage
-          </h1>
-          <p className="text-muted-foreground">
-            Choose the perfect plan for your needs. All plans include premium features and priority support.
-          </p>
-        </div>
-
-        {/* Free Trial */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <Card className="relative border-dashed border-2 border-green-500/30 bg-green-500/5">
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-              <Badge className="bg-green-500 text-white">
-                <Gift className="w-3 h-3 mr-1" />
-                7-Day Free Trial
-              </Badge>
+      <PageTransition>
+        <div className="space-y-8">
+          {/* Header */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center max-w-2xl mx-auto"
+          >
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/30 mb-4">
+              <Crown className="w-4 h-4 text-amber-400" />
+              <span className="text-sm font-medium text-amber-400">Premium Plans</span>
             </div>
-            <CardContent className="py-8">
-              <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+            <h1 className="text-3xl font-bold text-white mb-4 tracking-tight">
+              Upgrade Your Storage
+            </h1>
+            <p className="text-white/50">
+              Choose the perfect plan for your needs. All plans include premium features and priority support.
+            </p>
+          </motion.div>
+
+          {/* Free Trial */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
+            <GlassCard className="relative border-2 border-dashed border-emerald-500/30 bg-emerald-500/5">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500 text-white text-sm font-medium">
+                  <Gift className="w-3.5 h-3.5" />
+                  7-Day Free Trial
+                </div>
+              </div>
+              <div className="flex flex-col md:flex-row items-center justify-between gap-6 pt-4">
                 <div className="text-center md:text-left">
-                  <h3 className="text-xl font-semibold text-foreground mb-2">Start Your Free Trial</h3>
-                  <p className="text-muted-foreground max-w-md">
+                  <h3 className="text-xl font-semibold text-white mb-2">Start Your Free Trial</h3>
+                  <p className="text-white/50 max-w-md">
                     Try FileCloud free for 7 days with 5GB storage, 50GB bandwidth, and 10 active links. No credit card required.
                   </p>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-center">
-                    <span className="text-3xl font-bold text-foreground">₹0</span>
-                    <span className="text-muted-foreground text-sm block">for 7 days</span>
+                    <span className="text-3xl font-bold text-white">₹0</span>
+                    <span className="text-white/50 text-sm block">for 7 days</span>
                   </div>
-                  <Button onClick={() => handleSelectPlan(freePlan)} variant="outline" className="border-green-500/50 text-green-500 hover:bg-green-500/10">
+                  <button 
+                    onClick={() => handleSelectPlan(freePlan)} 
+                    className="ios-button-secondary border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/10"
+                  >
                     Start Free Trial
-                  </Button>
+                  </button>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        </motion.div>
+            </GlassCard>
+          </motion.div>
 
-        {/* Monthly Plans */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Clock className="w-5 h-5 text-primary" />
-            <h2 className="text-xl font-semibold text-foreground">Monthly Plans</h2>
-          </div>
+          {/* Billing Toggle */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="flex justify-center"
+          >
+            <IosSegmentedControl
+              segments={[
+                { value: 'monthly', label: 'Monthly' },
+                { value: 'yearly', label: 'Yearly (Save 2 mo)' },
+              ]}
+              value={billingCycle}
+              onChange={setBillingCycle}
+            />
+          </motion.div>
+
+          {/* Plans Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {monthlyPlans.map((plan, index) => (
+            {currentPlans.map((plan, index) => (
               <motion.div
                 key={plan.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
+                transition={{ delay: 0.2 + index * 0.1 }}
               >
-                <Card className={`relative h-full ${plan.popular ? 'border-primary shadow-lg shadow-primary/20' : ''}`}>
+                <GlassCard 
+                  className={`relative h-full ${plan.popular ? 'border-2 border-teal-500/50 shadow-lg shadow-teal-500/20' : ''}`}
+                  interactive
+                  onClick={() => handleSelectPlan(plan)}
+                >
                   {plan.popular && (
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                      <Badge className="bg-primary text-primary-foreground">Most Popular</Badge>
+                      <div className="px-3 py-1 rounded-full bg-gradient-to-r from-teal-500 to-cyan-500 text-white text-xs font-medium">
+                        {billingCycle === 'yearly' ? 'Best Value' : 'Most Popular'}
+                      </div>
                     </div>
                   )}
-                  <CardHeader className="text-center pb-2">
-                    <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-2">
-                      <HardDrive className="w-6 h-6 text-primary" />
+                  
+                  <div className="text-center pb-2 pt-2">
+                    <div className={`w-12 h-12 rounded-xl ${plan.popular ? 'bg-gradient-to-br from-teal-500 to-cyan-600' : 'bg-white/[0.08]'} flex items-center justify-center mx-auto mb-3`}>
+                      {billingCycle === 'yearly' ? (
+                        <Crown className={`w-6 h-6 ${plan.popular ? 'text-white' : 'text-amber-400'}`} />
+                      ) : (
+                        <HardDrive className={`w-6 h-6 ${plan.popular ? 'text-white' : 'text-teal-400'}`} />
+                      )}
                     </div>
-                    <CardTitle className="text-lg">{plan.name}</CardTitle>
-                    <CardDescription>per month</CardDescription>
-                  </CardHeader>
-                  <CardContent className="text-center">
-                    <div className="mb-4">
-                      <span className="text-3xl font-bold text-foreground">₹{plan.price}</span>
-                      <span className="text-muted-foreground">/mo</span>
-                    </div>
-                    <ul className="space-y-2 text-sm text-left">
-                      <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-green-500" />
-                        {plan.storage} GB Storage
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-green-500" />
-                        {plan.bandwidth} GB Bandwidth
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-green-500" />
-                        {plan.links} Active Links
-                      </li>
-                    </ul>
-                  </CardContent>
-                  <CardFooter>
-                    <Button 
-                      className="w-full" 
-                      variant={plan.popular ? 'default' : 'outline'}
-                      onClick={() => handleSelectPlan(plan)}
-                    >
-                      Get Started
-                    </Button>
-                  </CardFooter>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-
-        {/* Yearly Plans */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-amber-500" />
-            <h2 className="text-xl font-semibold text-foreground">Yearly Plans</h2>
-            <Badge variant="outline" className="text-amber-500 border-amber-500/30">Save 2 Months</Badge>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {yearlyPlans.map((plan, index) => (
-              <motion.div
-                key={plan.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 + 0.4 }}
-              >
-                <Card className={`relative h-full ${plan.popular ? 'border-amber-500 shadow-lg shadow-amber-500/20' : ''}`}>
-                  {plan.popular && (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                      <Badge className="bg-amber-500 text-white">Best Value</Badge>
-                    </div>
-                  )}
-                  <CardHeader className="text-center pb-2">
-                    <div className="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center mx-auto mb-2">
-                      <Crown className="w-6 h-6 text-amber-500" />
-                    </div>
-                    <CardTitle className="text-lg">{plan.name}</CardTitle>
-                    <CardDescription>per year</CardDescription>
-                  </CardHeader>
-                  <CardContent className="text-center">
-                    <div className="mb-4">
-                      <span className="text-3xl font-bold text-foreground">₹{plan.price}</span>
-                      <span className="text-muted-foreground">/year</span>
-                    </div>
-                    <ul className="space-y-2 text-sm text-left">
-                      <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-green-500" />
-                        {plan.storage} GB Storage
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-green-500" />
-                        {plan.bandwidth} GB Bandwidth/mo
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-green-500" />
-                        {plan.links} Active Links
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-green-500" />
+                    <h3 className="text-lg font-semibold text-white">{plan.name}</h3>
+                    <p className="text-sm text-white/40">{billingCycle === 'yearly' ? 'per year' : 'per month'}</p>
+                  </div>
+                  
+                  <div className="text-center my-4">
+                    <span className="text-3xl font-bold text-white">₹{plan.price}</span>
+                    <span className="text-white/40">/{billingCycle === 'yearly' ? 'yr' : 'mo'}</span>
+                  </div>
+                  
+                  <ul className="space-y-3 text-sm mb-6">
+                    <li className="flex items-center gap-2 text-white/70">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      {plan.storage} GB Storage
+                    </li>
+                    <li className="flex items-center gap-2 text-white/70">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      {plan.bandwidth} GB Bandwidth{billingCycle === 'yearly' ? '/mo' : ''}
+                    </li>
+                    <li className="flex items-center gap-2 text-white/70">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      {plan.links} Active Links
+                    </li>
+                    {billingCycle === 'yearly' && (
+                      <li className="flex items-center gap-2 text-white/70">
+                        <Check className="w-4 h-4 text-emerald-400" />
                         2 Months Free
                       </li>
-                    </ul>
-                  </CardContent>
-                  <CardFooter>
-                    <Button 
-                      className="w-full" 
-                      variant={plan.popular ? 'default' : 'outline'}
-                      onClick={() => handleSelectPlan(plan)}
-                    >
-                      Get Yearly
-                    </Button>
-                  </CardFooter>
-                </Card>
+                    )}
+                  </ul>
+                  
+                  <button 
+                    className={`w-full ${plan.popular ? 'ios-button-primary' : 'ios-button-secondary'}`}
+                  >
+                    Get Started
+                  </button>
+                </GlassCard>
               </motion.div>
             ))}
           </div>
-        </div>
 
-        {/* Custom Plan */}
-        <Card className="border-dashed border-2">
-          <CardContent className="py-8">
-            <div className="text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center mx-auto">
-                <Zap className="w-8 h-8 text-white" />
-              </div>
-              <h3 className="text-xl font-semibold text-foreground">Need a Custom Plan?</h3>
-              <p className="text-muted-foreground max-w-md mx-auto">
-                Need more storage, higher bandwidth, or special requirements? Contact us for a custom plan tailored to your needs.
-              </p>
-              <Button onClick={() => setCustomPlanDialogOpen(true)} variant="outline" className="gap-2">
-                <MessageCircle className="w-4 h-4" />
-                Contact for Custom Plan
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* All Features */}
-        <Card>
-          <CardHeader>
-            <CardTitle>All Premium Features</CardTitle>
-            <CardDescription>Every plan includes these powerful features</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {features.map((feature, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <div className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center">
-                    <Check className="w-3 h-3 text-green-500" />
-                  </div>
-                  <span className="text-sm text-foreground">{feature}</span>
+          {/* Custom Plan */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.6 }}
+          >
+            <GlassCard className="border-2 border-dashed border-white/10">
+              <div className="text-center space-y-4">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center mx-auto">
+                  <Zap className="w-8 h-8 text-white" />
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+                <h3 className="text-xl font-semibold text-white">Need a Custom Plan?</h3>
+                <p className="text-white/50 max-w-md mx-auto">
+                  Need more storage, higher bandwidth, or special requirements? Contact us for a custom plan tailored to your needs.
+                </p>
+                <button 
+                  onClick={() => {
+                    lightHaptic();
+                    setCustomPlanDialogOpen(true);
+                  }} 
+                  className="ios-button-secondary gap-2"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  Contact for Custom Plan
+                </button>
+              </div>
+            </GlassCard>
+          </motion.div>
+
+          {/* All Features */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.7 }}
+          >
+            <GlassCard>
+              <h3 className="text-lg font-semibold text-white mb-2">All Premium Features</h3>
+              <p className="text-sm text-white/50 mb-6">Every plan includes these powerful features</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {features.map((feature, index) => (
+                  <div key={index} className="flex items-center gap-3">
+                    <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0">
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    </div>
+                    <span className="text-sm text-white/70">{feature}</span>
+                  </div>
+                ))}
+              </div>
+            </GlassCard>
+          </motion.div>
+        </div>
+      </PageTransition>
 
       {/* Purchase Dialog */}
       <Dialog open={contactDialogOpen} onOpenChange={setContactDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md ios-glass border-white/10">
           <DialogHeader>
-            <DialogTitle>Purchase {selectedPlan?.name} Plan</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-white">Purchase {selectedPlan?.name} Plan</DialogTitle>
+            <DialogDescription className="text-white/50">
               Contact us to complete your purchase for ₹{selectedPlan?.price} ({selectedPlan?.period})
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-4">
-            <div className="p-4 rounded-lg bg-muted">
-              <h4 className="font-medium mb-2">Plan Details:</h4>
-              <ul className="text-sm space-y-1 text-muted-foreground">
+            <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.08]">
+              <h4 className="font-medium mb-2 text-white">Plan Details:</h4>
+              <ul className="text-sm space-y-1 text-white/50">
                 <li>• Storage: {selectedPlan?.storage} GB</li>
                 <li>• Bandwidth: {selectedPlan?.bandwidth} GB</li>
                 <li>• Active Links: {selectedPlan?.links}</li>
@@ -375,21 +355,23 @@ const Plans = () => {
               href="https://t.me/kartoos0070"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-3 p-4 rounded-lg border border-border bg-card hover:bg-muted transition-colors"
+              onClick={() => lightHaptic()}
+              className="flex items-center gap-3 p-4 rounded-xl ios-glass hover:bg-white/[0.06] transition-colors ios-press"
             >
               <div className="w-10 h-10 rounded-full bg-[#0088cc] flex items-center justify-center">
                 <MessageCircle className="w-5 h-5 text-white" />
               </div>
               <div>
-                <p className="font-medium text-foreground">Telegram</p>
-                <p className="text-sm text-muted-foreground">@kartoos0070</p>
+                <p className="font-medium text-white">Telegram</p>
+                <p className="text-sm text-white/50">@kartoos0070</p>
               </div>
             </a>
             <a
               href="https://instagram.com/theriturajprince"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-3 p-4 rounded-lg border border-border bg-card hover:bg-muted transition-colors"
+              onClick={() => lightHaptic()}
+              className="flex items-center gap-3 p-4 rounded-xl ios-glass hover:bg-white/[0.06] transition-colors ios-press"
             >
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#833ab4] via-[#fd1d1d] to-[#fcb045] flex items-center justify-center">
                 <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
@@ -397,8 +379,8 @@ const Plans = () => {
                 </svg>
               </div>
               <div>
-                <p className="font-medium text-foreground">Instagram</p>
-                <p className="text-sm text-muted-foreground">@theriturajprince</p>
+                <p className="font-medium text-white">Instagram</p>
+                <p className="text-sm text-white/50">@theriturajprince</p>
               </div>
             </a>
           </div>
@@ -407,36 +389,38 @@ const Plans = () => {
 
       {/* Custom Plan Dialog */}
       <Dialog open={customPlanDialogOpen} onOpenChange={setCustomPlanDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md ios-glass border-white/10">
           <DialogHeader>
-            <DialogTitle>Custom Plan Request</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-white">Custom Plan Request</DialogTitle>
+            <DialogDescription className="text-white/50">
               Contact us to discuss your custom requirements
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-4">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-white/50">
               Tell us about your storage, bandwidth, and feature requirements. We'll create a custom plan just for you.
             </p>
             <a
               href="https://t.me/kartoos0070"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-3 p-4 rounded-lg border border-border bg-card hover:bg-muted transition-colors"
+              onClick={() => lightHaptic()}
+              className="flex items-center gap-3 p-4 rounded-xl ios-glass hover:bg-white/[0.06] transition-colors ios-press"
             >
               <div className="w-10 h-10 rounded-full bg-[#0088cc] flex items-center justify-center">
                 <MessageCircle className="w-5 h-5 text-white" />
               </div>
               <div>
-                <p className="font-medium text-foreground">Telegram</p>
-                <p className="text-sm text-muted-foreground">@kartoos0070</p>
+                <p className="font-medium text-white">Telegram</p>
+                <p className="text-sm text-white/50">@kartoos0070</p>
               </div>
             </a>
             <a
               href="https://instagram.com/theriturajprince"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-3 p-4 rounded-lg border border-border bg-card hover:bg-muted transition-colors"
+              onClick={() => lightHaptic()}
+              className="flex items-center gap-3 p-4 rounded-xl ios-glass hover:bg-white/[0.06] transition-colors ios-press"
             >
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#833ab4] via-[#fd1d1d] to-[#fcb045] flex items-center justify-center">
                 <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
@@ -444,8 +428,8 @@ const Plans = () => {
                 </svg>
               </div>
               <div>
-                <p className="font-medium text-foreground">Instagram</p>
-                <p className="text-sm text-muted-foreground">@theriturajprince</p>
+                <p className="font-medium text-white">Instagram</p>
+                <p className="text-sm text-white/50">@theriturajprince</p>
               </div>
             </a>
           </div>
