@@ -13,8 +13,9 @@ import {
   Shield,
   AlertTriangle,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PageTransition } from "@/components/ui/PageTransition";
+import { GlassCard, GlassCardHeader, StatCard } from "@/components/ios/GlassCard";
+import { SkeletonStats } from "@/components/ios/SkeletonLoader";
+import { staggerContainer, staggerItem } from "@/lib/motion";
 
 interface GlobalStats {
   totalUsers: number;
@@ -91,177 +92,145 @@ const OwnerDashboard = () => {
       label: "Total Users",
       value: stats.totalUsers.toString(),
       icon: Users,
-      color: "from-teal-500 to-cyan-400",
-      change: "+12%",
     },
     {
       label: "Premium Users",
       value: stats.premiumUsers.toString(),
       icon: DollarSign,
-      color: "from-amber-500 to-orange-400",
-      change: "+8%",
     },
     {
       label: "Total Storage",
       value: formatBytes(stats.totalStorage),
       icon: HardDrive,
-      color: "from-violet-500 to-purple-400",
-      change: "+24 GB",
     },
     {
       label: "Bandwidth Used",
       value: formatBytes(stats.totalBandwidth),
       icon: Download,
-      color: "from-emerald-500 to-teal-400",
-      change: "+156 GB",
     },
     {
       label: "Active Links",
       value: stats.activeLinks.toString(),
       icon: Activity,
-      color: "from-rose-500 to-pink-400",
-      change: "+34",
     },
     {
       label: "Total Downloads",
       value: stats.totalDownloads.toLocaleString(),
       icon: TrendingUp,
-      color: "from-blue-500 to-indigo-400",
-      change: "+2.4K",
     },
   ];
 
-  const glassCard = "bg-white/[0.03] backdrop-blur-xl border border-white/10";
-
   return (
     <DashboardLayout>
-      <PageTransition>
-        <div className="space-y-6">
-          {/* Header */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="flex items-center justify-between"
-          >
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-2">
-                <Shield className="w-6 h-6 text-amber-400" />
-                Owner Dashboard
-              </h1>
-              <p className="text-white/50">
-                Global overview and infrastructure management
-              </p>
+      <motion.div 
+        className="space-y-6 px-1"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+      >
+        {/* Header */}
+        <div className="animate-fade-up">
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500/20 to-amber-600/10 flex items-center justify-center">
+              <Shield className="w-5 h-5 text-amber-400" />
             </div>
-          </motion.div>
+            Owner Dashboard
+          </h1>
+          <p className="text-muted-foreground mt-1 ml-13 text-sm">
+            Global overview and infrastructure management
+          </p>
+        </div>
 
-          {/* Stats Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Stats Grid */}
+        {loading ? (
+          <SkeletonStats />
+        ) : (
+          <motion.div 
+            className="grid grid-cols-2 gap-3"
+            variants={staggerContainer}
+            initial="hidden"
+            animate="show"
+          >
             {statCards.map((stat, index) => (
-              <motion.div
-                key={stat.label}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1, duration: 0.4 }}
-              >
-                <Card className={`${glassCard} hover:border-white/20 transition-all duration-300`}>
-                  <CardContent className="pt-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <div
-                        className={`w-12 h-12 rounded-xl bg-gradient-to-br ${stat.color} p-3 shadow-lg`}
-                      >
-                        <stat.icon className="w-full h-full text-white" />
-                      </div>
-                      <div className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        <ArrowUpRight className="w-3 h-3" />
-                        {stat.change}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-white/50">{stat.label}</p>
-                      <p className="text-2xl font-bold text-white">
-                        {loading ? "..." : stat.value}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
+              <motion.div key={stat.label} variants={staggerItem}>
+                <StatCard
+                  title={stat.label}
+                  value={stat.value}
+                  icon={<stat.icon className="w-5 h-5" />}
+                  className="animate-fade-up"
+                  style={{ animationDelay: `${0.05 + index * 0.05}s` }}
+                />
               </motion.div>
             ))}
-          </div>
+          </motion.div>
+        )}
 
-          {/* Quick Actions & Alerts */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.6 }}
-            >
-              <Card className={glassCard}>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-white">
-                    <AlertTriangle className="w-5 h-5 text-amber-400" />
-                    System Alerts
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
-                      <div className="w-2 h-2 rounded-full bg-amber-400 shadow-lg shadow-amber-400/50" />
-                      <span className="text-sm text-white/80">
-                        3 users approaching storage limit
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                      <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-lg shadow-emerald-400/50" />
-                      <span className="text-sm text-white/80">
-                        All systems operational
-                      </span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
+        {/* Quick Actions & Alerts */}
+        <div className="grid grid-cols-1 gap-4">
+          <GlassCard variant="elevated" className="animate-fade-up" style={{ animationDelay: "0.3s" }}>
+            <GlassCardHeader
+              title="System Alerts"
+              icon={<AlertTriangle className="w-5 h-5 text-amber-400" />}
+            />
+            <div className="p-4 space-y-3">
+              <motion.div 
+                className="flex items-center gap-3 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20"
+                whileTap={{ scale: 0.98 }}
+              >
+                <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse-glow" />
+                <span className="text-sm text-foreground">
+                  3 users approaching storage limit
+                </span>
+              </motion.div>
+              <motion.div 
+                className="flex items-center gap-3 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20"
+                whileTap={{ scale: 0.98 }}
+              >
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+                <span className="text-sm text-foreground">
+                  All systems operational
+                </span>
+              </motion.div>
+            </div>
+          </GlassCard>
 
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.7 }}
-            >
-              <Card className={glassCard}>
-                <CardHeader>
-                  <CardTitle className="text-white">Recent Activity</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-teal-500 to-blue-500 flex items-center justify-center text-white text-xs font-semibold">
-                        JD
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-white">
-                          New user registered
-                        </p>
-                        <p className="text-xs text-white/40">2 minutes ago</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center text-white text-xs font-semibold">
-                        $
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-white">
-                          Premium upgrade
-                        </p>
-                        <p className="text-xs text-white/40">15 minutes ago</p>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </div>
+          <GlassCard variant="elevated" className="animate-fade-up" style={{ animationDelay: "0.35s" }}>
+            <GlassCardHeader title="Recent Activity" />
+            <div className="p-4 space-y-3">
+              <motion.div 
+                className="flex items-center gap-4 p-4 rounded-2xl ios-glass-subtle"
+                whileTap={{ scale: 0.98 }}
+              >
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-primary text-sm font-semibold">
+                  JD
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground">
+                    New user registered
+                  </p>
+                  <p className="text-xs text-muted-foreground">2 minutes ago</p>
+                </div>
+                <ArrowUpRight className="w-4 h-4 text-muted-foreground" />
+              </motion.div>
+              <motion.div 
+                className="flex items-center gap-4 p-4 rounded-2xl ios-glass-subtle"
+                whileTap={{ scale: 0.98 }}
+              >
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-500/30 to-amber-500/10 flex items-center justify-center text-amber-400 text-sm font-semibold">
+                  $
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground">
+                    Premium upgrade
+                  </p>
+                  <p className="text-xs text-muted-foreground">15 minutes ago</p>
+                </div>
+                <ArrowUpRight className="w-4 h-4 text-muted-foreground" />
+              </motion.div>
+            </div>
+          </GlassCard>
         </div>
-      </PageTransition>
+      </motion.div>
     </DashboardLayout>
   );
 };

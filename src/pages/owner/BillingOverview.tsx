@@ -11,9 +11,9 @@ import {
   Download,
   ArrowUpRight,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { PageTransition } from "@/components/ui/PageTransition";
+import { GlassCard, GlassCardHeader, StatCard } from "@/components/ios/GlassCard";
+import { SkeletonStats, SkeletonList } from "@/components/ios/SkeletonLoader";
+import { staggerContainer, staggerItem } from "@/lib/motion";
 
 interface BillingStats {
   totalRevenue: number;
@@ -75,192 +75,153 @@ const BillingOverview = () => {
   };
 
   const planDistribution = [
-    { label: "Free", count: stats.freeUsers, color: "bg-white/20" },
-    { label: "Premium", count: stats.premiumUsers, color: "bg-violet-500" },
+    { label: "Free", count: stats.freeUsers, color: "bg-muted-foreground/40" },
+    { label: "Premium", count: stats.premiumUsers, color: "bg-primary" },
     { label: "Lifetime", count: stats.lifetimeUsers, color: "bg-amber-500" },
   ];
 
   const totalUsers = stats.freeUsers + stats.premiumUsers + stats.lifetimeUsers;
-  const glassCard = "bg-white/[0.03] backdrop-blur-xl border border-white/10";
+
+  const statCards = [
+    {
+      label: "Monthly Revenue",
+      value: `$${stats.totalRevenue.toFixed(2)}`,
+      icon: DollarSign,
+    },
+    {
+      label: "Paid Users",
+      value: (stats.premiumUsers + stats.lifetimeUsers).toString(),
+      icon: Users,
+    },
+    {
+      label: "Storage Cost",
+      value: `$${stats.totalStorageCost.toFixed(2)}`,
+      icon: HardDrive,
+    },
+    {
+      label: "Bandwidth Cost",
+      value: `$${stats.totalBandwidthCost.toFixed(2)}`,
+      icon: Download,
+    },
+  ];
 
   return (
     <DashboardLayout>
-      <PageTransition>
-        <div className="space-y-6">
-          {/* Header */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="flex items-center justify-between"
-          >
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-2">
-                <CreditCard className="w-6 h-6 text-teal-400" />
-                Billing Overview
-              </h1>
-              <p className="text-white/50">
-                Revenue, costs, and subscription analytics
-              </p>
+      <motion.div 
+        className="space-y-6 px-1"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+      >
+        {/* Header */}
+        <div className="animate-fade-up">
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+              <CreditCard className="w-5 h-5 text-primary" />
             </div>
+            Billing Overview
+          </h1>
+          <p className="text-muted-foreground mt-1 ml-13 text-sm">
+            Revenue, costs, and subscription analytics
+          </p>
+        </div>
+
+        {/* Revenue Stats */}
+        {loading ? (
+          <SkeletonStats />
+        ) : (
+          <motion.div 
+            className="grid grid-cols-2 gap-3"
+            variants={staggerContainer}
+            initial="hidden"
+            animate="show"
+          >
+            {statCards.map((stat, index) => (
+              <motion.div key={stat.label} variants={staggerItem}>
+                <StatCard
+                  title={stat.label}
+                  value={stat.value}
+                  icon={<stat.icon className="w-5 h-5" />}
+                  className="animate-fade-up"
+                  style={{ animationDelay: `${0.05 + index * 0.05}s` }}
+                />
+              </motion.div>
+            ))}
           </motion.div>
+        )}
 
-          {/* Revenue Stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
-              <Card className={glassCard}>
-                <CardContent className="pt-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-400 p-3 shadow-lg">
-                      <DollarSign className="w-full h-full text-white" />
-                    </div>
-                    <div className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      <ArrowUpRight className="w-3 h-3" />
-                      +12%
-                    </div>
+        {/* Plan Distribution */}
+        <GlassCard variant="elevated" className="animate-fade-up" style={{ animationDelay: "0.2s" }}>
+          <GlassCardHeader
+            title="Subscription Distribution"
+            icon={<TrendingUp className="w-5 h-5 text-primary" />}
+          />
+          <div className="p-4 space-y-5">
+            {loading ? (
+              <SkeletonList />
+            ) : (
+              planDistribution.map((plan, index) => (
+                <motion.div 
+                  key={plan.label} 
+                  className="space-y-2"
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.3 + index * 0.1 }}
+                >
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-foreground">{plan.label}</span>
+                    <span className="text-muted-foreground">
+                      {plan.count} users ({totalUsers > 0 ? ((plan.count / totalUsers) * 100).toFixed(1) : 0}%)
+                    </span>
                   </div>
-                  <p className="text-sm text-white/50">Monthly Revenue</p>
-                  <p className="text-2xl font-bold text-white">
-                    ${loading ? "..." : stats.totalRevenue.toFixed(2)}
-                  </p>
-                </CardContent>
-              </Card>
+                  <div className="h-2 bg-muted/30 rounded-full overflow-hidden">
+                    <motion.div 
+                      className={`h-full ${plan.color} rounded-full`}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${totalUsers > 0 ? (plan.count / totalUsers) * 100 : 0}%` }}
+                      transition={{ duration: 0.8, delay: 0.4 + index * 0.1, ease: [0.22, 1, 0.36, 1] }}
+                    />
+                  </div>
+                </motion.div>
+              ))
+            )}
+          </div>
+        </GlassCard>
+
+        {/* Profit Summary */}
+        <GlassCard variant="elevated" className="animate-fade-up" style={{ animationDelay: "0.35s" }}>
+          <GlassCardHeader title="Profit Summary" />
+          <div className="p-4 space-y-1">
+            <motion.div 
+              className="flex items-center justify-between py-4 border-b border-border/30"
+              whileTap={{ scale: 0.98 }}
+            >
+              <span className="text-muted-foreground">Total Revenue</span>
+              <span className="font-semibold text-foreground">
+                ${stats.totalRevenue.toFixed(2)}
+              </span>
             </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
+            <motion.div 
+              className="flex items-center justify-between py-4 border-b border-border/30"
+              whileTap={{ scale: 0.98 }}
             >
-              <Card className={glassCard}>
-                <CardContent className="pt-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-purple-400 p-3 shadow-lg">
-                      <Users className="w-full h-full text-white" />
-                    </div>
-                  </div>
-                  <p className="text-sm text-white/50">Paid Users</p>
-                  <p className="text-2xl font-bold text-white">
-                    {loading ? "..." : stats.premiumUsers + stats.lifetimeUsers}
-                  </p>
-                </CardContent>
-              </Card>
+              <span className="text-muted-foreground">Infrastructure Costs</span>
+              <span className="font-semibold text-destructive">
+                -${(stats.totalStorageCost + stats.totalBandwidthCost).toFixed(2)}
+              </span>
             </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
+            <motion.div 
+              className="flex items-center justify-between py-4"
+              whileTap={{ scale: 0.98 }}
             >
-              <Card className={glassCard}>
-                <CardContent className="pt-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-rose-500 to-pink-400 p-3 shadow-lg">
-                      <HardDrive className="w-full h-full text-white" />
-                    </div>
-                  </div>
-                  <p className="text-sm text-white/50">Storage Cost</p>
-                  <p className="text-2xl font-bold text-white">
-                    ${loading ? "..." : stats.totalStorageCost.toFixed(2)}
-                  </p>
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-            >
-              <Card className={glassCard}>
-                <CardContent className="pt-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-400 p-3 shadow-lg">
-                      <Download className="w-full h-full text-white" />
-                    </div>
-                  </div>
-                  <p className="text-sm text-white/50">Bandwidth Cost</p>
-                  <p className="text-2xl font-bold text-white">
-                    ${loading ? "..." : stats.totalBandwidthCost.toFixed(2)}
-                  </p>
-                </CardContent>
-              </Card>
+              <span className="font-semibold text-foreground">Net Profit</span>
+              <span className="font-bold text-lg text-emerald-400">
+                ${(stats.totalRevenue - stats.totalStorageCost - stats.totalBandwidthCost).toFixed(2)}
+              </span>
             </motion.div>
           </div>
-
-          {/* Plan Distribution */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-          >
-            <Card className={glassCard}>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-white">
-                  <TrendingUp className="w-5 h-5 text-teal-400" />
-                  Subscription Distribution
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {planDistribution.map((plan) => (
-                  <div key={plan.label} className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="font-medium text-white">{plan.label}</span>
-                      <span className="text-white/50">
-                        {plan.count} users ({totalUsers > 0 ? ((plan.count / totalUsers) * 100).toFixed(1) : 0}%)
-                      </span>
-                    </div>
-                    <div className="h-2 bg-white/5 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full ${plan.color} rounded-full transition-all duration-500`}
-                        style={{ width: `${totalUsers > 0 ? (plan.count / totalUsers) * 100 : 0}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          {/* Profit Summary */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-          >
-            <Card className={glassCard}>
-              <CardHeader>
-                <CardTitle className="text-white">Profit Summary</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between py-3 border-b border-white/10">
-                    <span className="text-white/50">Total Revenue</span>
-                    <span className="font-medium text-white">
-                      ${stats.totalRevenue.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between py-3 border-b border-white/10">
-                    <span className="text-white/50">Infrastructure Costs</span>
-                    <span className="font-medium text-rose-400">
-                      -${(stats.totalStorageCost + stats.totalBandwidthCost).toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between py-3">
-                    <span className="font-semibold text-white">Net Profit</span>
-                    <span className="font-bold text-lg text-emerald-400">
-                      ${(stats.totalRevenue - stats.totalStorageCost - stats.totalBandwidthCost).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </div>
-      </PageTransition>
+        </GlassCard>
+      </motion.div>
     </DashboardLayout>
   );
 };
