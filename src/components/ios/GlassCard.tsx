@@ -86,11 +86,12 @@ interface StatCardProps {
   trend?: "up" | "down" | "neutral";
   trendValue?: string;
   className?: string;
+  style?: React.CSSProperties;
 }
 
-export function StatCard({ title, value, icon, trend, trendValue, className }: StatCardProps) {
+export function StatCard({ title, value, icon, trend, trendValue, className, style }: StatCardProps) {
   return (
-    <GlassCard className={className}>
+    <GlassCard className={className} style={style}>
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm font-medium text-white/50">{title}</p>

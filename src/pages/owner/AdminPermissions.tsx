@@ -17,13 +17,14 @@ import {
   Save,
   Crown,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { PageTransition } from "@/components/ui/PageTransition";
+import { GlassCard, GlassCardHeader, IosList, IosListItem } from "@/components/ios";
+import { SkeletonList } from "@/components/ios";
+import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 
 interface AdminWithPermissions {
   user_id: string;
@@ -124,6 +125,7 @@ const AdminPermissions = () => {
     permissionKey: keyof typeof defaultPermissions,
     value: boolean
   ) => {
+    lightHaptic();
     setSaving(adminUserId);
     try {
       const admin = admins.find((a) => a.user_id === adminUserId);
@@ -172,6 +174,7 @@ const AdminPermissions = () => {
   };
 
   const initializePermissions = async (adminUserId: string) => {
+    mediumHaptic();
     setSaving(adminUserId);
     try {
       const { error } = await supabase.from("admin_permissions").insert({
@@ -212,8 +215,6 @@ const AdminPermissions = () => {
     { key: "can_delete_files" as const, label: "Delete Files", icon: Trash2, description: "Can delete files from any user" },
   ];
 
-  const glassCard = "bg-white/[0.03] backdrop-blur-xl border border-white/10";
-
   return (
     <DashboardLayout>
       <PageTransition>
@@ -228,7 +229,7 @@ const AdminPermissions = () => {
               <Shield className="w-6 h-6 text-teal-400" />
               Admin Permissions
             </h1>
-            <p className="text-white/50">Control what actions admins can perform</p>
+            <p className="text-white/50 text-sm">Control what actions admins can perform</p>
           </motion.div>
 
           {/* Search */}
@@ -238,23 +239,21 @@ const AdminPermissions = () => {
               placeholder="Search admins..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/30"
+              className="pl-10 ios-input"
             />
           </div>
 
           {/* Admins List */}
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 animate-spin text-white/50" />
-            </div>
+            <SkeletonList count={3} />
           ) : filteredAdmins.length === 0 ? (
-            <Card className={glassCard}>
-              <CardContent className="py-12 text-center text-white/50">
+            <GlassCard>
+              <div className="py-12 text-center text-white/50">
                 <Shield className="w-12 h-12 mx-auto mb-4 opacity-50" />
                 <p>No admins found</p>
                 <p className="text-sm">Promote users to admin role to manage their permissions here</p>
-              </CardContent>
-            </Card>
+              </div>
+            </GlassCard>
           ) : (
             <div className="grid gap-6">
               {filteredAdmins.map((admin, index) => (
@@ -263,92 +262,89 @@ const AdminPermissions = () => {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
+                  className="animate-fade-up"
+                  style={{ animationDelay: `${index * 50}ms` }}
                 >
-                  <Card className={glassCard}>
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center">
-                            <Shield className="w-5 h-5 text-white" />
-                          </div>
-                          <div>
-                            <CardTitle className="text-lg flex items-center gap-2 text-white">
-                              {admin.full_name || "Unnamed Admin"}
-                              <Badge variant="outline" className="text-xs border-white/20 text-white/70">Admin</Badge>
-                            </CardTitle>
-                            <CardDescription className="text-white/50">{admin.email}</CardDescription>
-                          </div>
+                  <GlassCard variant="elevated">
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center">
+                          <Shield className="w-6 h-6 text-white" />
                         </div>
-                        {saving === admin.user_id && (
-                          <Loader2 className="w-4 h-4 animate-spin text-white/50" />
-                        )}
+                        <div>
+                          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                            {admin.full_name || "Unnamed Admin"}
+                            <Badge variant="outline" className="text-xs border-white/20 text-white/70">Admin</Badge>
+                          </h3>
+                          <p className="text-sm text-white/50">{admin.email}</p>
+                        </div>
                       </div>
-                    </CardHeader>
-                    <CardContent>
-                      {admin.permissions === null ? (
-                        <div className="text-center py-4">
-                          <p className="text-white/50 mb-4">
-                            This admin has no permissions configured yet.
-                          </p>
-                          <Button
-                            onClick={() => initializePermissions(admin.user_id)}
-                            disabled={saving === admin.user_id}
-                            className="bg-gradient-to-r from-teal-500 to-blue-600 hover:from-teal-400 hover:to-blue-500 text-white"
-                          >
-                            <Save className="w-4 h-4 mr-2" />
-                            Initialize Default Permissions
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                          {permissionsList.map(({ key, label, icon: Icon, description }) => (
-                            <div
-                              key={key}
-                              className="flex items-start gap-3 p-3 rounded-xl border bg-white/5 border-white/10 hover:bg-white/10 transition-colors"
-                            >
-                              <div className="mt-0.5">
-                                <Icon className="w-4 h-4 text-white/50" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between gap-2">
-                                  <Label htmlFor={`${admin.user_id}-${key}`} className="text-sm font-medium cursor-pointer text-white">
-                                    {label}
-                                  </Label>
-                                  <Switch
-                                    id={`${admin.user_id}-${key}`}
-                                    checked={admin.permissions?.[key] ?? false}
-                                    onCheckedChange={(checked) => updatePermission(admin.user_id, key, checked)}
-                                    disabled={saving === admin.user_id}
-                                  />
-                                </div>
-                                <p className="text-xs text-white/40 mt-1">{description}</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                      {saving === admin.user_id && (
+                        <Loader2 className="w-5 h-5 animate-spin text-white/50" />
                       )}
-                    </CardContent>
-                  </Card>
+                    </div>
+
+                    {admin.permissions === null ? (
+                      <div className="text-center py-6">
+                        <p className="text-white/50 mb-4">
+                          This admin has no permissions configured yet.
+                        </p>
+                        <button
+                          onClick={() => initializePermissions(admin.user_id)}
+                          disabled={saving === admin.user_id}
+                          className="ios-button-primary px-6 py-3 rounded-xl text-sm font-medium inline-flex items-center gap-2"
+                        >
+                          <Save className="w-4 h-4" />
+                          Initialize Default Permissions
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {permissionsList.map(({ key, label, icon: Icon, description }) => (
+                          <div
+                            key={key}
+                            className="flex items-start gap-3 p-4 rounded-xl ios-glass-light hover:bg-white/[0.08] transition-colors"
+                          >
+                            <div className="mt-0.5 p-2 rounded-lg bg-white/[0.08]">
+                              <Icon className="w-4 h-4 text-white/60" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2">
+                                <Label htmlFor={`${admin.user_id}-${key}`} className="text-sm font-medium cursor-pointer text-white">
+                                  {label}
+                                </Label>
+                                <Switch
+                                  id={`${admin.user_id}-${key}`}
+                                  checked={admin.permissions?.[key] ?? false}
+                                  onCheckedChange={(checked) => updatePermission(admin.user_id, key, checked)}
+                                  disabled={saving === admin.user_id}
+                                />
+                              </div>
+                              <p className="text-xs text-white/40 mt-1">{description}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </GlassCard>
                 </motion.div>
               ))}
             </div>
           )}
 
           {/* Info Card */}
-          <Card className="bg-amber-500/10 border-amber-500/20">
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2 text-amber-400">
-                <Crown className="w-5 h-5" />
-                Owner Permissions
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-white/60">
-                As the owner, you have full access to all features regardless of permission settings.
-                These settings only apply to admin-level users.
-              </p>
-            </CardContent>
-          </Card>
+          <GlassCard className="bg-amber-500/10 border-amber-500/20">
+            <div className="flex items-start gap-3">
+              <Crown className="w-6 h-6 text-amber-400 flex-shrink-0" />
+              <div>
+                <h3 className="font-semibold text-amber-400">Owner Permissions</h3>
+                <p className="text-sm text-white/60 mt-1">
+                  As the owner, you have full access to all features regardless of permission settings.
+                  These settings only apply to admin-level users.
+                </p>
+              </div>
+            </div>
+          </GlassCard>
         </div>
       </PageTransition>
     </DashboardLayout>
