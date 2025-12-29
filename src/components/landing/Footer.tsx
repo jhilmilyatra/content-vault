@@ -9,7 +9,9 @@ const Footer = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-12 mb-24">
           <div className="col-span-2">
             <div className="flex items-center gap-3 mb-4">
-              <img src={logo} alt="CloudVault" className="h-10 w-auto" />
+              <div className="h-10 w-10 rounded-lg bg-white p-1 flex items-center justify-center">
+                <img src={logo} alt="CloudVault" className="h-full w-full object-contain" />
+              </div>
               <h3 className="text-xl font-bold tracking-tighter">CloudVault</h3>
             </div>
             <p className="text-white/50 text-sm max-w-xs leading-relaxed font-light">

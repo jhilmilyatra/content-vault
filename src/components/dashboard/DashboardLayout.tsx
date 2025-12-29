@@ -274,7 +274,9 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
             {/* Logo */}
             <div className="h-16 flex items-center justify-between px-4 border-b border-white/[0.06] safe-area-top">
               <Link to="/" className="flex items-center gap-3" onClick={() => lightHaptic()}>
-                <img src={logo} alt="CloudVault" className="h-10 w-auto" />
+                <div className="h-10 w-10 rounded-lg bg-white p-1 flex items-center justify-center">
+                  <img src={logo} alt="CloudVault" className="h-full w-full object-contain" />
+                </div>
                 {(!collapsed || isMobile) && (
                   <motion.span
                     initial={{ opacity: 0, x: -10 }}
