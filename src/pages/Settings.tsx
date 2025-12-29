@@ -3,22 +3,22 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
-import { User, Lock, Bell, Save, Loader2, Key, Copy, RefreshCw, Check, Bot, Server, HardDrive, ArrowLeft } from 'lucide-react';
+import { User, Lock, Bell, Save, Loader2, Key, Copy, RefreshCw, Check, Bot, ArrowLeft } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { PageTransition, staggerContainer, staggerItem } from '@/components/ui/PageTransition';
+import { PageTransition } from '@/components/ui/PageTransition';
+import { GlassCard, IosSegmentedControl, IosToggle } from '@/components/ios';
+import { lightHaptic, mediumHaptic } from '@/lib/haptics';
 
 const Settings = () => {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('profile');
   
   // Profile state
   const [fullName, setFullName] = useState(profile?.full_name || '');
@@ -40,6 +40,7 @@ const Settings = () => {
   const handleUpdateProfile = async () => {
     if (!user) return;
     
+    mediumHaptic();
     setLoading(true);
     try {
       const { error } = await supabase
@@ -71,6 +72,7 @@ const Settings = () => {
       return;
     }
 
+    mediumHaptic();
     setLoading(true);
     try {
       const { error } = await supabase.auth.updateUser({
@@ -90,6 +92,7 @@ const Settings = () => {
   };
 
   const handleSavePreferences = () => {
+    mediumHaptic();
     localStorage.setItem('preferences', JSON.stringify({
       emailNotifications,
       downloadNotifications,
@@ -100,6 +103,7 @@ const Settings = () => {
 
   const generateApiKey = () => {
     if (!user) return;
+    lightHaptic();
     const secret = crypto.randomUUID().replace(/-/g, '');
     const key = `${user.id}:${secret}`;
     setApiKey(key);
@@ -108,6 +112,7 @@ const Settings = () => {
 
   const copyApiKey = async () => {
     if (!apiKey) return;
+    lightHaptic();
     await navigator.clipboard.writeText(apiKey);
     setApiKeyCopied(true);
     toast.success('API key copied to clipboard');
@@ -119,8 +124,12 @@ const Settings = () => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
-  // Glass card style
-  const glassCard = "bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-2xl";
+  const tabSegments = [
+    { value: 'profile', label: 'Profile', icon: <User className="w-4 h-4" /> },
+    { value: 'security', label: 'Security', icon: <Lock className="w-4 h-4" /> },
+    { value: 'api', label: 'API', icon: <Key className="w-4 h-4" /> },
+    { value: 'preferences', label: 'Alerts', icon: <Bell className="w-4 h-4" /> },
+  ];
 
   return (
     <PageTransition>
@@ -133,48 +142,46 @@ const Settings = () => {
           className="flex items-center gap-3"
         >
           {isMobile && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate('/dashboard')}
-              className="h-9 w-9 flex-shrink-0 text-white/50 hover:text-white hover:bg-white/5"
+            <button
+              onClick={() => {
+                lightHaptic();
+                navigate('/dashboard');
+              }}
+              className="h-9 w-9 flex-shrink-0 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-white/50 hover:text-white hover:bg-white/[0.1] transition-colors"
             >
               <ArrowLeft className="w-5 h-5" />
-            </Button>
+            </button>
           )}
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">Settings</h1>
-            <p className="text-white/50 text-sm sm:text-base">Manage your account settings and preferences</p>
+            <p className="text-white/50 text-sm">Manage your account settings and preferences</p>
           </div>
         </motion.div>
 
-        <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-[500px] bg-white/5 border border-white/10 p-1 rounded-xl">
-            <TabsTrigger value="profile" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 rounded-lg gap-2">
-              <User className="h-4 w-4" />
-              <span className="hidden sm:inline">Profile</span>
-            </TabsTrigger>
-            <TabsTrigger value="security" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 rounded-lg gap-2">
-              <Lock className="h-4 w-4" />
-              <span className="hidden sm:inline">Security</span>
-            </TabsTrigger>
-            <TabsTrigger value="api" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 rounded-lg gap-2">
-              <Key className="h-4 w-4" />
-              <span className="hidden sm:inline">API</span>
-            </TabsTrigger>
-            <TabsTrigger value="preferences" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 rounded-lg gap-2">
-              <Bell className="h-4 w-4" />
-              <span className="hidden sm:inline">Preferences</span>
-            </TabsTrigger>
-          </TabsList>
+        {/* iOS Segmented Control for Tabs */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+        >
+          <IosSegmentedControl
+            segments={tabSegments}
+            value={activeTab}
+            onChange={setActiveTab}
+            size="md"
+            className="w-full lg:w-auto"
+          />
+        </motion.div>
 
-          <TabsContent value="profile" className="space-y-6">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className={`${glassCard} p-6 sm:p-8`}
-            >
+        {/* Profile Tab */}
+        {activeTab === 'profile' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="space-y-6"
+          >
+            <GlassCard variant="elevated" className="p-6 sm:p-8">
               <div className="mb-6">
                 <h2 className="text-xl font-semibold text-white mb-1">Profile Information</h2>
                 <p className="text-sm text-white/40">Update your personal information and avatar</p>
@@ -193,7 +200,7 @@ const Settings = () => {
                       placeholder="https://example.com/avatar.jpg"
                       value={avatarUrl}
                       onChange={(e) => setAvatarUrl(e.target.value)}
-                      className="bg-white/5 border-white/10 text-white placeholder:text-white/30 focus:border-teal-500/50"
+                      className="ios-input"
                     />
                   </div>
                 </div>
@@ -206,7 +213,7 @@ const Settings = () => {
                       placeholder="John Doe"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
-                      className="bg-white/5 border-white/10 text-white placeholder:text-white/30 focus:border-teal-500/50"
+                      className="ios-input"
                     />
                   </div>
                   <div className="space-y-2">
@@ -216,31 +223,34 @@ const Settings = () => {
                       type="email"
                       value={user?.email || ''}
                       disabled
-                      className="bg-white/5 border-white/10 text-white/50"
+                      className="ios-input opacity-50"
                     />
                     <p className="text-xs text-white/30">Email cannot be changed</p>
                   </div>
                 </div>
 
-                <Button 
+                <button 
                   onClick={handleUpdateProfile} 
                   disabled={loading} 
-                  className="gap-2 bg-gradient-to-r from-teal-500 to-blue-600 hover:from-teal-400 hover:to-blue-500 text-white shadow-lg shadow-teal-500/20"
+                  className="ios-button-primary px-6 py-3 rounded-xl text-sm font-medium inline-flex items-center gap-2"
                 >
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   Save Changes
-                </Button>
+                </button>
               </div>
-            </motion.div>
-          </TabsContent>
+            </GlassCard>
+          </motion.div>
+        )}
 
-          <TabsContent value="security" className="space-y-6">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className={`${glassCard} p-6 sm:p-8`}
-            >
+        {/* Security Tab */}
+        {activeTab === 'security' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="space-y-6"
+          >
+            <GlassCard variant="elevated" className="p-6 sm:p-8">
               <div className="mb-6">
                 <h2 className="text-xl font-semibold text-white mb-1">Change Password</h2>
                 <p className="text-sm text-white/40">Update your password to keep your account secure</p>
@@ -255,7 +265,7 @@ const Settings = () => {
                     placeholder="Enter new password"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="bg-white/5 border-white/10 text-white placeholder:text-white/30 focus:border-teal-500/50"
+                    className="ios-input"
                   />
                 </div>
                 <div className="space-y-2">
@@ -266,32 +276,27 @@ const Settings = () => {
                     placeholder="Confirm new password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="bg-white/5 border-white/10 text-white placeholder:text-white/30 focus:border-teal-500/50"
+                    className="ios-input"
                   />
                 </div>
-                <Button 
+                <button 
                   onClick={handleChangePassword} 
                   disabled={loading || !newPassword} 
-                  className="gap-2 bg-gradient-to-r from-teal-500 to-blue-600 hover:from-teal-400 hover:to-blue-500 text-white shadow-lg shadow-teal-500/20"
+                  className="ios-button-primary px-6 py-3 rounded-xl text-sm font-medium inline-flex items-center gap-2 disabled:opacity-50"
                 >
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
                   Update Password
-                </Button>
+                </button>
               </div>
-            </motion.div>
+            </GlassCard>
 
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className={`${glassCard} p-6 sm:p-8`}
-            >
+            <GlassCard className="p-6 sm:p-8">
               <div className="mb-6">
                 <h2 className="text-xl font-semibold text-white mb-1">Active Sessions</h2>
                 <p className="text-sm text-white/40">Manage your active login sessions</p>
               </div>
               
-              <div className="flex items-center justify-between rounded-xl bg-white/5 border border-white/10 p-4">
+              <div className="flex items-center justify-between rounded-xl ios-glass-light p-4">
                 <div className="space-y-1">
                   <p className="font-medium text-white">Current Session</p>
                   <p className="text-sm text-white/40">
@@ -299,20 +304,23 @@ const Settings = () => {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="flex h-2 w-2 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/50" />
+                  <span className="flex h-2 w-2 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/50 animate-pulse" />
                   <span className="text-sm text-white/50">Active</span>
                 </div>
               </div>
-            </motion.div>
-          </TabsContent>
+            </GlassCard>
+          </motion.div>
+        )}
 
-          <TabsContent value="api" className="space-y-6">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className={`${glassCard} p-6 sm:p-8`}
-            >
+        {/* API Tab */}
+        {activeTab === 'api' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="space-y-6"
+          >
+            <GlassCard variant="elevated" className="p-6 sm:p-8">
               <div className="mb-6">
                 <h2 className="text-xl font-semibold text-white mb-1">API Access</h2>
                 <p className="text-sm text-white/40">Generate an API key for integrations</p>
@@ -320,22 +328,20 @@ const Settings = () => {
               
               {apiKey ? (
                 <div className="space-y-4">
-                  <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                  <div className="p-4 rounded-xl ios-glass-light">
                     <Label className="text-xs text-white/40">Your API Key</Label>
                     <div className="flex items-center gap-2 mt-2">
                       <Input
                         value={apiKey}
                         readOnly
-                        className="font-mono text-xs bg-white/5 border-white/10 text-white"
+                        className="font-mono text-xs ios-input"
                       />
-                      <Button 
-                        variant="outline" 
-                        size="icon" 
+                      <button 
                         onClick={copyApiKey}
-                        className="border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                        className="ios-button-secondary p-3 rounded-xl"
                       >
                         {apiKeyCopied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
-                      </Button>
+                      </button>
                     </div>
                   </div>
                   <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
@@ -343,37 +349,31 @@ const Settings = () => {
                       ⚠️ This key will only be shown once. Store it securely!
                     </p>
                   </div>
-                  <Button 
-                    variant="outline" 
+                  <button 
                     onClick={generateApiKey} 
-                    className="gap-2 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                    className="ios-button-secondary px-4 py-2 rounded-xl text-sm font-medium inline-flex items-center gap-2"
                   >
                     <RefreshCw className="h-4 w-4" />
                     Generate New Key
-                  </Button>
+                  </button>
                 </div>
               ) : (
                 <div className="space-y-4">
                   <p className="text-sm text-white/50">
                     Generate an API key to upload files programmatically via our Telegram bot or any HTTP client.
                   </p>
-                  <Button 
+                  <button 
                     onClick={generateApiKey} 
-                    className="gap-2 bg-gradient-to-r from-teal-500 to-blue-600 hover:from-teal-400 hover:to-blue-500 text-white shadow-lg shadow-teal-500/20"
+                    className="ios-button-primary px-6 py-3 rounded-xl text-sm font-medium inline-flex items-center gap-2"
                   >
                     <Key className="h-4 w-4" />
                     Generate API Key
-                  </Button>
+                  </button>
                 </div>
               )}
-            </motion.div>
+            </GlassCard>
 
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className={`${glassCard} p-6 sm:p-8`}
-            >
+            <GlassCard className="p-6 sm:p-8">
               <div className="mb-6">
                 <h2 className="text-xl font-semibold text-white mb-1">API Documentation</h2>
                 <p className="text-sm text-white/40">How to use the upload API</p>
@@ -382,85 +382,81 @@ const Settings = () => {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label className="text-white/70 text-sm">Endpoint</Label>
-                  <code className="block p-3 rounded-xl bg-white/5 border border-white/10 text-sm font-mono text-teal-400 break-all">
+                  <code className="block p-3 rounded-xl ios-glass-light text-sm font-mono text-teal-400 break-all">
                     POST https://dgmxndvvsbjjbnoibaid.supabase.co/functions/v1/telegram-upload
                   </code>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-white/70 text-sm">Headers</Label>
-                  <code className="block p-3 rounded-xl bg-white/5 border border-white/10 text-sm font-mono text-white/70">
+                  <code className="block p-3 rounded-xl ios-glass-light text-sm font-mono text-white/70">
                     x-api-key: YOUR_API_KEY<br/>
                     Content-Type: application/json
                   </code>
                 </div>
-                <div className="pt-4 border-t border-white/5">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => window.location.href = '/dashboard/telegram-guide'} 
-                    className="gap-2 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                <div className="pt-4 border-t border-white/[0.05]">
+                  <button 
+                    onClick={() => {
+                      lightHaptic();
+                      window.location.href = '/dashboard/telegram-guide';
+                    }} 
+                    className="ios-button-secondary px-4 py-2 rounded-xl text-sm font-medium inline-flex items-center gap-2"
                   >
                     <Bot className="h-4 w-4" />
                     View Telegram Bot Guide
-                  </Button>
+                  </button>
                 </div>
               </div>
-            </motion.div>
-          </TabsContent>
+            </GlassCard>
+          </motion.div>
+        )}
 
-          <TabsContent value="preferences" className="space-y-6">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className={`${glassCard} p-6 sm:p-8`}
-            >
+        {/* Preferences Tab */}
+        {activeTab === 'preferences' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="space-y-6"
+          >
+            <GlassCard variant="elevated" className="p-6 sm:p-8">
               <div className="mb-6">
                 <h2 className="text-xl font-semibold text-white mb-1">Notifications</h2>
                 <p className="text-sm text-white/40">Configure your notification preferences</p>
               </div>
               
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-white">Email Notifications</Label>
-                    <p className="text-sm text-white/40">Receive email updates about your account</p>
-                  </div>
-                  <Switch
-                    checked={emailNotifications}
-                    onCheckedChange={setEmailNotifications}
-                  />
+              <div className="space-y-3">
+                <IosToggle
+                  checked={emailNotifications}
+                  onCheckedChange={setEmailNotifications}
+                  label="Email Notifications"
+                  description="Receive email updates about your account"
+                />
+                <IosToggle
+                  checked={downloadNotifications}
+                  onCheckedChange={setDownloadNotifications}
+                  label="Download Alerts"
+                  description="Get notified when files are downloaded"
+                />
+                <IosToggle
+                  checked={weeklyReports}
+                  onCheckedChange={setWeeklyReports}
+                  label="Weekly Reports"
+                  description="Receive weekly analytics summaries"
+                />
+                
+                <div className="pt-4">
+                  <button 
+                    onClick={handleSavePreferences} 
+                    className="ios-button-primary px-6 py-3 rounded-xl text-sm font-medium inline-flex items-center gap-2"
+                  >
+                    <Save className="h-4 w-4" />
+                    Save Preferences
+                  </button>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-white">Download Alerts</Label>
-                    <p className="text-sm text-white/40">Get notified when files are downloaded</p>
-                  </div>
-                  <Switch
-                    checked={downloadNotifications}
-                    onCheckedChange={setDownloadNotifications}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-white">Weekly Reports</Label>
-                    <p className="text-sm text-white/40">Receive weekly analytics summaries</p>
-                  </div>
-                  <Switch
-                    checked={weeklyReports}
-                    onCheckedChange={setWeeklyReports}
-                  />
-                </div>
-                <Button 
-                  onClick={handleSavePreferences} 
-                  className="gap-2 bg-gradient-to-r from-teal-500 to-blue-600 hover:from-teal-400 hover:to-blue-500 text-white shadow-lg shadow-teal-500/20"
-                >
-                  <Save className="h-4 w-4" />
-                  Save Preferences
-                </Button>
               </div>
-            </motion.div>
-          </TabsContent>
-        </Tabs>
+            </GlassCard>
+          </motion.div>
+        )}
       </div>
     </PageTransition>
   );
