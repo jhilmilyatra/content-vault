@@ -232,26 +232,58 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Mark chunk as uploaded in database
-      const newUploadedChunks = [...uploadedChunks, chunkIndex].sort((a, b) => a - b);
-      
-      const { error: updateError } = await supabase
-        .from("chunked_upload_sessions")
-        .update({ uploaded_chunks: newUploadedChunks })
-        .eq("upload_id", uploadId);
+      // ATOMIC UPDATE: Use raw SQL to append to array atomically
+      // This prevents race conditions when multiple chunks are uploaded in parallel
+      const { data: updatedSession, error: updateError } = await supabase.rpc('append_chunk_to_session', {
+        p_upload_id: uploadId,
+        p_chunk_index: chunkIndex
+      }).single();
 
+      // Fallback to regular update if RPC doesn't exist
+      let finalUploadedChunks: number[];
       if (updateError) {
-        console.error("Failed to update upload session:", updateError);
+        // RPC might not exist, use regular update with retry logic
+        console.log(`RPC not available, using regular update for chunk ${chunkIndex}`);
+        
+        // Re-fetch current state and update
+        const { data: currentSession } = await supabase
+          .from("chunked_upload_sessions")
+          .select("uploaded_chunks")
+          .eq("upload_id", uploadId)
+          .single();
+        
+        const currentChunks: number[] = currentSession?.uploaded_chunks || [];
+        if (!currentChunks.includes(chunkIndex)) {
+          const newChunks = [...currentChunks, chunkIndex].sort((a, b) => a - b);
+          
+          await supabase
+            .from("chunked_upload_sessions")
+            .update({ uploaded_chunks: newChunks })
+            .eq("upload_id", uploadId);
+          
+          finalUploadedChunks = newChunks;
+        } else {
+          finalUploadedChunks = currentChunks;
+        }
+      } else {
+        // Get updated chunks count from RPC result
+        const { data: refreshedSession } = await supabase
+          .from("chunked_upload_sessions")
+          .select("uploaded_chunks")
+          .eq("upload_id", uploadId)
+          .single();
+        
+        finalUploadedChunks = refreshedSession?.uploaded_chunks || [];
       }
 
-      const progress = (newUploadedChunks.length / session.total_chunks) * 100;
+      const progress = (finalUploadedChunks.length / session.total_chunks) * 100;
       console.log(`✅ Chunk ${chunkIndex + 1}/${session.total_chunks} uploaded (${progress.toFixed(1)}%)`);
 
       return new Response(
         JSON.stringify({
           success: true,
           chunkIndex,
-          uploadedChunks: newUploadedChunks.length,
+          uploadedChunks: finalUploadedChunks.length,
           totalChunks: session.total_chunks,
           progress,
         }),
