@@ -13,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Search, Ban, UserX, Users, Shield, RefreshCw, KeyRound, Loader2, UserCheck, FolderKey } from "lucide-react";
 import { format } from "date-fns";
+import { GlassCard, SkeletonStats, SkeletonTable } from "@/components/ios";
 
 interface GuestWithAccess {
   id: string;
@@ -347,7 +348,7 @@ const OwnerGuestControls = () => {
               </div>
 
               {loading ? (
-                <div className="text-center py-8 text-white/50">Loading guests...</div>
+                <SkeletonTable rows={5} />
               ) : filteredGuests.length === 0 ? (
                 <div className="text-center py-8 text-white/50">No guests found</div>
               ) : (

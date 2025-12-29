@@ -8,7 +8,7 @@ interface GlassCardProps extends Omit<HTMLMotionProps<"div">, "children"> {
   children: ReactNode;
   className?: string;
   interactive?: boolean;
-  variant?: "default" | "elevated" | "inset";
+  variant?: "default" | "elevated" | "inset" | "subtle";
 }
 
 export function GlassCard({ 
@@ -27,9 +27,10 @@ export function GlassCard({
   };
 
   const variantClasses = {
-    default: "bg-white/[0.06] dark:bg-white/[0.04] border-white/[0.08]",
-    elevated: "bg-white/[0.08] dark:bg-white/[0.06] border-white/[0.12] shadow-xl shadow-black/10",
-    inset: "bg-black/[0.2] dark:bg-black/[0.3] border-white/[0.05]",
+    default: "ios-glass",
+    elevated: "ios-glass-elevated",
+    inset: "bg-black/[0.3] border-white/[0.05]",
+    subtle: "ios-glass-light",
   };
 
   return (
@@ -37,10 +38,10 @@ export function GlassCard({
       {...(interactive ? cardPress : {})}
       onClick={handleClick}
       className={cn(
-        "rounded-2xl backdrop-blur-xl border p-5",
-        "transition-colors duration-200",
+        "rounded-2xl p-5",
+        "transition-all duration-300",
         variantClasses[variant],
-        interactive && "cursor-pointer active:scale-[0.98]",
+        interactive && "cursor-pointer ios-press ios-card-hover",
         className
       )}
       {...props}
