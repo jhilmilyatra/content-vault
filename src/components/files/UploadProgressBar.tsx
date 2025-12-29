@@ -1,13 +1,13 @@
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Loader2, CheckCircle2, AlertCircle, Upload, X, Pause, Play, 
-  Layers, Zap, FileUp, Sparkles, CloudUpload, BarChart3
+  Layers, Zap, FileUp, Sparkles, CloudUpload, BarChart3, Gauge, Clock, HardDrive
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatFileSize, formatSpeed, formatTime, type UploadProgress, type SpeedDataPoint } from "@/lib/fileService";
 import { lightHaptic } from "@/lib/haptics";
 import UploadSpeedGraph from "./UploadSpeedGraph";
-import { useState } from "react";
 
 interface UploadProgressBarProps {
   uploads: UploadProgress[];
@@ -16,6 +16,10 @@ interface UploadProgressBarProps {
 
 const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
   const [showGraph, setShowGraph] = useState(true);
+  const [peakSpeed, setPeakSpeed] = useState(0);
+  const [uploadStartTime, setUploadStartTime] = useState<number | null>(null);
+  const [uploadEndTime, setUploadEndTime] = useState<number | null>(null);
+  const prevIsComplete = useRef(false);
 
   if (uploads.length === 0) return null;
 
@@ -34,6 +38,36 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
   const adaptiveChunkSize = activeChunkedUpload?.adaptiveChunkSize;
   const adaptiveParallelChunks = activeChunkedUpload?.adaptiveParallelChunks;
   const speedHistory = activeChunkedUpload?.speedHistory || [];
+
+  // Track peak speed and timing
+  useEffect(() => {
+    if (avgSpeed > peakSpeed) {
+      setPeakSpeed(avgSpeed);
+    }
+  }, [avgSpeed, peakSpeed]);
+
+  useEffect(() => {
+    if (uploads.length > 0 && uploadStartTime === null) {
+      setUploadStartTime(Date.now());
+    }
+  }, [uploads.length, uploadStartTime]);
+
+  useEffect(() => {
+    if (isComplete && !prevIsComplete.current) {
+      setUploadEndTime(Date.now());
+    }
+    prevIsComplete.current = isComplete;
+  }, [isComplete]);
+
+  // Calculate total upload duration
+  const uploadDuration = uploadStartTime && uploadEndTime 
+    ? (uploadEndTime - uploadStartTime) / 1000 
+    : uploadStartTime 
+      ? (Date.now() - uploadStartTime) / 1000 
+      : 0;
+
+  // Calculate average speed over entire upload
+  const overallAvgSpeed = uploadDuration > 0 ? totalSize / uploadDuration : 0;
 
   const getStatusIcon = (status: UploadProgress['status']) => {
     switch (status) {
@@ -183,6 +217,16 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
                   <span className="flex items-center gap-1">
                     <Zap className="w-3 h-3 text-gold" />
                     {formatSpeed(avgSpeed)}
+                  </span>
+                </>
+              )}
+              {/* Peak speed indicator */}
+              {!isComplete && !hasError && peakSpeed > 0 && (
+                <>
+                  <span className="w-1 h-1 rounded-full bg-white/20" />
+                  <span className="flex items-center gap-1 text-amber-400">
+                    <Gauge className="w-3 h-3" />
+                    Peak: {formatSpeed(peakSpeed)}
                   </span>
                 </>
               )}
@@ -364,6 +408,104 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
           </div>
         </motion.div>
       )}
+
+      {/* Completion Summary */}
+      <AnimatePresence>
+        {isComplete && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            className="border-t border-emerald-500/20 overflow-hidden"
+          >
+            <div className="p-4 bg-gradient-to-b from-emerald-500/5 to-transparent">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-6 h-6 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                </div>
+                <span className="text-sm font-medium text-emerald-400">Upload Summary</span>
+              </div>
+              
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {/* Total Data */}
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                  className="flex items-center gap-2 p-2 rounded-lg bg-white/[0.03] border border-white/[0.05]"
+                >
+                  <HardDrive className="w-4 h-4 text-cyan-400" />
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-white/40 uppercase tracking-wide">Total</p>
+                    <p className="text-sm font-semibold text-white tabular-nums truncate">
+                      {formatFileSize(totalSize)}
+                    </p>
+                  </div>
+                </motion.div>
+
+                {/* Peak Speed */}
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="flex items-center gap-2 p-2 rounded-lg bg-white/[0.03] border border-white/[0.05]"
+                >
+                  <Gauge className="w-4 h-4 text-gold" />
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-white/40 uppercase tracking-wide">Peak</p>
+                    <p className="text-sm font-semibold text-gold tabular-nums truncate">
+                      {formatSpeed(peakSpeed)}
+                    </p>
+                  </div>
+                </motion.div>
+
+                {/* Average Speed */}
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3 }}
+                  className="flex items-center gap-2 p-2 rounded-lg bg-white/[0.03] border border-white/[0.05]"
+                >
+                  <Zap className="w-4 h-4 text-emerald-400" />
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-white/40 uppercase tracking-wide">Avg</p>
+                    <p className="text-sm font-semibold text-emerald-400 tabular-nums truncate">
+                      {formatSpeed(overallAvgSpeed)}
+                    </p>
+                  </div>
+                </motion.div>
+
+                {/* Duration */}
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4 }}
+                  className="flex items-center gap-2 p-2 rounded-lg bg-white/[0.03] border border-white/[0.05]"
+                >
+                  <Clock className="w-4 h-4 text-violet-400" />
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-white/40 uppercase tracking-wide">Duration</p>
+                    <p className="text-sm font-semibold text-violet-400 tabular-nums truncate">
+                      {formatTime(uploadDuration)}
+                    </p>
+                  </div>
+                </motion.div>
+              </div>
+
+              {/* Files count */}
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.5 }}
+                className="text-xs text-white/40 mt-3 text-center"
+              >
+                {uploads.length} file{uploads.length !== 1 ? 's' : ''} uploaded successfully
+              </motion.p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Completion celebration */}
       <AnimatePresence>
