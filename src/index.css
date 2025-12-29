@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -12,87 +12,102 @@
 
 @layer base {
   :root {
-    /* Apple-inspired color palette - refined and luxurious */
-    --background: 220 20% 4%;
+    /* Luxury dark theme - million dollar aesthetic */
+    --background: 225 25% 3%;
     --foreground: 0 0% 98%;
 
-    --card: 220 18% 7%;
+    --card: 225 20% 6%;
     --card-foreground: 0 0% 98%;
 
-    --popover: 220 18% 9%;
+    --popover: 225 20% 8%;
     --popover-foreground: 0 0% 98%;
 
-    /* Apple Blue as primary - the signature iOS accent */
-    --primary: 211 100% 50%;
-    --primary-foreground: 0 0% 100%;
+    /* Premium gold accent as primary */
+    --primary: 43 100% 50%;
+    --primary-foreground: 225 25% 3%;
 
-    --secondary: 220 14% 14%;
+    --secondary: 225 16% 12%;
     --secondary-foreground: 0 0% 95%;
 
-    --muted: 220 14% 12%;
-    --muted-foreground: 220 10% 50%;
+    --muted: 225 16% 10%;
+    --muted-foreground: 225 10% 45%;
 
-    --accent: 211 100% 50%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 43 100% 50%;
+    --accent-foreground: 225 25% 3%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 71% 45%;
+    --success: 160 84% 39%;
     --success-foreground: 0 0% 100%;
 
     --warning: 38 92% 50%;
-    --warning-foreground: 220 20% 4%;
+    --warning-foreground: 225 25% 3%;
 
-    --border: 220 14% 16%;
-    --input: 220 14% 14%;
-    --ring: 211 100% 50%;
+    --border: 225 16% 14%;
+    --input: 225 16% 12%;
+    --ring: 43 100% 50%;
 
-    --radius: 0.875rem;
+    --radius: 1rem;
 
-    /* Apple-style design tokens */
-    --gradient-primary: linear-gradient(135deg, hsl(211 100% 50%) 0%, hsl(199 100% 48%) 100%);
-    --gradient-dark: linear-gradient(180deg, hsl(220 18% 6%) 0%, hsl(220 20% 3%) 100%);
-    --gradient-glow: radial-gradient(ellipse at center, hsl(211 100% 50% / 0.12) 0%, transparent 70%);
-    --gradient-card: linear-gradient(135deg, hsl(220 14% 10%) 0%, hsl(220 14% 7%) 100%);
+    /* Luxury color palette */
+    --luxury-gold: 43 100% 50%;
+    --luxury-gold-light: 45 100% 60%;
+    --luxury-gold-dark: 38 100% 40%;
+    --luxury-platinum: 220 15% 70%;
+    --luxury-emerald: 160 84% 39%;
+    --luxury-sapphire: 217 91% 60%;
+    --luxury-ruby: 0 84% 60%;
+    --luxury-amethyst: 270 60% 60%;
+
+    /* Premium gradient tokens */
+    --gradient-gold: linear-gradient(135deg, hsl(43 100% 50%) 0%, hsl(38 100% 45%) 50%, hsl(45 100% 55%) 100%);
+    --gradient-platinum: linear-gradient(135deg, hsl(220 15% 60%) 0%, hsl(220 15% 75%) 100%);
+    --gradient-dark-luxury: linear-gradient(180deg, hsl(225 25% 5%) 0%, hsl(225 25% 2%) 100%);
+    --gradient-glow-gold: radial-gradient(ellipse at center, hsl(43 100% 50% / 0.15) 0%, transparent 70%);
+    --gradient-card-luxury: linear-gradient(145deg, hsl(225 16% 10%) 0%, hsl(225 16% 6%) 100%);
+    --gradient-hero: linear-gradient(135deg, hsl(225 25% 8%) 0%, hsl(225 30% 4%) 100%);
     
-    --shadow-glow: 0 0 80px -20px hsl(211 100% 50% / 0.35);
-    --shadow-card: 0 2px 20px -4px hsl(220 20% 2% / 0.6);
-    --shadow-elevated: 0 8px 40px -8px hsl(220 20% 2% / 0.7);
-    --shadow-glass: 0 4px 24px -4px hsl(220 20% 2% / 0.4);
+    /* Premium shadows */
+    --shadow-gold-glow: 0 0 60px -15px hsl(43 100% 50% / 0.4);
+    --shadow-luxury-card: 0 4px 30px -4px hsl(0 0% 0% / 0.5);
+    --shadow-luxury-elevated: 0 12px 50px -10px hsl(0 0% 0% / 0.6);
+    --shadow-inner-glow: inset 0 1px 0 0 hsl(0 0% 100% / 0.05);
 
-    /* Apple Glass design tokens - refined materials */
-    --glass-bg: hsl(220 14% 12% / 0.65);
-    --glass-bg-subtle: hsl(220 14% 12% / 0.35);
-    --glass-bg-elevated: hsl(220 14% 14% / 0.75);
-    --glass-border: hsl(0 0% 100% / 0.08);
-    --glass-border-subtle: hsl(0 0% 100% / 0.04);
-    --glass-blur: 20px;
-    --glass-blur-heavy: 40px;
+    /* Premium glass tokens */
+    --glass-bg-luxury: hsl(225 20% 8% / 0.7);
+    --glass-bg-subtle-luxury: hsl(225 20% 10% / 0.4);
+    --glass-bg-elevated-luxury: hsl(225 20% 10% / 0.85);
+    --glass-border-gold: hsl(43 100% 50% / 0.15);
+    --glass-border-subtle: hsl(0 0% 100% / 0.06);
+    --glass-blur: 24px;
+    --glass-blur-heavy: 48px;
 
     /* Sidebar */
-    --sidebar-background: 220 18% 5%;
+    --sidebar-background: 225 22% 4%;
     --sidebar-foreground: 0 0% 98%;
-    --sidebar-primary: 211 100% 50%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 14% 12%;
+    --sidebar-primary: 43 100% 50%;
+    --sidebar-primary-foreground: 225 25% 3%;
+    --sidebar-accent: 225 16% 10%;
     --sidebar-accent-foreground: 0 0% 95%;
-    --sidebar-border: 220 14% 14%;
-    --sidebar-ring: 211 100% 50%;
+    --sidebar-border: 225 16% 12%;
+    --sidebar-ring: 43 100% 50%;
 
     /* Apple motion timing tokens */
-    --duration-micro: 120ms;
-    --duration-fast: 180ms;
+    --duration-micro: 100ms;
+    --duration-fast: 150ms;
     --duration-normal: 250ms;
-    --duration-slow: 350ms;
+    --duration-slow: 400ms;
+    --duration-slower: 600ms;
     --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
     --ease-natural: cubic-bezier(0.22, 1, 0.36, 1);
     --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
     --ease-ios: cubic-bezier(0.25, 0.1, 0.25, 1);
+    --ease-luxury: cubic-bezier(0.19, 1, 0.22, 1);
   }
 
   .dark {
-    --background: 220 20% 4%;
+    --background: 225 25% 3%;
     --foreground: 0 0% 98%;
   }
 }
