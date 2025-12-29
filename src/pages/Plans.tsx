@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Check, Crown, HardDrive, Zap, MessageCircle, Infinity, Clock } from 'lucide-react';
+import { Check, Crown, HardDrive, Zap, MessageCircle, Calendar, Clock, Gift } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -57,48 +57,60 @@ const monthlyPlans = [
   },
 ];
 
-const lifetimePlans = [
+const yearlyPlans = [
   {
-    id: 'lifetime-100',
+    id: 'yearly-100',
     name: '100 GB',
     storage: 100,
     bandwidth: 500,
     links: 50,
     price: 999,
-    period: 'lifetime',
+    period: 'yearly',
     popular: false,
   },
   {
-    id: 'lifetime-200',
+    id: 'yearly-200',
     name: '200 GB',
     storage: 200,
     bandwidth: 1000,
     links: 100,
     price: 1799,
-    period: 'lifetime',
+    period: 'yearly',
     popular: true,
   },
   {
-    id: 'lifetime-400',
+    id: 'yearly-400',
     name: '400 GB',
     storage: 400,
     bandwidth: 2000,
     links: 200,
     price: 2999,
-    period: 'lifetime',
+    period: 'yearly',
     popular: false,
   },
   {
-    id: 'lifetime-1tb',
+    id: 'yearly-1tb',
     name: '1 TB',
     storage: 1000,
     bandwidth: 5000,
     links: 500,
     price: 4999,
-    period: 'lifetime',
+    period: 'yearly',
     popular: false,
   },
 ];
+
+// Free trial plan
+const freePlan = {
+  id: 'free-trial',
+  name: 'Free Trial',
+  storage: 5,
+  bandwidth: 50,
+  links: 10,
+  price: 0,
+  period: '7 days',
+  popular: false,
+};
 
 const Plans = () => {
   const { profile } = useAuth();
@@ -136,6 +148,40 @@ const Plans = () => {
             Choose the perfect plan for your needs. All plans include premium features and priority support.
           </p>
         </div>
+
+        {/* Free Trial */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <Card className="relative border-dashed border-2 border-green-500/30 bg-green-500/5">
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+              <Badge className="bg-green-500 text-white">
+                <Gift className="w-3 h-3 mr-1" />
+                7-Day Free Trial
+              </Badge>
+            </div>
+            <CardContent className="py-8">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                <div className="text-center md:text-left">
+                  <h3 className="text-xl font-semibold text-foreground mb-2">Start Your Free Trial</h3>
+                  <p className="text-muted-foreground max-w-md">
+                    Try FileCloud free for 7 days with 5GB storage, 50GB bandwidth, and 10 active links. No credit card required.
+                  </p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="text-center">
+                    <span className="text-3xl font-bold text-foreground">₹0</span>
+                    <span className="text-muted-foreground text-sm block">for 7 days</span>
+                  </div>
+                  <Button onClick={() => handleSelectPlan(freePlan)} variant="outline" className="border-green-500/50 text-green-500 hover:bg-green-500/10">
+                    Start Free Trial
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
 
         {/* Monthly Plans */}
         <div className="space-y-4">
@@ -199,15 +245,15 @@ const Plans = () => {
           </div>
         </div>
 
-        {/* Lifetime Plans */}
+        {/* Yearly Plans */}
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <Infinity className="w-5 h-5 text-amber-500" />
-            <h2 className="text-xl font-semibold text-foreground">Lifetime Plans</h2>
-            <Badge variant="outline" className="text-amber-500 border-amber-500/30">Best Value</Badge>
+            <Calendar className="w-5 h-5 text-amber-500" />
+            <h2 className="text-xl font-semibold text-foreground">Yearly Plans</h2>
+            <Badge variant="outline" className="text-amber-500 border-amber-500/30">Save 2 Months</Badge>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {lifetimePlans.map((plan, index) => (
+            {yearlyPlans.map((plan, index) => (
               <motion.div
                 key={plan.id}
                 initial={{ opacity: 0, y: 20 }}
@@ -225,12 +271,12 @@ const Plans = () => {
                       <Crown className="w-6 h-6 text-amber-500" />
                     </div>
                     <CardTitle className="text-lg">{plan.name}</CardTitle>
-                    <CardDescription>one-time payment</CardDescription>
+                    <CardDescription>per year</CardDescription>
                   </CardHeader>
                   <CardContent className="text-center">
                     <div className="mb-4">
                       <span className="text-3xl font-bold text-foreground">₹{plan.price}</span>
-                      <span className="text-muted-foreground">/forever</span>
+                      <span className="text-muted-foreground">/year</span>
                     </div>
                     <ul className="space-y-2 text-sm text-left">
                       <li className="flex items-center gap-2">
@@ -239,7 +285,7 @@ const Plans = () => {
                       </li>
                       <li className="flex items-center gap-2">
                         <Check className="w-4 h-4 text-green-500" />
-                        {plan.bandwidth} GB Bandwidth
+                        {plan.bandwidth} GB Bandwidth/mo
                       </li>
                       <li className="flex items-center gap-2">
                         <Check className="w-4 h-4 text-green-500" />
@@ -247,7 +293,7 @@ const Plans = () => {
                       </li>
                       <li className="flex items-center gap-2">
                         <Check className="w-4 h-4 text-green-500" />
-                        Lifetime Access
+                        2 Months Free
                       </li>
                     </ul>
                   </CardContent>
@@ -257,7 +303,7 @@ const Plans = () => {
                       variant={plan.popular ? 'default' : 'outline'}
                       onClick={() => handleSelectPlan(plan)}
                     >
-                      Buy Lifetime
+                      Get Yearly
                     </Button>
                   </CardFooter>
                 </Card>
@@ -322,7 +368,7 @@ const Plans = () => {
                 <li>• Storage: {selectedPlan?.storage} GB</li>
                 <li>• Bandwidth: {selectedPlan?.bandwidth} GB</li>
                 <li>• Active Links: {selectedPlan?.links}</li>
-                <li>• Duration: {selectedPlan?.period === 'lifetime' ? 'Lifetime' : '1 Month'}</li>
+                <li>• Duration: {selectedPlan?.period === 'yearly' ? '1 Year' : selectedPlan?.period === '7 days' ? '7 Days (Trial)' : '1 Month'}</li>
               </ul>
             </div>
             <a

@@ -1,22 +1,23 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, X } from "lucide-react";
+import { Check, X, ChevronDown } from "lucide-react";
 import { Link } from "react-router-dom";
 import Magnetic from "./Magnetic";
 
 const plans = [
   {
-    name: "Free",
+    name: "Free Trial",
     price: "₹0",
-    period: "forever",
-    description: "For personal use and testing.",
+    period: "7 days",
+    description: "Try before you buy.",
     features: [
       "5GB Storage",
       "50GB Bandwidth/month",
       "10 Active Links",
-      "Basic Analytics"
+      "Basic Analytics",
+      "7-Day Trial Period"
     ],
-    cta: "Start for Free",
+    cta: "Start Free Trial",
     featured: false
   },
   {
@@ -35,24 +36,52 @@ const plans = [
     featured: true
   },
   {
-    name: "Lifetime",
-    price: "₹4999",
-    period: "one-time",
-    description: "Pay once, use forever.",
+    name: "Yearly",
+    price: "₹1999",
+    period: "/year",
+    description: "Best value for long-term users.",
     features: [
-      "1TB Storage",
-      "Unlimited Bandwidth",
+      "100GB Storage",
+      "1TB Bandwidth/month",
       "Unlimited Links",
       "All Premium Features",
-      "Lifetime Updates"
+      "2 Months Free"
     ],
-    cta: "Get Lifetime",
+    cta: "Get Yearly",
     featured: false
+  }
+];
+
+const faqs = [
+  {
+    question: "What happens after my 7-day free trial ends?",
+    answer: "After the trial ends, you'll need to upgrade to a Premium or Yearly plan to continue using the service. Your files will be safely stored, but you won't be able to upload new files or generate new links until you subscribe."
+  },
+  {
+    question: "Can I upgrade or downgrade my plan anytime?",
+    answer: "Yes! You can upgrade your plan at any time. When you upgrade, you'll get immediate access to your new plan's features. Downgrades take effect at the end of your current billing cycle."
+  },
+  {
+    question: "What payment methods do you accept?",
+    answer: "We accept UPI, bank transfers, and all major credit/debit cards. For enterprise plans, we also offer invoice-based payments."
+  },
+  {
+    question: "Is there a refund policy?",
+    answer: "Yes, we offer a 7-day money-back guarantee on all paid plans. If you're not satisfied, contact us within 7 days of purchase for a full refund."
+  },
+  {
+    question: "What's included in the bandwidth limit?",
+    answer: "Bandwidth covers all downloads and streaming of your files. Views and previews also count towards your bandwidth. Unused bandwidth doesn't roll over to the next month."
+  },
+  {
+    question: "Can I get a custom plan for my organization?",
+    answer: "Absolutely! Contact our sales team for enterprise plans with custom storage, bandwidth, dedicated support, and white-label options tailored to your needs."
   }
 ];
 
 const Pricing = () => {
   const [showContactModal, setShowContactModal] = useState(false);
+  const [openFaq, setOpenFaq] = useState<number | null>(null);
 
   return (
     <section id="pricing" className="relative py-32 px-6 overflow-hidden">
@@ -128,7 +157,7 @@ const Pricing = () => {
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          className="glass-card p-10 md:p-16 border-white/5 bg-gradient-to-br from-violet-500/5 to-transparent"
+          className="glass-card p-10 md:p-16 border-white/5 bg-gradient-to-br from-violet-500/5 to-transparent mb-20"
         >
           <div className="flex flex-col md:flex-row items-center justify-between gap-8">
             <div className="flex-1 text-center md:text-left">
@@ -160,6 +189,64 @@ const Pricing = () => {
                 </button>
               </Magnetic>
             </div>
+          </div>
+        </motion.div>
+
+        {/* FAQ Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="max-w-3xl mx-auto"
+        >
+          <div className="text-center mb-12">
+            <h3 className="text-3xl md:text-4xl font-semibold tracking-tighter mb-4">
+              Frequently Asked <span className="text-white/40">Questions</span>
+            </h3>
+            <p className="text-white/50 font-light">
+              Everything you need to know about our plans.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            {faqs.map((faq, index) => (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 10 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: index * 0.05 }}
+                className="glass-card border-white/5 bg-black/40 overflow-hidden"
+              >
+                <button
+                  onClick={() => setOpenFaq(openFaq === index ? null : index)}
+                  className="w-full p-6 flex items-center justify-between text-left hover:bg-white/5 transition-colors"
+                >
+                  <span className="font-medium text-white/90">{faq.question}</span>
+                  <ChevronDown 
+                    className={`w-5 h-5 text-white/40 transition-transform duration-300 ${
+                      openFaq === index ? "rotate-180" : ""
+                    }`} 
+                    strokeWidth={1.5} 
+                  />
+                </button>
+                <AnimatePresence>
+                  {openFaq === index && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="overflow-hidden"
+                    >
+                      <p className="px-6 pb-6 text-white/50 font-light leading-relaxed">
+                        {faq.answer}
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            ))}
           </div>
         </motion.div>
       </div>
