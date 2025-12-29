@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { PageTransition } from "@/components/ui/PageTransition";
 import {
   uploadFile,
   deleteFile,
@@ -69,6 +70,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+
+// Glass card style constant
+const glassCard = "bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-2xl";
 
 const FileManager = () => {
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -394,91 +398,106 @@ const FileManager = () => {
 
   return (
     <DashboardLayout>
-      <div 
-        className={`space-y-6 min-h-[calc(100vh-8rem)] transition-all ${isDragging ? 'relative' : ''}`}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
-        {/* Drag Overlay */}
-        <AnimatePresence>
-          {isDragging && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 z-50 bg-primary/10 border-2 border-dashed border-primary rounded-xl flex items-center justify-center backdrop-blur-sm"
-            >
-              <div className="text-center">
-                <Upload className="w-16 h-16 text-primary mx-auto mb-4" />
-                <p className="text-xl font-semibold text-foreground">Drop files here</p>
-                <p className="text-muted-foreground">Release to upload your files</p>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+      <PageTransition>
+        <div 
+          className={`space-y-6 min-h-[calc(100vh-8rem)] transition-all ${isDragging ? 'relative' : ''}`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {/* Drag Overlay */}
+          <AnimatePresence>
+            {isDragging && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-50 bg-teal-500/10 border-2 border-dashed border-teal-500 rounded-2xl flex items-center justify-center backdrop-blur-sm"
+              >
+                <div className="text-center">
+                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-teal-500/20 to-blue-500/20 flex items-center justify-center mx-auto mb-4 border border-teal-500/30">
+                    <Upload className="w-10 h-10 text-teal-400" />
+                  </div>
+                  <p className="text-xl font-semibold text-white">Drop files here</p>
+                  <p className="text-white/50">Release to upload your files</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Files</h1>
-            <p className="text-muted-foreground">Manage your files and folders</p>
-          </div>
-          {/* Desktop buttons - hidden on mobile (FAB used instead) */}
-          <div className="hidden sm:flex items-center gap-2">
-            <Button
-              variant={selectionMode ? "secondary" : "outline"}
-              onClick={() => {
-                setSelectionMode(!selectionMode);
-                if (selectionMode) {
-                  setSelectedFiles([]);
-                  setSelectedFolders([]);
-                }
-              }}
-              className="rounded-xl"
-            >
-              <CheckSquare className="w-4 h-4 mr-2" />
-              {selectionMode ? "Cancel" : "Select"}
-            </Button>
-            <Button variant="outline" onClick={() => setCreateFolderOpen(true)} className="rounded-xl">
-              <Plus className="w-4 h-4 mr-2" />
-              New Folder
-            </Button>
-            <label>
-              <Button variant="hero" className="cursor-pointer rounded-xl" asChild>
-                <span>
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload
-                </span>
+          {/* Header */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+          >
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">Files</h1>
+              <p className="text-white/50">Manage your files and folders</p>
+            </div>
+            {/* Desktop buttons */}
+            <div className="hidden sm:flex items-center gap-2">
+              <Button
+                variant={selectionMode ? "secondary" : "outline"}
+                onClick={() => {
+                  setSelectionMode(!selectionMode);
+                  if (selectionMode) {
+                    setSelectedFiles([]);
+                    setSelectedFolders([]);
+                  }
+                }}
+                className="rounded-xl border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+              >
+                <CheckSquare className="w-4 h-4 mr-2" />
+                {selectionMode ? "Cancel" : "Select"}
               </Button>
-              <input
-                type="file"
-                multiple
-                className="hidden"
-                onChange={handleFileUpload}
-                disabled={uploading}
-              />
-            </label>
-          </div>
-          {/* Mobile: Selection toggle only */}
-          <div className="flex sm:hidden items-center gap-2">
-            <Button
-              variant={selectionMode ? "secondary" : "outline"}
-              size="sm"
-              onClick={() => {
-                setSelectionMode(!selectionMode);
-                if (selectionMode) {
-                  setSelectedFiles([]);
-                  setSelectedFolders([]);
-                }
-              }}
-              className="rounded-xl"
-            >
-              <CheckSquare className="w-4 h-4 mr-1" />
-              {selectionMode ? "Cancel" : "Select"}
-            </Button>
-          </div>
-        </div>
+              <Button 
+                variant="outline" 
+                onClick={() => setCreateFolderOpen(true)} 
+                className="rounded-xl border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                New Folder
+              </Button>
+              <label>
+                <Button 
+                  className="cursor-pointer rounded-xl bg-gradient-to-r from-teal-500 to-blue-600 hover:from-teal-400 hover:to-blue-500 text-white shadow-lg shadow-teal-500/20" 
+                  asChild
+                >
+                  <span>
+                    <Upload className="w-4 h-4 mr-2" />
+                    Upload
+                  </span>
+                </Button>
+                <input
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  disabled={uploading}
+                />
+              </label>
+            </div>
+            {/* Mobile: Selection toggle only */}
+            <div className="flex sm:hidden items-center gap-2">
+              <Button
+                variant={selectionMode ? "secondary" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setSelectionMode(!selectionMode);
+                  if (selectionMode) {
+                    setSelectedFiles([]);
+                    setSelectedFolders([]);
+                  }
+                }}
+                className="rounded-xl border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+              >
+                <CheckSquare className="w-4 h-4 mr-1" />
+                {selectionMode ? "Cancel" : "Select"}
+              </Button>
+            </div>
+          </motion.div>
 
         {/* Hidden file input for FAB */}
         <input
@@ -957,7 +976,8 @@ const FileManager = () => {
             disabled={uploading}
           />
         )}
-      </div>
+        </div>
+      </PageTransition>
     </DashboardLayout>
   );
 };

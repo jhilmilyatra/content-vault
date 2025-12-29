@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,8 +10,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
-import { User, Lock, Bell, Palette, Save, Loader2, Key, Copy, RefreshCw, Check, Bot, Server, HardDrive, ArrowLeft } from 'lucide-react';
+import { User, Lock, Bell, Save, Loader2, Key, Copy, RefreshCw, Check, Bot, Server, HardDrive, ArrowLeft } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { PageTransition, staggerContainer, staggerItem } from '@/components/ui/PageTransition';
 
 const Settings = () => {
   const { user, profile } = useAuth();
@@ -24,7 +25,6 @@ const Settings = () => {
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '');
   
   // Password state
-  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   
@@ -32,7 +32,6 @@ const Settings = () => {
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [downloadNotifications, setDownloadNotifications] = useState(true);
   const [weeklyReports, setWeeklyReports] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
   
   // API Key state
   const [apiKey, setApiKey] = useState<string | null>(null);
@@ -80,7 +79,6 @@ const Settings = () => {
 
       if (error) throw error;
       
-      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       toast.success('Password changed successfully');
@@ -92,12 +90,10 @@ const Settings = () => {
   };
 
   const handleSavePreferences = () => {
-    // In a real app, these would be saved to the database
     localStorage.setItem('preferences', JSON.stringify({
       emailNotifications,
       downloadNotifications,
       weeklyReports,
-      darkMode,
     }));
     toast.success('Preferences saved');
   };
@@ -107,7 +103,7 @@ const Settings = () => {
     const secret = crypto.randomUUID().replace(/-/g, '');
     const key = `${user.id}:${secret}`;
     setApiKey(key);
-    toast.success('API key generated! Save it securely - it won\'t be shown again.');
+    toast.success('API key generated! Save it securely.');
   };
 
   const copyApiKey = async () => {
@@ -123,450 +119,350 @@ const Settings = () => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
+  // Glass card style
+  const glassCard = "bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-2xl";
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        {isMobile && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate('/dashboard')}
-            className="h-9 w-9 flex-shrink-0"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-        )}
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-          <p className="text-muted-foreground">Manage your account settings and preferences</p>
-        </div>
-      </div>
+    <PageTransition>
+      <div className="space-y-6">
+        {/* Header */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="flex items-center gap-3"
+        >
+          {isMobile && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate('/dashboard')}
+              className="h-9 w-9 flex-shrink-0 text-white/50 hover:text-white hover:bg-white/5"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+          )}
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">Settings</h1>
+            <p className="text-white/50 text-sm sm:text-base">Manage your account settings and preferences</p>
+          </div>
+        </motion.div>
 
-      <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5 lg:w-[600px]">
-          <TabsTrigger value="profile" className="gap-2">
-            <User className="h-4 w-4" />
-            Profile
-          </TabsTrigger>
-          <TabsTrigger value="security" className="gap-2">
-            <Lock className="h-4 w-4" />
-            Security
-          </TabsTrigger>
-          <TabsTrigger value="api" className="gap-2">
-            <Key className="h-4 w-4" />
-            API
-          </TabsTrigger>
-          <TabsTrigger value="storage" className="gap-2">
-            <Server className="h-4 w-4" />
-            Storage
-          </TabsTrigger>
-          <TabsTrigger value="preferences" className="gap-2">
-            <Bell className="h-4 w-4" />
-            Preferences
-          </TabsTrigger>
-        </TabsList>
+        <Tabs defaultValue="profile" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4 lg:w-[500px] bg-white/5 border border-white/10 p-1 rounded-xl">
+            <TabsTrigger value="profile" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 rounded-lg gap-2">
+              <User className="h-4 w-4" />
+              <span className="hidden sm:inline">Profile</span>
+            </TabsTrigger>
+            <TabsTrigger value="security" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 rounded-lg gap-2">
+              <Lock className="h-4 w-4" />
+              <span className="hidden sm:inline">Security</span>
+            </TabsTrigger>
+            <TabsTrigger value="api" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 rounded-lg gap-2">
+              <Key className="h-4 w-4" />
+              <span className="hidden sm:inline">API</span>
+            </TabsTrigger>
+            <TabsTrigger value="preferences" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 rounded-lg gap-2">
+              <Bell className="h-4 w-4" />
+              <span className="hidden sm:inline">Preferences</span>
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="profile" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Profile Information</CardTitle>
-              <CardDescription>Update your personal information and avatar</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center gap-6">
-                <Avatar className="h-20 w-20">
-                  <AvatarImage src={avatarUrl} alt={fullName} />
-                  <AvatarFallback className="text-lg">{getInitials(fullName)}</AvatarFallback>
-                </Avatar>
+          <TabsContent value="profile" className="space-y-6">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className={`${glassCard} p-6 sm:p-8`}
+            >
+              <div className="mb-6">
+                <h2 className="text-xl font-semibold text-white mb-1">Profile Information</h2>
+                <p className="text-sm text-white/40">Update your personal information and avatar</p>
+              </div>
+              
+              <div className="space-y-6">
+                <div className="flex items-center gap-6">
+                  <Avatar className="h-20 w-20 border-2 border-white/10">
+                    <AvatarImage src={avatarUrl} alt={fullName} />
+                    <AvatarFallback className="bg-gradient-to-br from-teal-500 to-blue-600 text-white text-lg">{getInitials(fullName)}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 space-y-2">
+                    <Label htmlFor="avatar" className="text-white/70 text-sm">Avatar URL</Label>
+                    <Input
+                      id="avatar"
+                      placeholder="https://example.com/avatar.jpg"
+                      value={avatarUrl}
+                      onChange={(e) => setAvatarUrl(e.target.value)}
+                      className="bg-white/5 border-white/10 text-white placeholder:text-white/30 focus:border-teal-500/50"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="fullName" className="text-white/70 text-sm">Full Name</Label>
+                    <Input
+                      id="fullName"
+                      placeholder="John Doe"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      className="bg-white/5 border-white/10 text-white placeholder:text-white/30 focus:border-teal-500/50"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email" className="text-white/70 text-sm">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={user?.email || ''}
+                      disabled
+                      className="bg-white/5 border-white/10 text-white/50"
+                    />
+                    <p className="text-xs text-white/30">Email cannot be changed</p>
+                  </div>
+                </div>
+
+                <Button 
+                  onClick={handleUpdateProfile} 
+                  disabled={loading} 
+                  className="gap-2 bg-gradient-to-r from-teal-500 to-blue-600 hover:from-teal-400 hover:to-blue-500 text-white shadow-lg shadow-teal-500/20"
+                >
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Save Changes
+                </Button>
+              </div>
+            </motion.div>
+          </TabsContent>
+
+          <TabsContent value="security" className="space-y-6">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className={`${glassCard} p-6 sm:p-8`}
+            >
+              <div className="mb-6">
+                <h2 className="text-xl font-semibold text-white mb-1">Change Password</h2>
+                <p className="text-sm text-white/40">Update your password to keep your account secure</p>
+              </div>
+              
+              <div className="space-y-4 max-w-md">
                 <div className="space-y-2">
-                  <Label htmlFor="avatar">Avatar URL</Label>
+                  <Label htmlFor="newPassword" className="text-white/70 text-sm">New Password</Label>
                   <Input
-                    id="avatar"
-                    placeholder="https://example.com/avatar.jpg"
-                    value={avatarUrl}
-                    onChange={(e) => setAvatarUrl(e.target.value)}
-                    className="w-[300px]"
+                    id="newPassword"
+                    type="password"
+                    placeholder="Enter new password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="bg-white/5 border-white/10 text-white placeholder:text-white/30 focus:border-teal-500/50"
                   />
                 </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="fullName">Full Name</Label>
+                  <Label htmlFor="confirmPassword" className="text-white/70 text-sm">Confirm New Password</Label>
                   <Input
-                    id="fullName"
-                    placeholder="John Doe"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
+                    id="confirmPassword"
+                    type="password"
+                    placeholder="Confirm new password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="bg-white/5 border-white/10 text-white placeholder:text-white/30 focus:border-teal-500/50"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={user?.email || ''}
-                    disabled
-                    className="bg-muted"
-                  />
-                  <p className="text-xs text-muted-foreground">Email cannot be changed</p>
-                </div>
+                <Button 
+                  onClick={handleChangePassword} 
+                  disabled={loading || !newPassword} 
+                  className="gap-2 bg-gradient-to-r from-teal-500 to-blue-600 hover:from-teal-400 hover:to-blue-500 text-white shadow-lg shadow-teal-500/20"
+                >
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
+                  Update Password
+                </Button>
               </div>
+            </motion.div>
 
-              <Button onClick={handleUpdateProfile} disabled={loading} className="gap-2">
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Save Changes
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="security" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Change Password</CardTitle>
-              <CardDescription>Update your password to keep your account secure</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="newPassword">New Password</Label>
-                <Input
-                  id="newPassword"
-                  type="password"
-                  placeholder="Enter new password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                />
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className={`${glassCard} p-6 sm:p-8`}
+            >
+              <div className="mb-6">
+                <h2 className="text-xl font-semibold text-white mb-1">Active Sessions</h2>
+                <p className="text-sm text-white/40">Manage your active login sessions</p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                <Input
-                  id="confirmPassword"
-                  type="password"
-                  placeholder="Confirm new password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                />
-              </div>
-              <Button onClick={handleChangePassword} disabled={loading || !newPassword} className="gap-2">
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
-                Update Password
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Active Sessions</CardTitle>
-              <CardDescription>Manage your active login sessions</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between rounded-lg border p-4">
+              
+              <div className="flex items-center justify-between rounded-xl bg-white/5 border border-white/10 p-4">
                 <div className="space-y-1">
-                  <p className="font-medium">Current Session</p>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="font-medium text-white">Current Session</p>
+                  <p className="text-sm text-white/40">
                     Logged in since {new Date().toLocaleDateString()}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="flex h-2 w-2 rounded-full bg-green-500" />
-                  <span className="text-sm text-muted-foreground">Active</span>
+                  <span className="flex h-2 w-2 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/50" />
+                  <span className="text-sm text-white/50">Active</span>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </motion.div>
+          </TabsContent>
 
-        <TabsContent value="api" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>API Access</CardTitle>
-              <CardDescription>
-                Generate an API key to upload files via Telegram bots or other integrations
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <TabsContent value="api" className="space-y-6">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className={`${glassCard} p-6 sm:p-8`}
+            >
+              <div className="mb-6">
+                <h2 className="text-xl font-semibold text-white mb-1">API Access</h2>
+                <p className="text-sm text-white/40">Generate an API key for integrations</p>
+              </div>
+              
               {apiKey ? (
                 <div className="space-y-4">
-                  <div className="p-4 rounded-lg bg-muted border border-border">
-                    <Label className="text-xs text-muted-foreground">Your API Key (save this securely!)</Label>
+                  <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                    <Label className="text-xs text-white/40">Your API Key</Label>
                     <div className="flex items-center gap-2 mt-2">
                       <Input
                         value={apiKey}
                         readOnly
-                        className="font-mono text-xs"
+                        className="font-mono text-xs bg-white/5 border-white/10 text-white"
                       />
-                      <Button variant="outline" size="icon" onClick={copyApiKey}>
-                        {apiKeyCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        onClick={copyApiKey}
+                        className="border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                      >
+                        {apiKeyCopied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
                       </Button>
                     </div>
                   </div>
-                  <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/30">
-                    <p className="text-sm text-amber-600 dark:text-amber-400">
+                  <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                    <p className="text-sm text-amber-400">
                       ⚠️ This key will only be shown once. Store it securely!
                     </p>
                   </div>
-                  <Button variant="outline" onClick={generateApiKey} className="gap-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={generateApiKey} 
+                    className="gap-2 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                  >
                     <RefreshCw className="h-4 w-4" />
                     Generate New Key
                   </Button>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <p className="text-sm text-muted-foreground">
-                    Generate an API key to upload files programmatically. This key can be used with our Telegram bot integration or any HTTP client.
+                  <p className="text-sm text-white/50">
+                    Generate an API key to upload files programmatically via our Telegram bot or any HTTP client.
                   </p>
-                  <Button onClick={generateApiKey} className="gap-2">
+                  <Button 
+                    onClick={generateApiKey} 
+                    className="gap-2 bg-gradient-to-r from-teal-500 to-blue-600 hover:from-teal-400 hover:to-blue-500 text-white shadow-lg shadow-teal-500/20"
+                  >
                     <Key className="h-4 w-4" />
                     Generate API Key
                   </Button>
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </motion.div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>API Documentation</CardTitle>
-              <CardDescription>How to use the upload API</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Endpoint</Label>
-                <code className="block p-3 rounded-lg bg-muted text-sm font-mono break-all">
-                  POST https://dgmxndvvsbjjbnoibaid.supabase.co/functions/v1/telegram-upload
-                </code>
-              </div>
-              <div className="space-y-2">
-                <Label>Headers</Label>
-                <code className="block p-3 rounded-lg bg-muted text-sm font-mono">
-                  x-api-key: YOUR_API_KEY<br/>
-                  Content-Type: application/json
-                </code>
-              </div>
-              <div className="space-y-2">
-                <Label>Request Body</Label>
-                <pre className="p-3 rounded-lg bg-muted text-sm font-mono overflow-x-auto">
-{`{
-  "file_name": "document.pdf",
-  "file_data": "BASE64_ENCODED_FILE_DATA",
-  "mime_type": "application/pdf",
-  "folder_id": "optional-folder-uuid"
-}`}
-                </pre>
-              </div>
-              <div className="space-y-2">
-                <Label>Response</Label>
-                <pre className="p-3 rounded-lg bg-muted text-sm font-mono overflow-x-auto">
-{`{
-  "success": true,
-  "file": {
-    "id": "file-uuid",
-    "name": "document.pdf",
-    "size_bytes": 12345,
-    "mime_type": "application/pdf"
-  }
-}`}
-                </pre>
-              </div>
-              <div className="pt-4 border-t">
-                <Button variant="outline" onClick={() => window.location.href = '/dashboard/telegram-guide'} className="gap-2">
-                  <Bot className="h-4 w-4" />
-                  View Telegram Bot Guide
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="storage" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <HardDrive className="h-5 w-5" />
-                VPS Storage Configuration
-              </CardTitle>
-              <CardDescription>
-                Configure your own VPS/server to store files directly on your infrastructure
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="p-4 rounded-lg bg-primary/10 border border-primary/30">
-                <p className="text-sm text-primary">
-                  To use VPS storage, you need to set up a file server on your VPS that accepts file uploads. 
-                  Contact your system administrator to configure the following secrets in the backend:
-                </p>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className={`${glassCard} p-6 sm:p-8`}
+            >
+              <div className="mb-6">
+                <h2 className="text-xl font-semibold text-white mb-1">API Documentation</h2>
+                <p className="text-sm text-white/40">How to use the upload API</p>
               </div>
               
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Required Backend Secrets</Label>
-                  <div className="space-y-2 p-4 rounded-lg bg-muted">
-                    <div className="flex items-center justify-between">
-                      <code className="text-sm font-mono">VPS_STORAGE_ENDPOINT</code>
-                      <span className="text-xs text-muted-foreground">Your VPS file server URL</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <code className="text-sm font-mono">VPS_STORAGE_API_KEY</code>
-                      <span className="text-xs text-muted-foreground">Authentication key for VPS</span>
-                    </div>
-                  </div>
+                  <Label className="text-white/70 text-sm">Endpoint</Label>
+                  <code className="block p-3 rounded-xl bg-white/5 border border-white/10 text-sm font-mono text-teal-400 break-all">
+                    POST https://dgmxndvvsbjjbnoibaid.supabase.co/functions/v1/telegram-upload
+                  </code>
                 </div>
-
                 <div className="space-y-2">
-                  <Label>VPS Server Requirements</Label>
-                  <div className="p-4 rounded-lg bg-muted text-sm space-y-2">
-                    <p>Your VPS file server should implement these endpoints:</p>
-                    <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                      <li><code>POST /upload</code> - Accept file uploads</li>
-                      <li><code>GET /files/:path</code> - Serve files</li>
-                      <li><code>DELETE /delete</code> - Delete files</li>
-                    </ul>
+                  <Label className="text-white/70 text-sm">Headers</Label>
+                  <code className="block p-3 rounded-xl bg-white/5 border border-white/10 text-sm font-mono text-white/70">
+                    x-api-key: YOUR_API_KEY<br/>
+                    Content-Type: application/json
+                  </code>
+                </div>
+                <div className="pt-4 border-t border-white/5">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => window.location.href = '/dashboard/telegram-guide'} 
+                    className="gap-2 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                  >
+                    <Bot className="h-4 w-4" />
+                    View Telegram Bot Guide
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          </TabsContent>
+
+          <TabsContent value="preferences" className="space-y-6">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className={`${glassCard} p-6 sm:p-8`}
+            >
+              <div className="mb-6">
+                <h2 className="text-xl font-semibold text-white mb-1">Notifications</h2>
+                <p className="text-sm text-white/40">Configure your notification preferences</p>
+              </div>
+              
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-white">Email Notifications</Label>
+                    <p className="text-sm text-white/40">Receive email updates about your account</p>
                   </div>
+                  <Switch
+                    checked={emailNotifications}
+                    onCheckedChange={setEmailNotifications}
+                  />
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Sample VPS Server (Node.js)</CardTitle>
-              <CardDescription>Example Express.js server for file storage</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <pre className="p-4 rounded-lg bg-muted text-xs font-mono overflow-x-auto max-h-96">
-{`const express = require('express');
-const multer = require('multer');
-const fs = require('fs');
-const path = require('path');
-
-const app = express();
-const API_KEY = process.env.VPS_API_KEY;
-const STORAGE_DIR = '/var/storage/files';
-
-// Auth middleware
-const auth = (req, res, next) => {
-  const key = req.headers.authorization?.replace('Bearer ', '');
-  if (key !== API_KEY) return res.status(401).json({ error: 'Unauthorized' });
-  next();
-};
-
-app.use(express.json({ limit: '100mb' }));
-
-// Upload endpoint
-app.post('/upload', auth, async (req, res) => {
-  try {
-    const { path: filePath, data, originalName } = req.body;
-    const fullPath = path.join(STORAGE_DIR, filePath);
-    
-    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-    fs.writeFileSync(fullPath, Buffer.from(data, 'base64'));
-    
-    res.json({ 
-      success: true, 
-      url: \`\${process.env.PUBLIC_URL}/files/\${filePath}\`
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Serve files
-app.get('/files/*', (req, res) => {
-  const filePath = req.params[0];
-  const fullPath = path.join(STORAGE_DIR, filePath);
-  
-  if (!fs.existsSync(fullPath)) {
-    return res.status(404).json({ error: 'File not found' });
-  }
-  res.sendFile(fullPath);
-});
-
-// Delete endpoint
-app.delete('/delete', auth, (req, res) => {
-  const { path: filePath } = req.body;
-  const fullPath = path.join(STORAGE_DIR, filePath);
-  
-  if (fs.existsSync(fullPath)) {
-    fs.unlinkSync(fullPath);
-  }
-  res.json({ success: true });
-});
-
-app.listen(3001, () => console.log('VPS Storage running on :3001'));`}
-              </pre>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="preferences" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Notifications</CardTitle>
-              <CardDescription>Configure how you receive notifications</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Email Notifications</Label>
-                  <p className="text-sm text-muted-foreground">Receive email updates about your account</p>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-white">Download Alerts</Label>
+                    <p className="text-sm text-white/40">Get notified when files are downloaded</p>
+                  </div>
+                  <Switch
+                    checked={downloadNotifications}
+                    onCheckedChange={setDownloadNotifications}
+                  />
                 </div>
-                <Switch
-                  checked={emailNotifications}
-                  onCheckedChange={setEmailNotifications}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Download Alerts</Label>
-                  <p className="text-sm text-muted-foreground">Get notified when someone downloads your files</p>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-white">Weekly Reports</Label>
+                    <p className="text-sm text-white/40">Receive weekly analytics summaries</p>
+                  </div>
+                  <Switch
+                    checked={weeklyReports}
+                    onCheckedChange={setWeeklyReports}
+                  />
                 </div>
-                <Switch
-                  checked={downloadNotifications}
-                  onCheckedChange={setDownloadNotifications}
-                />
+                <Button 
+                  onClick={handleSavePreferences} 
+                  className="gap-2 bg-gradient-to-r from-teal-500 to-blue-600 hover:from-teal-400 hover:to-blue-500 text-white shadow-lg shadow-teal-500/20"
+                >
+                  <Save className="h-4 w-4" />
+                  Save Preferences
+                </Button>
               </div>
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Weekly Reports</Label>
-                  <p className="text-sm text-muted-foreground">Receive weekly usage summaries via email</p>
-                </div>
-                <Switch
-                  checked={weeklyReports}
-                  onCheckedChange={setWeeklyReports}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Appearance</CardTitle>
-              <CardDescription>Customize how the app looks</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label className="flex items-center gap-2">
-                    <Palette className="h-4 w-4" />
-                    Dark Mode
-                  </Label>
-                  <p className="text-sm text-muted-foreground">Use dark theme for the interface</p>
-                </div>
-                <Switch
-                  checked={darkMode}
-                  onCheckedChange={setDarkMode}
-                />
-              </div>
-              <Button onClick={handleSavePreferences} className="gap-2">
-                <Save className="h-4 w-4" />
-                Save Preferences
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
+            </motion.div>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </PageTransition>
   );
 };
 
