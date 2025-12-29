@@ -43,9 +43,9 @@ const Header = () => {
             <a href="#pricing" className="text-sm text-white/50 hover:text-white transition-colors font-light">
               Pricing
             </a>
-            <a href="#" className="text-sm text-white/50 hover:text-white transition-colors font-light">
+            <Link to="/documentation" className="text-sm text-white/50 hover:text-white transition-colors font-light">
               Documentation
-            </a>
+            </Link>
           </div>
 
           {/* CTA Buttons */}
@@ -109,13 +109,13 @@ const Header = () => {
                 >
                   Pricing
                 </a>
-                <a 
-                  href="#" 
+                <Link 
+                  to="/documentation" 
                   className="text-sm text-white/50 hover:text-white transition-colors font-light"
                   onClick={() => setIsOpen(false)}
                 >
                   Documentation
-                </a>
+                </Link>
                 <hr className="border-white/5" />
                 {user ? (
                   <Link to="/dashboard" onClick={() => setIsOpen(false)}>
