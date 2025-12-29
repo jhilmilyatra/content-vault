@@ -13,6 +13,23 @@ const VPS_API_KEY = "kARTOOS007";
 // Chunk size: 5MB
 const CHUNK_SIZE = 5 * 1024 * 1024;
 
+// Type definitions for RPC results
+interface UploadProgress {
+  uploaded_count: number;
+  total_chunks: number;
+  progress: number;
+  is_complete: boolean;
+  uploaded_indices: number[];
+}
+
+interface ChunkRecordResult {
+  success: boolean;
+  uploaded_count: number;
+  total_chunks: number;
+  progress: number;
+  is_complete: boolean;
+}
+
 // Helper function to convert Uint8Array to base64
 function uint8ArrayToBase64(bytes: Uint8Array): string {
   const CHUNK_SIZE = 0x8000;
@@ -72,7 +89,7 @@ Deno.serve(async (req) => {
       const now = new Date();
       const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours
 
-      // Store session in database instead of in-memory Map
+      // Store session in database (uploaded_chunks array kept for backward compat but not used)
       const { error: insertError } = await supabase
         .from("chunked_upload_sessions")
         .insert({
@@ -82,7 +99,7 @@ Deno.serve(async (req) => {
           mime_type: mimeType || "application/octet-stream",
           total_size: totalSize,
           total_chunks: totalChunks,
-          uploaded_chunks: [],
+          uploaded_chunks: [], // Legacy, not used anymore
           folder_id: folderId || null,
           expires_at: expiresAt.toISOString(),
         });
@@ -108,7 +125,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get upload status (for resume)
+    // Get upload status (for resume) - NOW USES DATABASE-DERIVED PROGRESS
     if (action === "status") {
       const uploadId = url.searchParams.get("uploadId");
       
@@ -119,6 +136,7 @@ Deno.serve(async (req) => {
         );
       }
 
+      // Verify session exists and user owns it
       const { data: session, error: fetchError } = await supabase
         .from("chunked_upload_sessions")
         .select("*")
@@ -139,20 +157,45 @@ Deno.serve(async (req) => {
         );
       }
 
+      // Get accurate progress from normalized table
+      const { data: progressDataRaw, error: progressError } = await supabase
+        .rpc('get_upload_progress', { p_upload_id: uploadId })
+        .single();
+      
+      const progressData = progressDataRaw as UploadProgress | null;
+
+      if (progressError) {
+        console.error("Failed to get progress:", progressError);
+        // Fallback to legacy array
+        return new Response(
+          JSON.stringify({
+            uploadId: session.upload_id,
+            fileName: session.file_name,
+            totalChunks: session.total_chunks,
+            uploadedChunks: session.uploaded_chunks || [],
+            progress: ((session.uploaded_chunks?.length || 0) / session.total_chunks) * 100,
+            expiresAt: session.expires_at,
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       return new Response(
         JSON.stringify({
           uploadId: session.upload_id,
           fileName: session.file_name,
-          totalChunks: session.total_chunks,
-          uploadedChunks: session.uploaded_chunks || [],
-          progress: ((session.uploaded_chunks?.length || 0) / session.total_chunks) * 100,
+          totalChunks: progressData?.total_chunks || session.total_chunks,
+          uploadedChunks: progressData?.uploaded_indices || [],
+          uploadedCount: progressData?.uploaded_count || 0,
+          progress: progressData?.progress || 0,
+          isComplete: progressData?.is_complete || false,
           expiresAt: session.expires_at,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Upload a chunk
+    // Upload a chunk - NOW USES ATOMIC INSERT
     if (action === "chunk") {
       const formData = await req.formData();
       const chunk = formData.get("chunk") as File;
@@ -186,17 +229,31 @@ Deno.serve(async (req) => {
         );
       }
 
-      const uploadedChunks: number[] = session.uploaded_chunks || [];
+      // Check if chunk already uploaded (idempotent check)
+      const { data: existingChunk } = await supabase
+        .from("upload_chunks")
+        .select("chunk_index")
+        .eq("upload_id", uploadId)
+        .eq("chunk_index", chunkIndex)
+        .maybeSingle();
 
-      // Check if chunk already uploaded
-      if (uploadedChunks.includes(chunkIndex)) {
+      if (existingChunk) {
         console.log(`⏭️ Chunk ${chunkIndex} already uploaded, skipping`);
+        
+        // Get current progress
+        const { data: skipProgressRaw } = await supabase
+          .rpc('get_upload_progress', { p_upload_id: uploadId })
+          .single();
+        const skipProgress = skipProgressRaw as UploadProgress | null;
+        
         return new Response(
           JSON.stringify({
             success: true,
             chunkIndex,
             skipped: true,
-            progress: (uploadedChunks.length / session.total_chunks) * 100,
+            uploadedChunks: skipProgress?.uploaded_count || 0,
+            totalChunks: session.total_chunks,
+            progress: skipProgress?.progress || 0,
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -232,66 +289,68 @@ Deno.serve(async (req) => {
         );
       }
 
-      // ATOMIC UPDATE: Use raw SQL to append to array atomically
-      // This prevents race conditions when multiple chunks are uploaded in parallel
-      const { data: updatedSession, error: updateError } = await supabase.rpc('append_chunk_to_session', {
-        p_upload_id: uploadId,
-        p_chunk_index: chunkIndex
-      }).single();
+      // ATOMIC INSERT: Use RPC for race-condition-free chunk recording
+      const { data: recordResultRaw, error: recordError } = await supabase
+        .rpc('record_chunk_upload', { 
+          p_upload_id: uploadId, 
+          p_chunk_index: chunkIndex 
+        })
+        .single();
+      
+      const recordResult = recordResultRaw as ChunkRecordResult | null;
 
-      // Fallback to regular update if RPC doesn't exist
-      let finalUploadedChunks: number[];
-      if (updateError) {
-        // RPC might not exist, use regular update with retry logic
-        console.log(`RPC not available, using regular update for chunk ${chunkIndex}`);
-        
-        // Re-fetch current state and update
-        const { data: currentSession } = await supabase
-          .from("chunked_upload_sessions")
-          .select("uploaded_chunks")
-          .eq("upload_id", uploadId)
-          .single();
-        
-        const currentChunks: number[] = currentSession?.uploaded_chunks || [];
-        if (!currentChunks.includes(chunkIndex)) {
-          const newChunks = [...currentChunks, chunkIndex].sort((a, b) => a - b);
-          
-          await supabase
-            .from("chunked_upload_sessions")
-            .update({ uploaded_chunks: newChunks })
-            .eq("upload_id", uploadId);
-          
-          finalUploadedChunks = newChunks;
-        } else {
-          finalUploadedChunks = currentChunks;
+      if (recordError) {
+        console.error(`Failed to record chunk: ${recordError.message}`);
+        // Fallback: Direct atomic insert with ON CONFLICT DO NOTHING
+        const { error: directInsertError } = await supabase
+          .from("upload_chunks")
+          .insert({ upload_id: uploadId, chunk_index: chunkIndex })
+          .select()
+          .maybeSingle();
+
+        if (directInsertError && !directInsertError.message.includes('duplicate')) {
+          console.error(`Direct insert also failed: ${directInsertError.message}`);
         }
-      } else {
-        // Get updated chunks count from RPC result
-        const { data: refreshedSession } = await supabase
-          .from("chunked_upload_sessions")
-          .select("uploaded_chunks")
-          .eq("upload_id", uploadId)
+
+        // Get progress after insert
+        const { data: fallbackProgressRaw } = await supabase
+          .rpc('get_upload_progress', { p_upload_id: uploadId })
           .single();
-        
-        finalUploadedChunks = refreshedSession?.uploaded_chunks || [];
+        const fallbackProgress = fallbackProgressRaw as UploadProgress | null;
+
+        const progress = fallbackProgress?.progress || 0;
+        console.log(`✅ Chunk ${chunkIndex + 1}/${session.total_chunks} uploaded (${progress.toFixed(1)}%) [fallback]`);
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            chunkIndex,
+            uploadedChunks: fallbackProgress?.uploaded_count || 0,
+            totalChunks: session.total_chunks,
+            progress,
+            isComplete: fallbackProgress?.is_complete || false,
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
 
-      const progress = (finalUploadedChunks.length / session.total_chunks) * 100;
+      const progress = recordResult?.progress || 0;
       console.log(`✅ Chunk ${chunkIndex + 1}/${session.total_chunks} uploaded (${progress.toFixed(1)}%)`);
 
       return new Response(
         JSON.stringify({
           success: true,
           chunkIndex,
-          uploadedChunks: finalUploadedChunks.length,
-          totalChunks: session.total_chunks,
+          uploadedChunks: recordResult?.uploaded_count || 0,
+          totalChunks: recordResult?.total_chunks || session.total_chunks,
           progress,
+          isComplete: recordResult?.is_complete || false,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Finalize and assemble the file
+    // Finalize and assemble the file - NOW USES DATABASE-DERIVED COMPLETION CHECK
     if (action === "finalize") {
       const body = await req.json();
       const { uploadId } = body;
@@ -323,29 +382,50 @@ Deno.serve(async (req) => {
         );
       }
 
-      const uploadedChunks: number[] = session.uploaded_chunks || [];
+      // Get accurate progress from normalized table (database-derived, always accurate)
+      const { data: finalProgressRaw, error: progressError } = await supabase
+        .rpc('get_upload_progress', { p_upload_id: uploadId })
+        .single();
+      
+      const finalProgress = finalProgressRaw as UploadProgress | null;
 
-      // Check all chunks are uploaded
-      if (uploadedChunks.length !== session.total_chunks) {
+      if (progressError) {
+        console.error("Failed to get progress for finalization:", progressError);
+        return new Response(
+          JSON.stringify({ error: "Failed to verify upload completion" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const uploadedCount = finalProgress?.uploaded_count || 0;
+      const totalChunks = finalProgress?.total_chunks || session.total_chunks;
+      const uploadedIndices: number[] = finalProgress?.uploaded_indices || [];
+
+      // Check all chunks are uploaded (database-derived, no race conditions)
+      if (uploadedCount !== totalChunks) {
+        const missingChunks = Array.from({ length: totalChunks }, (_, i) => i)
+          .filter(i => !uploadedIndices.includes(i));
+        
+        console.log(`❌ Finalization failed: ${uploadedCount}/${totalChunks} chunks uploaded. Missing: ${missingChunks.join(', ')}`);
+        
         return new Response(
           JSON.stringify({ 
             error: "Not all chunks uploaded",
-            uploadedChunks: uploadedChunks.length,
-            totalChunks: session.total_chunks,
-            missingChunks: Array.from({ length: session.total_chunks }, (_, i) => i)
-              .filter(i => !uploadedChunks.includes(i))
+            uploadedChunks: uploadedCount,
+            totalChunks: totalChunks,
+            missingChunks: missingChunks
           }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      console.log(`🔧 Assembling ${session.total_chunks} chunks for ${session.file_name}...`);
+      console.log(`🔧 Assembling ${totalChunks} chunks for ${session.file_name}...`);
 
       // Fetch and combine all chunks
       const chunks: Uint8Array[] = [];
       let totalBytes = 0;
 
-      for (let i = 0; i < session.total_chunks; i++) {
+      for (let i = 0; i < totalChunks; i++) {
         const chunkFileName = `${uploadId}_chunk_${i}`;
         
         const vpsResponse = await fetch(`${VPS_ENDPOINT}/files/${user.id}/${chunkFileName}`, {
@@ -434,7 +514,7 @@ Deno.serve(async (req) => {
 
       // Clean up chunks and session (fire and forget)
       const cleanupChunks = async () => {
-        for (let i = 0; i < session.total_chunks; i++) {
+        for (let i = 0; i < totalChunks; i++) {
           const chunkFileName = `${uploadId}_chunk_${i}`;
           try {
             await fetch(`${VPS_ENDPOINT}/delete`, {
@@ -450,13 +530,13 @@ Deno.serve(async (req) => {
           }
         }
         
-        // Delete session from database
+        // Delete session from database (this will cascade-delete upload_chunks via trigger)
         await supabase
           .from("chunked_upload_sessions")
           .delete()
           .eq("upload_id", uploadId);
           
-        console.log(`🧹 Cleaned up ${session.total_chunks} chunks for upload ${uploadId}`);
+        console.log(`🧹 Cleaned up ${totalChunks} chunks for upload ${uploadId}`);
       };
       
       // Start cleanup in background

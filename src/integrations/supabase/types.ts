@@ -819,6 +819,24 @@ export type Database = {
         }
         Relationships: []
       }
+      upload_chunks: {
+        Row: {
+          chunk_index: number
+          created_at: string | null
+          upload_id: string
+        }
+        Insert: {
+          chunk_index: number
+          created_at?: string | null
+          upload_id: string
+        }
+        Update: {
+          chunk_index?: number
+          created_at?: string | null
+          upload_id?: string
+        }
+        Relationships: []
+      }
       usage_metrics: {
         Row: {
           active_links_count: number
@@ -937,6 +955,16 @@ export type Database = {
         Returns: string
       }
       get_owner_user_id: { Args: never; Returns: string }
+      get_upload_progress: {
+        Args: { p_upload_id: string }
+        Returns: {
+          is_complete: boolean
+          progress: number
+          total_chunks: number
+          uploaded_count: number
+          uploaded_indices: number[]
+        }[]
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
@@ -947,6 +975,16 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      record_chunk_upload: {
+        Args: { p_chunk_index: number; p_upload_id: string }
+        Returns: {
+          is_complete: boolean
+          progress: number
+          success: boolean
+          total_chunks: number
+          uploaded_count: number
+        }[]
       }
       record_file_view: {
         Args: {
