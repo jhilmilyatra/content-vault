@@ -37,10 +37,24 @@ const Header = () => {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-8">
-            <a href="#features" className="text-sm text-white/50 hover:text-white transition-colors font-light">
+            <a 
+              href="#features" 
+              onClick={(e) => {
+                e.preventDefault();
+                document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="text-sm text-white/50 hover:text-white transition-colors font-light"
+            >
               Features
             </a>
-            <a href="#pricing" className="text-sm text-white/50 hover:text-white transition-colors font-light">
+            <a 
+              href="#pricing" 
+              onClick={(e) => {
+                e.preventDefault();
+                document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="text-sm text-white/50 hover:text-white transition-colors font-light"
+            >
               Pricing
             </a>
             <Link to="/documentation" className="text-sm text-white/50 hover:text-white transition-colors font-light">
@@ -98,14 +112,22 @@ const Header = () => {
                 <a 
                   href="#features" 
                   className="text-sm text-white/50 hover:text-white transition-colors font-light"
-                  onClick={() => setIsOpen(false)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setIsOpen(false);
+                    document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' });
+                  }}
                 >
                   Features
                 </a>
                 <a 
                   href="#pricing" 
                   className="text-sm text-white/50 hover:text-white transition-colors font-light"
-                  onClick={() => setIsOpen(false)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setIsOpen(false);
+                    document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' });
+                  }}
                 >
                   Pricing
                 </a>

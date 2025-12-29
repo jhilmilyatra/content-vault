@@ -1,8 +1,30 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Github, Instagram, Code, Heart, Zap, Shield, Users } from "lucide-react";
+import { ArrowLeft, Github, Instagram, Code, Heart, Zap, Shield, Users, Send, Mail, AlertTriangle } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 const Documentation = () => {
+  const { toast } = useToast();
+  const [formData, setFormData] = useState({ name: "", email: "", message: "" });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    
+    // Simulate form submission
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    toast({
+      title: "Message Sent!",
+      description: "We'll get back to you as soon as possible.",
+    });
+    
+    setFormData({ name: "", email: "", message: "" });
+    setIsSubmitting(false);
+  };
+
   return (
     <div className="min-h-screen bg-[#0b0b0d] text-white">
       {/* Background gradient */}
@@ -135,11 +157,117 @@ const Documentation = () => {
             </div>
           </motion.section>
 
-          {/* Credits Section */}
+          {/* DMCA Section */}
+          <motion.section
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35 }}
+            className="mb-16"
+          >
+            <h2 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-3">
+              <AlertTriangle className="w-6 h-6 text-orange-400" strokeWidth={1.5} />
+              DMCA & Copyright
+            </h2>
+            <div className="glass-card p-8 border-white/5 bg-black/40">
+              <p className="text-white/70 font-light mb-4">
+                CloudVault respects intellectual property rights and complies with the Digital Millennium Copyright Act (DMCA). 
+                If you believe your copyrighted work has been infringed upon, please contact us immediately.
+              </p>
+              <div className="flex items-center gap-3 p-4 rounded-lg bg-white/5 border border-white/10">
+                <Mail className="w-5 h-5 text-orange-400" strokeWidth={1.5} />
+                <div>
+                  <p className="text-sm text-white/50 font-light">Report copyright infringement:</p>
+                  <a 
+                    href="mailto:medicobhai@gmail.com" 
+                    className="text-orange-400 hover:text-orange-300 transition-colors font-medium"
+                  >
+                    medicobhai@gmail.com
+                  </a>
+                </div>
+              </div>
+              <p className="text-xs text-white/30 mt-4 font-light">
+                Please include detailed information about the copyrighted work and the infringing content in your report.
+              </p>
+            </div>
+          </motion.section>
+
+          {/* Contact Form Section */}
           <motion.section
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}
+            className="mb-16"
+          >
+            <h2 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-3">
+              <Send className="w-6 h-6 text-blue-400" strokeWidth={1.5} />
+              Contact Us
+            </h2>
+            <div className="glass-card p-8 border-white/5 bg-black/40">
+              <p className="text-white/50 font-light mb-6">
+                Have questions or feedback? Send us a message and we'll get back to you.
+              </p>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="name" className="block text-sm text-white/50 mb-2 font-light">Name</label>
+                    <input
+                      type="text"
+                      id="name"
+                      required
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/30 focus:outline-none focus:border-teal-400/50 transition-colors"
+                      placeholder="Your name"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="email" className="block text-sm text-white/50 mb-2 font-light">Email</label>
+                    <input
+                      type="email"
+                      id="email"
+                      required
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/30 focus:outline-none focus:border-teal-400/50 transition-colors"
+                      placeholder="your@email.com"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="message" className="block text-sm text-white/50 mb-2 font-light">Message</label>
+                  <textarea
+                    id="message"
+                    required
+                    rows={5}
+                    value={formData.message}
+                    onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/30 focus:outline-none focus:border-teal-400/50 transition-colors resize-none"
+                    placeholder="Your message..."
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full md:w-auto px-8 py-3 bg-teal-500 hover:bg-teal-400 disabled:bg-teal-500/50 text-black font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>Sending...</>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" strokeWidth={1.5} />
+                      Send Message
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+          </motion.section>
+
+          {/* Credits Section */}
+          <motion.section
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
             className="mb-16"
           >
             <h2 className="text-2xl font-semibold tracking-tight mb-6 flex items-center gap-3">
