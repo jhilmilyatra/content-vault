@@ -40,6 +40,14 @@ export interface StorageNode {
   priority: number;
 }
 
+// Speed history data point for graph visualization
+export interface SpeedDataPoint {
+  timestamp: number;
+  speed: number; // bytes per second
+  chunkSize?: number;
+  parallelChunks?: number;
+}
+
 export interface UploadProgress {
   loaded: number;
   total: number;
@@ -55,6 +63,8 @@ export interface UploadProgress {
   // Adaptive speed settings
   adaptiveChunkSize?: number;
   adaptiveParallelChunks?: number;
+  // Speed history for graph visualization
+  speedHistory?: SpeedDataPoint[];
 }
 
 export interface ChunkedUploadState {
@@ -176,6 +186,8 @@ class AdaptiveSpeedTracker {
   private maxSamples = 10;
   private currentChunkSize: number;
   private currentParallelChunks: number;
+  private speedHistory: SpeedDataPoint[] = [];
+  private maxHistoryPoints = 50; // Keep last 50 data points for graph
 
   constructor(initialChunkSize: number = DEFAULT_CHUNK_SIZE, initialParallelChunks: number = DEFAULT_PARALLEL_CHUNKS) {
     this.currentChunkSize = initialChunkSize;
@@ -186,6 +198,18 @@ class AdaptiveSpeedTracker {
     this.samples.push({ bytes, time: durationMs });
     if (this.samples.length > this.maxSamples) this.samples.shift();
     this.recalculate();
+    
+    // Add to speed history for graph
+    const currentSpeed = this.getEstimatedSpeed();
+    this.speedHistory.push({
+      timestamp: Date.now(),
+      speed: currentSpeed,
+      chunkSize: this.currentChunkSize,
+      parallelChunks: this.currentParallelChunks,
+    });
+    if (this.speedHistory.length > this.maxHistoryPoints) {
+      this.speedHistory.shift();
+    }
   }
 
   private recalculate() {
@@ -217,6 +241,7 @@ class AdaptiveSpeedTracker {
 
   getChunkSize(): number { return this.currentChunkSize; }
   getParallelChunks(): number { return this.currentParallelChunks; }
+  getSpeedHistory(): SpeedDataPoint[] { return [...this.speedHistory]; }
   getEstimatedSpeed(): number {
     if (this.samples.length === 0) return 0;
     const totalBytes = this.samples.reduce((acc, s) => acc + s.bytes, 0);
@@ -627,6 +652,7 @@ const uploadChunked = async (
         uploadId,
         adaptiveChunkSize: speedTracker.getChunkSize(),
         adaptiveParallelChunks: speedTracker.getParallelChunks(),
+        speedHistory: speedTracker.getSpeedHistory(),
       });
     }
 
@@ -782,6 +808,116 @@ const updateNodeUsage = (nodeId: string, bytesAdded: number) => {
     localStorage.setItem(STORAGE_NODES_KEY, JSON.stringify(updatedNodes));
   } catch (e) {
     console.error("Failed to update node usage:", e);
+  }
+};
+
+/**
+ * Update bandwidth usage in usage_metrics table after upload
+ */
+export const updateBandwidthUsage = async (userId: string, bytesTransferred: number): Promise<void> => {
+  try {
+    // Get current period start/end
+    const now = new Date();
+    const periodStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
+    
+    // Check if usage metrics record exists for this period
+    const { data: existing } = await supabase
+      .from("usage_metrics")
+      .select("id, bandwidth_used_bytes, storage_used_bytes")
+      .eq("user_id", userId)
+      .gte("period_start", periodStart)
+      .lte("period_end", periodEnd)
+      .single();
+    
+    if (existing) {
+      // Update existing record
+      const { error } = await supabase
+        .from("usage_metrics")
+        .update({
+          bandwidth_used_bytes: Number(existing.bandwidth_used_bytes) + bytesTransferred,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id);
+      
+      if (error) {
+        console.error("Failed to update bandwidth usage:", error);
+      } else {
+        console.log(`📊 Updated bandwidth usage: +${formatFileSize(bytesTransferred)}`);
+      }
+    } else {
+      // Create new record for this period
+      const { error } = await supabase
+        .from("usage_metrics")
+        .insert({
+          user_id: userId,
+          bandwidth_used_bytes: bytesTransferred,
+          storage_used_bytes: 0,
+          period_start: periodStart,
+          period_end: periodEnd,
+        });
+      
+      if (error) {
+        console.error("Failed to create bandwidth usage record:", error);
+      } else {
+        console.log(`📊 Created bandwidth usage record: ${formatFileSize(bytesTransferred)}`);
+      }
+    }
+  } catch (e) {
+    console.error("Error updating bandwidth usage:", e);
+  }
+};
+
+/**
+ * Update storage usage in usage_metrics table
+ */
+export const updateStorageUsage = async (userId: string, bytesChange: number): Promise<void> => {
+  try {
+    // Get current period start/end
+    const now = new Date();
+    const periodStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
+    
+    // Check if usage metrics record exists for this period
+    const { data: existing } = await supabase
+      .from("usage_metrics")
+      .select("id, storage_used_bytes")
+      .eq("user_id", userId)
+      .gte("period_start", periodStart)
+      .lte("period_end", periodEnd)
+      .single();
+    
+    if (existing) {
+      // Update existing record
+      const { error } = await supabase
+        .from("usage_metrics")
+        .update({
+          storage_used_bytes: Math.max(0, Number(existing.storage_used_bytes) + bytesChange),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id);
+      
+      if (error) {
+        console.error("Failed to update storage usage:", error);
+      }
+    } else {
+      // Create new record for this period
+      const { error } = await supabase
+        .from("usage_metrics")
+        .insert({
+          user_id: userId,
+          storage_used_bytes: Math.max(0, bytesChange),
+          bandwidth_used_bytes: 0,
+          period_start: periodStart,
+          period_end: periodEnd,
+        });
+      
+      if (error) {
+        console.error("Failed to create storage usage record:", error);
+      }
+    }
+  } catch (e) {
+    console.error("Error updating storage usage:", e);
   }
 };
 
