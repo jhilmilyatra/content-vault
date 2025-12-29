@@ -23,6 +23,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { PageTransition } from "@/components/ui/PageTransition";
 
 interface AdminWithPermissions {
   user_id: string;
@@ -61,7 +62,6 @@ const AdminPermissions = () => {
 
   const fetchAdmins = async () => {
     try {
-      // Get all admin users
       const { data: adminRoles, error: rolesError } = await supabase
         .from("user_roles")
         .select("user_id")
@@ -77,7 +77,6 @@ const AdminPermissions = () => {
 
       const adminUserIds = adminRoles.map((r) => r.user_id);
 
-      // Get profiles for these admins
       const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
         .select("user_id, email, full_name")
@@ -85,7 +84,6 @@ const AdminPermissions = () => {
 
       if (profilesError) throw profilesError;
 
-      // Get permissions for these admins
       const { data: permissions, error: permError } = await supabase
         .from("admin_permissions")
         .select("*")
@@ -132,7 +130,6 @@ const AdminPermissions = () => {
       const currentPerms = admin?.permissions || defaultPermissions;
       const newPerms = { ...currentPerms, [permissionKey]: value };
 
-      // Check if permissions record exists
       const { data: existing } = await supabase
         .from("admin_permissions")
         .select("id")
@@ -140,7 +137,6 @@ const AdminPermissions = () => {
         .maybeSingle();
 
       if (existing) {
-        // Update existing
         const { error } = await supabase
           .from("admin_permissions")
           .update({
@@ -151,7 +147,6 @@ const AdminPermissions = () => {
 
         if (error) throw error;
       } else {
-        // Insert new
         const { error } = await supabase.from("admin_permissions").insert({
           user_id: adminUserId,
           ...newPerms,
@@ -161,7 +156,6 @@ const AdminPermissions = () => {
         if (error) throw error;
       }
 
-      // Update local state
       setAdmins((prev) =>
         prev.map((a) =>
           a.user_id === adminUserId ? { ...a, permissions: newPerms } : a
@@ -218,136 +212,145 @@ const AdminPermissions = () => {
     { key: "can_delete_files" as const, label: "Delete Files", icon: Trash2, description: "Can delete files from any user" },
   ];
 
+  const glassCard = "bg-white/[0.03] backdrop-blur-xl border border-white/10";
+
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <Shield className="w-6 h-6 text-primary" />
-            Admin Permissions
-          </h1>
-          <p className="text-muted-foreground">Control what actions admins can perform</p>
-        </div>
+      <PageTransition>
+        <div className="space-y-6">
+          {/* Header */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-2">
+              <Shield className="w-6 h-6 text-teal-400" />
+              Admin Permissions
+            </h1>
+            <p className="text-white/50">Control what actions admins can perform</p>
+          </motion.div>
 
-        {/* Search */}
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search admins..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-
-        {/* Admins List */}
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+          {/* Search */}
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+            <Input
+              placeholder="Search admins..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/30"
+            />
           </div>
-        ) : filteredAdmins.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              <Shield className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>No admins found</p>
-              <p className="text-sm">Promote users to admin role to manage their permissions here</p>
+
+          {/* Admins List */}
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-white/50" />
+            </div>
+          ) : filteredAdmins.length === 0 ? (
+            <Card className={glassCard}>
+              <CardContent className="py-12 text-center text-white/50">
+                <Shield className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>No admins found</p>
+                <p className="text-sm">Promote users to admin role to manage their permissions here</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-6">
+              {filteredAdmins.map((admin, index) => (
+                <motion.div
+                  key={admin.user_id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                >
+                  <Card className={glassCard}>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center">
+                            <Shield className="w-5 h-5 text-white" />
+                          </div>
+                          <div>
+                            <CardTitle className="text-lg flex items-center gap-2 text-white">
+                              {admin.full_name || "Unnamed Admin"}
+                              <Badge variant="outline" className="text-xs border-white/20 text-white/70">Admin</Badge>
+                            </CardTitle>
+                            <CardDescription className="text-white/50">{admin.email}</CardDescription>
+                          </div>
+                        </div>
+                        {saving === admin.user_id && (
+                          <Loader2 className="w-4 h-4 animate-spin text-white/50" />
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      {admin.permissions === null ? (
+                        <div className="text-center py-4">
+                          <p className="text-white/50 mb-4">
+                            This admin has no permissions configured yet.
+                          </p>
+                          <Button
+                            onClick={() => initializePermissions(admin.user_id)}
+                            disabled={saving === admin.user_id}
+                            className="bg-gradient-to-r from-teal-500 to-blue-600 hover:from-teal-400 hover:to-blue-500 text-white"
+                          >
+                            <Save className="w-4 h-4 mr-2" />
+                            Initialize Default Permissions
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                          {permissionsList.map(({ key, label, icon: Icon, description }) => (
+                            <div
+                              key={key}
+                              className="flex items-start gap-3 p-3 rounded-xl border bg-white/5 border-white/10 hover:bg-white/10 transition-colors"
+                            >
+                              <div className="mt-0.5">
+                                <Icon className="w-4 h-4 text-white/50" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2">
+                                  <Label htmlFor={`${admin.user_id}-${key}`} className="text-sm font-medium cursor-pointer text-white">
+                                    {label}
+                                  </Label>
+                                  <Switch
+                                    id={`${admin.user_id}-${key}`}
+                                    checked={admin.permissions?.[key] ?? false}
+                                    onCheckedChange={(checked) => updatePermission(admin.user_id, key, checked)}
+                                    disabled={saving === admin.user_id}
+                                  />
+                                </div>
+                                <p className="text-xs text-white/40 mt-1">{description}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ))}
+            </div>
+          )}
+
+          {/* Info Card */}
+          <Card className="bg-amber-500/10 border-amber-500/20">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2 text-amber-400">
+                <Crown className="w-5 h-5" />
+                Owner Permissions
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-white/60">
+                As the owner, you have full access to all features regardless of permission settings.
+                These settings only apply to admin-level users.
+              </p>
             </CardContent>
           </Card>
-        ) : (
-          <div className="grid gap-6">
-            {filteredAdmins.map((admin, index) => (
-              <motion.div
-                key={admin.user_id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
-              >
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-violet-500/20 flex items-center justify-center">
-                          <Shield className="w-5 h-5 text-violet-500" />
-                        </div>
-                        <div>
-                          <CardTitle className="text-lg flex items-center gap-2">
-                            {admin.full_name || "Unnamed Admin"}
-                            <Badge variant="outline" className="text-xs">Admin</Badge>
-                          </CardTitle>
-                          <CardDescription>{admin.email}</CardDescription>
-                        </div>
-                      </div>
-                      {saving === admin.user_id && (
-                        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                      )}
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {admin.permissions === null ? (
-                      <div className="text-center py-4">
-                        <p className="text-muted-foreground mb-4">
-                          This admin has no permissions configured yet.
-                        </p>
-                        <Button
-                          onClick={() => initializePermissions(admin.user_id)}
-                          disabled={saving === admin.user_id}
-                        >
-                          <Save className="w-4 h-4 mr-2" />
-                          Initialize Default Permissions
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        {permissionsList.map(({ key, label, icon: Icon, description }) => (
-                          <div
-                            key={key}
-                            className="flex items-start gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
-                          >
-                            <div className="mt-0.5">
-                              <Icon className="w-4 h-4 text-muted-foreground" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-2">
-                                <Label htmlFor={`${admin.user_id}-${key}`} className="text-sm font-medium cursor-pointer">
-                                  {label}
-                                </Label>
-                                <Switch
-                                  id={`${admin.user_id}-${key}`}
-                                  checked={admin.permissions?.[key] ?? false}
-                                  onCheckedChange={(checked) => updatePermission(admin.user_id, key, checked)}
-                                  disabled={saving === admin.user_id}
-                                />
-                              </div>
-                              <p className="text-xs text-muted-foreground mt-1">{description}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        )}
-
-        {/* Info Card */}
-        <Card className="border-amber-500/30 bg-amber-500/5">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Crown className="w-5 h-5 text-amber-500" />
-              Owner Permissions
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              As the owner, you have full access to all features regardless of permission settings.
-              These settings only apply to admin-level users.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+        </div>
+      </PageTransition>
     </DashboardLayout>
   );
 };
