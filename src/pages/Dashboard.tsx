@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import DashboardPreloader from "@/components/dashboard/DashboardPreloader";
 import TrialBanner from "@/components/dashboard/TrialBanner";
+import TelegramUploadTracker from "@/components/dashboard/TelegramUploadTracker";
 import { PageTransition } from "@/components/ui/PageTransition";
 import { GlassCard, GlassCardHeader, StatCard } from "@/components/ios/GlassCard";
 import { SkeletonStats, SkeletonList } from "@/components/ios/SkeletonLoader";
@@ -274,6 +275,9 @@ const Dashboard = () => {
                 </motion.div>
               </motion.div>
             )}
+
+            {/* Telegram Upload Tracker */}
+            <TelegramUploadTracker />
 
             {/* Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
