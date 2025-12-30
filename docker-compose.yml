@@ -32,6 +32,7 @@ services:
       - AUTO_TRANSCODE=true
       - AUTO_RETRANSCODE_ON_STARTUP=true
       - TRANSCODE_DELAY_MS=30000
+      - AUTO_THUMBNAIL_BACKFILL=true
       - VPS_CALLBACK_KEY=${VPS_CALLBACK_KEY:-vps-thumbnail-callback-secret}
       - ENABLE_THUMBNAIL_CALLBACK=true
     healthcheck:
