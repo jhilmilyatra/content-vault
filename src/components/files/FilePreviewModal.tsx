@@ -125,12 +125,16 @@ export function FilePreviewModal({
       setMediaError(null);
       setShowInfo(false);
       setIsFullscreen(false);
+      // Restore body scroll when modal closes
+      document.body.style.overflow = '';
     }
     
     return () => {
       if (controlsTimeoutRef.current) {
         clearTimeout(controlsTimeoutRef.current);
       }
+      // Ensure body scroll is restored on unmount
+      document.body.style.overflow = '';
     };
   }, [open, file]);
 
@@ -472,12 +476,15 @@ export function FilePreviewModal({
   };
 
   const toggleFullscreen = () => {
-    if (modalContainerRef.current) {
-      if (document.fullscreenElement) {
-        document.exitFullscreen();
-      } else {
-        modalContainerRef.current.requestFullscreen();
-      }
+    // Use our own fullscreen state instead of browser fullscreen API for better control
+    // This ensures controls are always visible and positioned correctly
+    setIsFullscreen(prev => !prev);
+    
+    // Lock/unlock body scroll
+    if (!isFullscreen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
     }
   };
 
@@ -605,39 +612,52 @@ export function FilePreviewModal({
 
       case "video":
         // Calculate aspect ratio for the video
-        // For portrait videos on mobile, cap the height to avoid too tall containers
+        // For cinematic/ultra-wide videos (2.35:1, 21:9, etc.), ensure they fill width
+        // For portrait videos, cap height to avoid too tall containers
+        // For standard 16:9, use natural aspect ratio
+        const isCinematic = videoAspectRatio > 1.85; // Wider than 16:9 (~1.78)
         const aspectPadding = isPortraitVideo 
           ? Math.min((1 / videoAspectRatio) * 100, 133) // Cap at 4:3 portrait max (133%)
           : (1 / videoAspectRatio) * 100;
         
         return (
-          // CRITICAL: Use block-level container, NOT flex. Flex breaks mobile video sizing.
+          // CRITICAL: Use block-level container with relative positioning for fullscreen controls
           <motion.div 
+            ref={videoContainerRef}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="w-full bg-black rounded-xl sm:rounded-2xl overflow-hidden"
+            className={`relative w-full bg-black overflow-hidden ${
+              isFullscreen 
+                ? 'fixed inset-0 z-[9999] rounded-none flex items-center justify-center' 
+                : 'rounded-xl sm:rounded-2xl'
+            }`}
             onMouseMove={resetControlsTimeout}
             onTouchStart={resetControlsTimeout}
           >
-            {/* Video Container - Fixed aspect ratio frame (YouTube/Netflix pattern) */}
-            {/* Using padding-top hack: the container has 0 height, padding creates the space */}
+            {/* Video Wrapper - Maintains aspect ratio */}
             <div 
-              ref={videoContainerRef}
-              className={`relative w-full bg-black cursor-pointer ${
-                isPortraitVideo ? 'mx-auto max-w-[70%] sm:max-w-[50%]' : ''
+              className={`relative bg-black cursor-pointer ${
+                isFullscreen 
+                  ? 'w-full h-full flex items-center justify-center' 
+                  : isPortraitVideo 
+                    ? 'mx-auto max-w-[70%] sm:max-w-[50%] w-full' 
+                    : 'w-full'
               }`}
-              style={{ 
-                // CRITICAL: padding-top creates the aspect ratio box
-                // Height is implicitly 0, padding creates the visual height
+              style={!isFullscreen ? { 
+                // padding-top creates the aspect ratio box when not fullscreen
                 paddingTop: `${aspectPadding}%`,
-              }}
+              } : undefined}
               onClick={handleVideoTap}
               onTouchEnd={handleVideoTap}
             >
               <video
                 ref={videoRef}
                 src={fileUrl}
-                className="absolute inset-0 w-full h-full object-contain"
+                className={`${
+                  isFullscreen 
+                    ? 'max-w-full max-h-full w-auto h-auto object-contain' 
+                    : 'absolute inset-0 w-full h-full object-contain'
+                }`}
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
                 onEnded={handleMediaEnded}
@@ -694,7 +714,7 @@ export function FilePreviewModal({
                 )}
               </AnimatePresence>
 
-              {/* Glass Controls Overlay - YouTube/Netflix style */}
+              {/* Glass Controls Overlay - YouTube/Netflix style - ALWAYS in fullscreen container */}
               <motion.div 
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ 
@@ -703,10 +723,10 @@ export function FilePreviewModal({
                   pointerEvents: showControls ? 'auto' : 'none'
                 }}
                 transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
-                className="absolute inset-x-0 bottom-0"
+                className={`absolute inset-x-0 bottom-0 ${isFullscreen ? 'z-[10000]' : ''}`}
               >
                 {/* Glass background */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent backdrop-blur-sm" />
+                <div className={`absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent ${isFullscreen ? '' : 'backdrop-blur-sm'}`} />
                 
                 <div className="relative p-3 sm:p-4">
                   {/* Progress bar with buffer indicator */}
@@ -862,6 +882,23 @@ export function FilePreviewModal({
                 </div>
               </motion.div>
             </div>
+            
+            {/* Fullscreen close button - top right corner */}
+            {isFullscreen && (
+              <motion.button
+                initial={{ opacity: 0 }}
+                animate={{ opacity: showControls ? 1 : 0 }}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFullscreen();
+                }}
+                className="absolute top-4 right-4 z-[10001] w-12 h-12 rounded-full bg-black/60 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/80 transition-all"
+              >
+                <Minimize className="w-6 h-6" />
+              </motion.button>
+            )}
           </motion.div>
         );
 
