@@ -80,6 +80,10 @@
 # POST /finalize-upload     - Assemble chunks into final file
 # POST /verify-file         - Verify file existence and size
 # POST /cleanup-chunks      - Cleanup temporary chunk files
+# POST /transcode           - Manual HLS transcode for a video
+# GET  /transcode-status    - Check transcode progress
+# POST /transcode-all       - Batch transcode all videos (owner only)
+# GET  /hls/:userId/:video  - Serve HLS playlists and segments
 #
 # ============================================
 
@@ -105,6 +109,9 @@ RUN npm run build
 FROM node:20-alpine AS production
 
 WORKDIR /app
+
+# Install FFmpeg for HLS video transcoding
+RUN apk add --no-cache ffmpeg
 
 # Create storage directory with proper structure
 RUN mkdir -p /app/storage /app/data
