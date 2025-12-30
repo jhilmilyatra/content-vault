@@ -28,17 +28,17 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
-# Install production dependencies for storage server
-RUN npm install express cors multer uuid
-
 # Create storage directory with proper structure
 RUN mkdir -p /app/storage /app/data
 
 # Copy built frontend
 COPY --from=builder /app/dist ./dist
 
-# Copy VPS storage server
+# Copy VPS storage server and install its dependencies
 COPY vps-storage-server ./vps-storage-server
+WORKDIR /app/vps-storage-server
+RUN npm install
+WORKDIR /app
 
 # Set environment variables
 ENV NODE_ENV=production
