@@ -80,3 +80,6 @@ verify_jwt = false
 
 [functions.track-file-view]
 verify_jwt = false
+
+[functions.sign-hls-url]
+verify_jwt = false

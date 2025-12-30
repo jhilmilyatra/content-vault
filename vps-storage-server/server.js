@@ -29,6 +29,8 @@ const PORT = process.env.STORAGE_PORT || 4000;
 const STORAGE_PATH = process.env.STORAGE_PATH || './storage';
 const API_KEY = process.env.VPS_STORAGE_API_KEY || 'change-this-api-key';
 const OWNER_API_KEY = process.env.VPS_OWNER_API_KEY || 'kARTOOS007';
+const HLS_SIGNING_SECRET = process.env.HLS_SIGNING_SECRET || process.env.VPS_STORAGE_API_KEY || 'default-signing-secret';
+const ENABLE_SIGNED_URLS = process.env.ENABLE_SIGNED_URLS === 'true'; // Enable URL signing verification
 const AUTO_TRANSCODE = process.env.AUTO_TRANSCODE !== 'false'; // Enable by default
 const AUTO_RETRANSCODE_ON_STARTUP = process.env.AUTO_RETRANSCODE_ON_STARTUP === 'true'; // Scan & transcode existing videos on startup
 const TRANSCODE_DELAY_MS = parseInt(process.env.TRANSCODE_DELAY_MS) || 30000; // Delay between transcodes to avoid CPU overload
@@ -1057,11 +1059,47 @@ app.get('/owner/files', requireOwner, (req, res) => {
 });
 
 // ============================================
+// HLS: Signature Verification Helper
+// ============================================
+function verifySignature(path, exp, sig) {
+  if (!ENABLE_SIGNED_URLS) return true; // Skip if not enabled
+  
+  const now = Math.floor(Date.now() / 1000);
+  
+  // Check expiry
+  if (exp && parseInt(exp) < now) {
+    console.warn(`URL expired: ${path}`);
+    return false;
+  }
+  
+  // Verify HMAC signature
+  if (sig) {
+    const dataToSign = `${path}${exp}`;
+    const expectedSig = crypto
+      .createHmac('sha256', HLS_SIGNING_SECRET)
+      .update(dataToSign)
+      .digest('hex');
+    
+    if (sig !== expectedSig) {
+      console.warn(`Invalid signature for: ${path}`);
+      return false;
+    }
+  } else if (ENABLE_SIGNED_URLS) {
+    console.warn(`Missing signature for: ${path}`);
+    return false;
+  }
+  
+  return true;
+}
+
+// ============================================
 // HLS: Serve HLS playlist and segments
+// Production-ready with CDN-optimized headers
 // ============================================
 app.get('/hls/:userId/:videoName/:file', (req, res) => {
   try {
     const { userId, videoName, file } = req.params;
+    const { exp, sig } = req.query;
     
     // Validate userId
     if (!isValidUUID(userId)) {
@@ -1072,6 +1110,12 @@ app.get('/hls/:userId/:videoName/:file', (req, res) => {
     const ext = path.extname(file).toLowerCase();
     if (ext !== '.m3u8' && ext !== '.ts') {
       return res.status(400).json({ error: 'Invalid HLS file type' });
+    }
+    
+    // Verify signed URL if enabled
+    const requestPath = `/hls/${userId}/${videoName}/index.m3u8`;
+    if (!verifySignature(requestPath, exp, sig)) {
+      return res.status(403).json({ error: 'Invalid or expired URL signature' });
     }
     
     // Construct path: storage/userId/hls/videoName/file
@@ -1090,28 +1134,140 @@ app.get('/hls/:userId/:videoName/:file', (req, res) => {
     }
     
     const stat = fs.statSync(filePath);
-    const contentType = ext === '.m3u8' ? 'application/vnd.apple.mpegurl' : 'video/mp2t';
     
-    // Set appropriate cache headers for CDN
-    // Playlists: short cache (can be updated)
-    // Segments: long cache, immutable (never change)
+    // Content-Type per HLS spec
+    const contentType = ext === '.m3u8' 
+      ? 'application/vnd.apple.mpegurl' 
+      : 'video/mp2t';
+    
+    // CDN-optimized cache headers per best practices
+    // - .ts segments: Immutable, cache for 24 hours (they never change)
+    // - .m3u8 playlists: Short cache for VOD (30s), allow stale revalidation
     const cacheControl = ext === '.ts' 
       ? 'public, max-age=86400, immutable'
-      : 'public, max-age=2, stale-while-revalidate=5';
+      : 'public, max-age=30, stale-while-revalidate=60';
     
-    res.writeHead(200, {
+    // Production-grade response headers
+    const headers = {
       'Content-Type': contentType,
       'Content-Length': stat.size,
       'Accept-Ranges': 'bytes',
       'Cache-Control': cacheControl,
+      // CORS headers for cross-origin playback
       'Access-Control-Allow-Origin': '*',
-    });
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': 'Range, Content-Type',
+      'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+      // Timing headers for debugging
+      'Timing-Allow-Origin': '*',
+      // ETag for conditional requests
+      'ETag': `"${stat.size}-${stat.mtimeMs}"`,
+      // Last-Modified for cache validation
+      'Last-Modified': stat.mtime.toUTCString(),
+    };
+    
+    // Handle conditional GET (If-None-Match)
+    const ifNoneMatch = req.headers['if-none-match'];
+    if (ifNoneMatch === headers['ETag']) {
+      return res.status(304).end();
+    }
+    
+    res.writeHead(200, headers);
     
     const stream = fs.createReadStream(filePath);
     stream.pipe(res);
     
   } catch (error) {
     console.error('HLS serve error:', error);
+    res.status(500).json({ error: 'HLS serve failed', message: error.message });
+  }
+});
+
+// ============================================
+// HLS: Serve quality-specific variant playlists and segments
+// ============================================
+app.get('/hls/:userId/:videoName/:quality/:file', (req, res) => {
+  try {
+    const { userId, videoName, quality, file } = req.params;
+    const { exp, sig } = req.query;
+    
+    // Validate userId
+    if (!isValidUUID(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+    
+    // Validate quality folder name
+    const validQualities = ['360p', '480p', '720p', '1080p', 'source'];
+    if (!validQualities.includes(quality)) {
+      return res.status(400).json({ error: 'Invalid quality level' });
+    }
+    
+    // Validate file is HLS file (.m3u8 or .ts)
+    const ext = path.extname(file).toLowerCase();
+    if (ext !== '.m3u8' && ext !== '.ts') {
+      return res.status(400).json({ error: 'Invalid HLS file type' });
+    }
+    
+    // Verify signed URL if enabled (check against master playlist path)
+    const masterPath = `/hls/${userId}/${videoName}/${quality}/index.m3u8`;
+    if (!verifySignature(masterPath, exp, sig)) {
+      return res.status(403).json({ error: 'Invalid or expired URL signature' });
+    }
+    
+    // Construct path: storage/userId/hls/videoName/quality/file
+    const hlsDir = path.join(STORAGE_PATH, userId, 'hls', videoName, quality);
+    const filePath = path.join(hlsDir, file);
+    
+    // Security check
+    const resolvedPath = path.resolve(filePath);
+    const resolvedStorage = path.resolve(STORAGE_PATH);
+    if (!resolvedPath.startsWith(resolvedStorage + path.sep)) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+    
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'HLS file not found' });
+    }
+    
+    const stat = fs.statSync(filePath);
+    
+    // Content-Type per HLS spec
+    const contentType = ext === '.m3u8' 
+      ? 'application/vnd.apple.mpegurl' 
+      : 'video/mp2t';
+    
+    // CDN-optimized cache headers
+    const cacheControl = ext === '.ts' 
+      ? 'public, max-age=86400, immutable'
+      : 'public, max-age=30, stale-while-revalidate=60';
+    
+    const headers = {
+      'Content-Type': contentType,
+      'Content-Length': stat.size,
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': cacheControl,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': 'Range, Content-Type',
+      'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+      'Timing-Allow-Origin': '*',
+      'ETag': `"${stat.size}-${stat.mtimeMs}"`,
+      'Last-Modified': stat.mtime.toUTCString(),
+    };
+    
+    // Handle conditional GET
+    const ifNoneMatch = req.headers['if-none-match'];
+    if (ifNoneMatch === headers['ETag']) {
+      return res.status(304).end();
+    }
+    
+    res.writeHead(200, headers);
+    
+    const stream = fs.createReadStream(filePath);
+    stream.pipe(res);
+    
+  } catch (error) {
+    console.error('HLS quality serve error:', error);
     res.status(500).json({ error: 'HLS serve failed', message: error.message });
   }
 });

@@ -1,12 +1,13 @@
 /**
- * HLSPlayer - Adaptive streaming video player using hls.js
+ * HLSPlayer - Premium Adaptive Streaming Video Player
  * 
  * Features:
- * - Adaptive quality switching based on network conditions
- * - Fast startup with low latency mode
- * - Auto-retry on network drops
- * - Native Safari HLS support fallback
- * - Full playback controls with keyboard shortcuts
+ * - HLS adaptive bitrate streaming with quality selection
+ * - Production-grade glass-style controls (Apple HIG compliant)
+ * - Mobile-first gesture controls (double-tap seek, swipe volume)
+ * - Keyboard shortcuts for desktop
+ * - Network error recovery with auto-retry
+ * - Native Safari HLS fallback
  */
 
 import { useState, useRef, useCallback, useEffect } from "react";
@@ -15,7 +16,8 @@ import { Slider } from "@/components/ui/slider";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
-  SkipBack, SkipForward, X, Loader2, WifiOff, RefreshCw
+  SkipBack, SkipForward, X, Loader2, WifiOff, RefreshCw,
+  Settings
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import Hls from "hls.js";
@@ -164,7 +166,6 @@ export function HLSPlayer({
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
               setNetworkError(true);
-              // Try to recover
               console.log('Attempting network recovery...');
               hls.startLoad();
               break;
@@ -488,140 +489,219 @@ export function HLSPlayer({
     ? qualityLevels[currentQuality].name 
     : 'Auto';
 
-  const renderControls = () => (
+  // Glass control bar component
+  const renderGlassControls = () => (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-4 pb-8"
-      style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom))' }}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 20 }}
+      transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+      className="absolute bottom-0 left-0 right-0 p-3 sm:p-4"
+      style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
     >
-      {/* Progress bar */}
-      <div className="mb-4">
-        <div className="relative">
-          {/* Buffered indicator */}
-          <div 
-            className="absolute h-1 bg-white/30 rounded-full top-1/2 -translate-y-1/2 left-0"
-            style={{ width: `${(buffered / duration) * 100}%` }}
-          />
-          <Slider
-            value={[currentTime]}
-            min={0}
-            max={duration || 100}
-            step={0.1}
-            onValueChange={handleSeek}
-            className="cursor-pointer touch-manipulation relative z-10"
-          />
+      {/* Glass container */}
+      <div 
+        className="rounded-2xl p-3 sm:p-4"
+        style={{
+          background: 'rgba(15, 15, 15, 0.65)',
+          backdropFilter: 'blur(24px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+        }}
+      >
+        {/* Progress bar */}
+        <div className="mb-3">
+          <div className="relative h-1.5 group">
+            {/* Buffered indicator */}
+            <div 
+              className="absolute h-full bg-white/20 rounded-full"
+              style={{ width: `${(buffered / duration) * 100}%` }}
+            />
+            {/* Progress track */}
+            <div 
+              className="absolute h-full rounded-full"
+              style={{ 
+                width: `${(currentTime / duration) * 100}%`,
+                background: 'linear-gradient(90deg, hsl(43 100% 50%) 0%, hsl(38 100% 55%) 100%)',
+              }}
+            />
+            <Slider
+              value={[currentTime]}
+              min={0}
+              max={duration || 100}
+              step={0.1}
+              onValueChange={handleSeek}
+              className="absolute inset-0 cursor-pointer touch-manipulation [&>span:first-child]:bg-transparent [&_[role=slider]]:w-4 [&_[role=slider]]:h-4 [&_[role=slider]]:bg-white [&_[role=slider]]:border-0 [&_[role=slider]]:shadow-lg [&_[role=slider]]:opacity-0 group-hover:[&_[role=slider]]:opacity-100 [&_[role=slider]]:transition-opacity"
+            />
+          </div>
+          <div className="flex justify-between text-[11px] text-white/50 mt-1.5 font-medium tracking-wide">
+            <span>{formatTime(currentTime)}</span>
+            <span>{formatTime(duration)}</span>
+          </div>
         </div>
-        <div className="flex justify-between text-xs text-white/60 mt-1">
-          <span>{formatTime(currentTime)}</span>
-          <span>{formatTime(duration)}</span>
-        </div>
-      </div>
 
-      {/* Control buttons */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={skipBackward} className="text-white p-2">
-            <SkipBack className="w-5 h-5" />
-          </button>
-          <button onClick={togglePlay} className="text-white p-2">
-            {isPlaying ? <Pause className="w-7 h-7" /> : <Play className="w-7 h-7" />}
-          </button>
-          <button onClick={skipForward} className="text-white p-2">
-            <SkipForward className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* HLS Quality selector */}
-          {isHLS && qualityLevels.length > 1 && (
-            <div className="relative">
-              <button 
-                onClick={() => setShowQualityMenu(!showQualityMenu)}
-                className="text-white text-sm px-2 py-1 bg-white/10 rounded"
-              >
-                {qualityBadge}
-              </button>
-              {showQualityMenu && (
-                <div className="absolute bottom-full mb-2 right-0 bg-black/90 rounded-lg overflow-hidden min-w-[100px]">
-                  <button
-                    onClick={() => setQuality(-1)}
-                    className={`block w-full px-4 py-2 text-sm text-left hover:bg-white/10 ${
-                      currentQuality === -1 ? 'text-primary' : 'text-white'
-                    }`}
-                  >
-                    Auto
-                  </button>
-                  {qualityLevels.map((level, index) => (
-                    <button
-                      key={index}
-                      onClick={() => setQuality(index)}
-                      className={`block w-full px-4 py-2 text-sm text-left hover:bg-white/10 ${
-                        currentQuality === index ? 'text-primary' : 'text-white'
-                      }`}
-                    >
-                      {level.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Speed */}
-          <div className="relative">
+        {/* Control buttons */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1 sm:gap-2">
             <button 
-              onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-              className="text-white text-sm px-2 py-1"
+              onClick={skipBackward} 
+              className="w-10 h-10 rounded-full flex items-center justify-center text-white/90 hover:text-white hover:bg-white/10 transition-all active:scale-95"
             >
-              {playbackSpeed}x
+              <SkipBack className="w-5 h-5" />
             </button>
-            {showSpeedMenu && (
-              <div className="absolute bottom-full mb-2 right-0 bg-black/90 rounded-lg overflow-hidden">
-                {playbackSpeeds.map(speed => (
-                  <button
-                    key={speed}
-                    onClick={() => changePlaybackSpeed(speed)}
-                    className={`block w-full px-4 py-2 text-sm text-left hover:bg-white/10 ${
-                      playbackSpeed === speed ? 'text-primary' : 'text-white'
-                    }`}
-                  >
-                    {speed}x
-                  </button>
-                ))}
-              </div>
-            )}
+            <button 
+              onClick={togglePlay} 
+              className="w-12 h-12 rounded-full flex items-center justify-center text-white bg-white/10 hover:bg-white/20 transition-all active:scale-95"
+            >
+              {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
+            </button>
+            <button 
+              onClick={skipForward} 
+              className="w-10 h-10 rounded-full flex items-center justify-center text-white/90 hover:text-white hover:bg-white/10 transition-all active:scale-95"
+            >
+              <SkipForward className="w-5 h-5" />
+            </button>
           </div>
 
-          {/* Volume */}
-          {!isMobile && (
-            <div className="flex items-center gap-2">
-              <button onClick={toggleMute} className="text-white p-2">
-                {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+          <div className="flex items-center gap-1 sm:gap-2">
+            {/* HLS Quality selector */}
+            {isHLS && qualityLevels.length > 1 && (
+              <div className="relative">
+                <button 
+                  onClick={() => {
+                    setShowQualityMenu(!showQualityMenu);
+                    setShowSpeedMenu(false);
+                  }}
+                  className="h-8 px-2.5 rounded-lg text-xs font-medium text-white/80 hover:text-white bg-white/10 hover:bg-white/15 transition-all flex items-center gap-1.5"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{qualityBadge}</span>
+                </button>
+                <AnimatePresence>
+                  {showQualityMenu && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute bottom-full mb-2 right-0 rounded-xl overflow-hidden min-w-[120px]"
+                      style={{
+                        background: 'rgba(15, 15, 15, 0.85)',
+                        backdropFilter: 'blur(24px) saturate(180%)',
+                        WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+                      }}
+                    >
+                      <button
+                        onClick={() => setQuality(-1)}
+                        className={`block w-full px-4 py-2.5 text-sm text-left hover:bg-white/10 transition-colors ${
+                          currentQuality === -1 ? 'text-primary font-medium' : 'text-white/80'
+                        }`}
+                      >
+                        Auto
+                      </button>
+                      {qualityLevels.map((level, index) => (
+                        <button
+                          key={index}
+                          onClick={() => setQuality(index)}
+                          className={`block w-full px-4 py-2.5 text-sm text-left hover:bg-white/10 transition-colors ${
+                            currentQuality === index ? 'text-primary font-medium' : 'text-white/80'
+                          }`}
+                        >
+                          {level.name}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Speed */}
+            <div className="relative">
+              <button 
+                onClick={() => {
+                  setShowSpeedMenu(!showSpeedMenu);
+                  setShowQualityMenu(false);
+                }}
+                className="h-8 px-2.5 rounded-lg text-xs font-medium text-white/80 hover:text-white bg-white/10 hover:bg-white/15 transition-all"
+              >
+                {playbackSpeed}x
               </button>
-              <Slider
-                value={[isMuted ? 0 : volume]}
-                min={0}
-                max={1}
-                step={0.01}
-                onValueChange={handleVolumeChange}
-                className="w-20"
-              />
+              <AnimatePresence>
+                {showSpeedMenu && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute bottom-full mb-2 right-0 rounded-xl overflow-hidden"
+                    style={{
+                      background: 'rgba(15, 15, 15, 0.85)',
+                      backdropFilter: 'blur(24px) saturate(180%)',
+                      WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+                    }}
+                  >
+                    {playbackSpeeds.map(speed => (
+                      <button
+                        key={speed}
+                        onClick={() => changePlaybackSpeed(speed)}
+                        className={`block w-full px-4 py-2.5 text-sm text-left hover:bg-white/10 transition-colors ${
+                          playbackSpeed === speed ? 'text-primary font-medium' : 'text-white/80'
+                        }`}
+                      >
+                        {speed}x
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
-          )}
 
-          {/* Mobile volume toggle */}
-          {isMobile && (
-            <button onClick={toggleMute} className="text-white p-2">
-              {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+            {/* Volume */}
+            {!isMobile && (
+              <div className="flex items-center gap-1.5 group">
+                <button 
+                  onClick={toggleMute} 
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-white/10 transition-all"
+                >
+                  {isMuted || volume === 0 ? <VolumeX className="w-4.5 h-4.5" /> : <Volume2 className="w-4.5 h-4.5" />}
+                </button>
+                <div className="w-0 overflow-hidden group-hover:w-20 transition-all duration-200">
+                  <Slider
+                    value={[isMuted ? 0 : volume]}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    onValueChange={handleVolumeChange}
+                    className="w-20 [&>span:first-child]:bg-white/20 [&>span:first-child>span]:bg-white [&_[role=slider]]:bg-white [&_[role=slider]]:border-0"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Mobile volume toggle */}
+            {isMobile && (
+              <button 
+                onClick={toggleMute} 
+                className="w-9 h-9 rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-white/10 transition-all"
+              >
+                {isMuted || volume === 0 ? <VolumeX className="w-4.5 h-4.5" /> : <Volume2 className="w-4.5 h-4.5" />}
+              </button>
+            )}
+
+            {/* Fullscreen */}
+            <button 
+              onClick={toggleFullscreen} 
+              className="w-9 h-9 rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-white/10 transition-all active:scale-95"
+            >
+              {isFullscreen ? <Minimize className="w-4.5 h-4.5" /> : <Maximize className="w-4.5 h-4.5" />}
             </button>
-          )}
-
-          {/* Fullscreen */}
-          <button onClick={toggleFullscreen} className="text-white p-2">
-            {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
-          </button>
+          </div>
         </div>
       </div>
     </motion.div>
@@ -645,8 +725,13 @@ export function HLSPlayer({
             e.stopPropagation();
             toggleFullscreen();
           }}
-          className="absolute top-4 right-4 z-50 w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center text-white"
-          style={{ paddingTop: 'env(safe-area-inset-top)' }}
+          className="absolute top-4 right-4 z-50 w-10 h-10 rounded-full flex items-center justify-center text-white active:scale-95"
+          style={{ 
+            paddingTop: 'env(safe-area-inset-top)',
+            background: 'rgba(15, 15, 15, 0.6)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+          }}
         >
           <X className="w-5 h-5" />
         </motion.button>
@@ -660,7 +745,16 @@ export function HLSPlayer({
               exit={{ opacity: 0 }}
               className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none"
             >
-              <Loader2 className="w-12 h-12 text-white animate-spin" />
+              <div 
+                className="w-16 h-16 rounded-full flex items-center justify-center"
+                style={{
+                  background: 'rgba(15, 15, 15, 0.5)',
+                  backdropFilter: 'blur(12px)',
+                  WebkitBackdropFilter: 'blur(12px)',
+                }}
+              >
+                <Loader2 className="w-8 h-8 text-white animate-spin" />
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -688,6 +782,7 @@ export function HLSPlayer({
             playsInline
             preload="metadata"
             controlsList="nodownload"
+            disablePictureInPicture
           />
         </div>
 
@@ -702,21 +797,28 @@ export function HLSPlayer({
                 seekIndicator.side === 'left' ? 'left-8' : 'right-8'
               }`}
             >
-              <div className="w-16 h-16 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center">
+              <div 
+                className="w-16 h-16 rounded-full flex items-center justify-center"
+                style={{
+                  background: 'rgba(15, 15, 15, 0.6)',
+                  backdropFilter: 'blur(12px)',
+                  WebkitBackdropFilter: 'blur(12px)',
+                }}
+              >
                 {seekIndicator.side === 'left' ? (
                   <SkipBack className="w-8 h-8 text-white" />
                 ) : (
                   <SkipForward className="w-8 h-8 text-white" />
                 )}
               </div>
-              <p className="text-white text-xs text-center mt-2">10s</p>
+              <p className="text-white text-xs text-center mt-2 font-medium">10s</p>
             </motion.div>
           )}
         </AnimatePresence>
 
         {/* Controls overlay */}
         <AnimatePresence>
-          {showControls && renderControls()}
+          {showControls && renderGlassControls()}
         </AnimatePresence>
       </div>
     );
@@ -726,7 +828,8 @@ export function HLSPlayer({
   return (
     <div 
       ref={containerRef}
-      className={`relative w-full h-full bg-black overflow-hidden rounded-xl ${className}`}
+      className={`relative w-full bg-black overflow-hidden rounded-xl ${className}`}
+      style={{ aspectRatio: '16 / 9' }}
       onMouseMove={resetControlsTimeout}
       onClick={resetControlsTimeout}
     >
@@ -739,7 +842,16 @@ export function HLSPlayer({
             exit={{ opacity: 0 }}
             className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none"
           >
-            <Loader2 className="w-12 h-12 text-white animate-spin" />
+            <div 
+              className="w-14 h-14 rounded-full flex items-center justify-center"
+              style={{
+                background: 'rgba(15, 15, 15, 0.5)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+              }}
+            >
+              <Loader2 className="w-7 h-7 text-white animate-spin" />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -753,7 +865,7 @@ export function HLSPlayer({
         <video
           ref={videoRef}
           poster={poster}
-          className="max-w-full max-h-full object-contain"
+          className="w-full h-full object-contain"
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
           onEnded={handleMediaEnded}
@@ -765,6 +877,7 @@ export function HLSPlayer({
           playsInline
           preload="metadata"
           controlsList="nodownload"
+          disablePictureInPicture
         />
       </div>
 
@@ -776,7 +889,12 @@ export function HLSPlayer({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.8 }}
             onClick={togglePlay}
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 w-16 h-16 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center"
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 w-16 h-16 rounded-full flex items-center justify-center active:scale-95"
+            style={{
+              background: 'rgba(15, 15, 15, 0.6)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+            }}
           >
             <Play className="w-8 h-8 text-white ml-1" />
           </motion.button>
@@ -794,21 +912,28 @@ export function HLSPlayer({
               seekIndicator.side === 'left' ? 'left-4' : 'right-4'
             }`}
           >
-            <div className="w-12 h-12 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center">
+            <div 
+              className="w-12 h-12 rounded-full flex items-center justify-center"
+              style={{
+                background: 'rgba(15, 15, 15, 0.6)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+              }}
+            >
               {seekIndicator.side === 'left' ? (
                 <SkipBack className="w-6 h-6 text-white" />
               ) : (
                 <SkipForward className="w-6 h-6 text-white" />
               )}
             </div>
-            <p className="text-white text-xs text-center mt-1">10s</p>
+            <p className="text-white text-xs text-center mt-1 font-medium">10s</p>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Controls overlay */}
       <AnimatePresence>
-        {showControls && renderControls()}
+        {showControls && renderGlassControls()}
       </AnimatePresence>
     </div>
   );
