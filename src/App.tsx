@@ -8,6 +8,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { GuestAuthProvider } from "@/contexts/GuestAuthContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
+import { useCacheInvalidation } from "@/hooks/useCacheInvalidation";
 
 // Eagerly loaded routes (critical path)
 import Index from "./pages/Index";
@@ -80,6 +81,12 @@ const PageLoader = () => (
   </div>
 );
 
+// Component to initialize global hooks
+function GlobalHooks() {
+  useCacheInvalidation();
+  return null;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -89,6 +96,7 @@ function App() {
         <BrowserRouter>
           <AuthProvider>
             <GuestAuthProvider>
+              <GlobalHooks />
               <Suspense fallback={<PageLoader />}>
                 <Routes>
                   <Route path="/" element={<Index />} />
