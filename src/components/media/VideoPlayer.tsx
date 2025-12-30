@@ -602,7 +602,8 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
                 <motion.button
                   whileTap={{ scale: 0.92 }}
                   transition={{ duration: 0.12 }}
-                  onClick={skipBackward}
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); skipBackward(); }}
+                  onTouchEnd={(e) => { e.stopPropagation(); }}
                   className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 active:bg-white/25 transition-colors touch-manipulation"
                 >
                   <SkipBack className="w-5 h-5" />
@@ -611,7 +612,8 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
                 <motion.button
                   whileTap={{ scale: 0.92 }}
                   transition={{ duration: 0.12 }}
-                  onClick={togglePlay}
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); togglePlay(); }}
+                  onTouchEnd={(e) => { e.stopPropagation(); }}
                   className="w-12 h-12 sm:w-11 sm:h-11 rounded-full bg-white/20 flex items-center justify-center text-white hover:bg-white/30 active:bg-white/35 transition-colors touch-manipulation"
                 >
                   {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
@@ -620,7 +622,8 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
                 <motion.button
                   whileTap={{ scale: 0.92 }}
                   transition={{ duration: 0.12 }}
-                  onClick={skipForward}
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); skipForward(); }}
+                  onTouchEnd={(e) => { e.stopPropagation(); }}
                   className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 active:bg-white/25 transition-colors touch-manipulation"
                 >
                   <SkipForward className="w-5 h-5" />
@@ -637,7 +640,8 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
                   <motion.button
                     whileTap={{ scale: 0.95 }}
                     transition={{ duration: 0.12 }}
-                    onClick={() => setShowSpeedMenu(!showSpeedMenu)}
+                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); setShowSpeedMenu(!showSpeedMenu); }}
+                    onTouchEnd={(e) => { e.stopPropagation(); }}
                     className="h-10 px-3 rounded-lg bg-white/10 text-white text-sm font-medium hover:bg-white/20 active:bg-white/25 transition-colors touch-manipulation"
                   >
                     {playbackSpeed}x
@@ -654,7 +658,8 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
                         {playbackSpeeds.map((speed) => (
                           <button
                             key={speed}
-                            onClick={() => changePlaybackSpeed(speed)}
+                            onClick={(e) => { e.stopPropagation(); e.preventDefault(); changePlaybackSpeed(speed); }}
+                            onTouchEnd={(e) => { e.stopPropagation(); }}
                             className={`w-full px-4 py-3 text-sm text-left hover:bg-white/20 active:bg-white/25 transition-colors touch-manipulation ${
                               playbackSpeed === speed ? 'text-primary bg-white/10' : 'text-white'
                             }`}
@@ -672,7 +677,8 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={toggleMute}
+                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggleMute(); }}
+                    onTouchEnd={(e: React.TouchEvent) => { e.stopPropagation(); }}
                     className="text-white hover:bg-white/20 h-10 w-10 rounded-full"
                   >
                     {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
@@ -692,7 +698,8 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={toggleMute}
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggleMute(); }}
+                  onTouchEnd={(e: React.TouchEvent) => { e.stopPropagation(); }}
                   className="sm:hidden text-white hover:bg-white/20 active:bg-white/25 h-11 w-11 rounded-full touch-manipulation"
                 >
                   {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
@@ -702,7 +709,8 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
                 <motion.button
                   whileTap={{ scale: 0.92 }}
                   transition={{ duration: 0.12 }}
-                  onClick={toggleFullscreen}
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggleFullscreen(); }}
+                  onTouchEnd={(e) => { e.stopPropagation(); }}
                   className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 active:bg-white/25 transition-colors touch-manipulation"
                 >
                   {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
