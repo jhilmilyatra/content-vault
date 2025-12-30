@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { FileVideo, Play } from "lucide-react";
+import { getCachedThumbnail, cacheThumbnail } from "@/lib/thumbnailCache";
 
 interface VideoThumbnailProps {
   /** Static thumbnail URL */
@@ -50,7 +51,9 @@ export const VideoThumbnail = memo(function VideoThumbnail({
   const [hasError, setHasError] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
   const [animatedLoaded, setAnimatedLoaded] = useState(false);
+  const [cachedSrc, setCachedSrc] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const blobUrlRef = useRef<string | null>(null);
 
   // Determine the actual thumbnail URL to use
   const effectiveThumbnailUrl = thumbnailUrl || fallbackUrl;
@@ -79,6 +82,58 @@ export const VideoThumbnail = memo(function VideoThumbnail({
 
     return () => observer.disconnect();
   }, [priority]);
+
+  // Load thumbnail with caching
+  useEffect(() => {
+    if (!isInView || !effectiveThumbnailUrl) return;
+
+    let isMounted = true;
+
+    const loadThumbnail = async () => {
+      try {
+        // Try to get from cache first
+        const cached = await getCachedThumbnail(effectiveThumbnailUrl);
+        if (cached && isMounted) {
+          blobUrlRef.current = cached;
+          setCachedSrc(cached);
+          setIsLoaded(true);
+          return;
+        }
+
+        // Fetch the thumbnail
+        const response = await fetch(effectiveThumbnailUrl, { credentials: 'include' });
+        if (!response.ok) throw new Error('Failed to fetch');
+        
+        const blob = await response.blob();
+        if (!isMounted) return;
+
+        const blobUrl = URL.createObjectURL(blob);
+        blobUrlRef.current = blobUrl;
+        setCachedSrc(blobUrl);
+        setIsLoaded(true);
+
+        // Cache for future use (only thumbnails under 5MB)
+        if (blob.size < 5 * 1024 * 1024) {
+          cacheThumbnail(effectiveThumbnailUrl, blob).catch(() => {});
+        }
+      } catch {
+        if (isMounted) {
+          // Fall back to direct URL
+          setCachedSrc(effectiveThumbnailUrl);
+          setHasError(true);
+        }
+      }
+    };
+
+    loadThumbnail();
+
+    return () => {
+      isMounted = false;
+      if (blobUrlRef.current?.startsWith('blob:')) {
+        URL.revokeObjectURL(blobUrlRef.current);
+      }
+    };
+  }, [isInView, effectiveThumbnailUrl]);
 
   // Preload animated preview when hovering
   useEffect(() => {
@@ -186,9 +241,9 @@ export const VideoThumbnail = memo(function VideoThumbnail({
       )}
 
       {/* Static thumbnail */}
-      {isInView && !hasError && (
+      {isInView && !hasError && cachedSrc && (
         <motion.img
-          src={effectiveThumbnailUrl}
+          src={cachedSrc}
           alt={alt}
           loading={priority ? "eager" : "lazy"}
           decoding="async"
@@ -196,7 +251,6 @@ export const VideoThumbnail = memo(function VideoThumbnail({
           animate={isLoaded ? { opacity: isHovering && animatedLoaded ? 0 : 1, scale: 1 } : { opacity: 0, scale: 1.02 }}
           transition={{ duration: 0.3 }}
           className={cn("w-full h-full object-cover", className)}
-          onLoad={() => setIsLoaded(true)}
           onError={() => setHasError(true)}
         />
       )}
