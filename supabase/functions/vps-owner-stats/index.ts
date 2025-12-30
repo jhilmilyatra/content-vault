@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
 // Limits
@@ -60,9 +60,24 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Parse action from URL params or body
     const url = new URL(req.url);
-    const action = url.searchParams.get("action") || "all-users";
-    const userId = url.searchParams.get("userId");
+    let action = url.searchParams.get("action");
+    let userId = url.searchParams.get("userId");
+    
+    // Support POST body for action
+    if (req.method === "POST") {
+      try {
+        const body = await req.json();
+        action = body.action || action;
+        userId = body.userId || userId;
+      } catch {
+        // Ignore JSON parse errors for empty body
+      }
+    }
+    
+    action = action || "all-users";
+    
     const limit = Math.min(parseInt(url.searchParams.get("limit") || String(MAX_USERS), 10), MAX_USERS);
     const offset = Math.max(parseInt(url.searchParams.get("offset") || "0", 10), 0);
 
@@ -82,6 +97,9 @@ Deno.serve(async (req) => {
         vpsUrl = `${VPS_ENDPOINT}/stats/user/${userId}`;
         break;
       case "health":
+        vpsUrl = `${VPS_ENDPOINT}/health/full`;
+        break;
+      case "health-basic":
         vpsUrl = `${VPS_ENDPOINT}/health`;
         break;
       case "owner-files":

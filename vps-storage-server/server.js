@@ -1007,6 +1007,81 @@ function getStorageStats() {
 }
 
 // ============================================
+// Startup Self-Test Function
+// ============================================
+function runStartupSelfTest() {
+  console.log('\n🔍 Running endpoint self-test...\n');
+  
+  // Define all required endpoints
+  const requiredEndpoints = [
+    { path: '/health', method: 'GET', description: 'Basic health check' },
+    { path: '/health/full', method: 'GET', description: 'Full health check' },
+    { path: '/stats', method: 'GET', description: 'Storage statistics' },
+    { path: '/stats/user/:userId', method: 'GET', description: 'Per-user stats' },
+    { path: '/stats/all-users', method: 'GET', description: 'All users overview' },
+    { path: '/upload', method: 'POST', description: 'Multipart upload' },
+    { path: '/upload-base64', method: 'POST', description: 'Base64 upload' },
+    { path: '/files/:userId/:fileName', method: 'GET', description: 'File download' },
+    { path: '/files/:userId/:fileName', method: 'DELETE', description: 'File deletion' },
+    { path: '/chunk-append', method: 'POST', description: 'Direct chunk append' },
+    { path: '/chunk-upload', method: 'POST', description: 'Temp chunk upload' },
+    { path: '/finalize-upload', method: 'POST', description: 'Assemble chunks' },
+    { path: '/verify-file', method: 'POST', description: 'Verify file' },
+    { path: '/cleanup-chunks', method: 'POST', description: 'Cleanup chunks' },
+  ];
+  
+  // Get registered routes from Express
+  const registeredRoutes = [];
+  app._router.stack.forEach((middleware) => {
+    if (middleware.route) {
+      const methods = Object.keys(middleware.route.methods).map(m => m.toUpperCase());
+      registeredRoutes.push({
+        path: middleware.route.path,
+        methods: methods
+      });
+    }
+  });
+  
+  let passCount = 0;
+  let failCount = 0;
+  
+  console.log('┌─────────────────────────────────────────────────────────────┐');
+  console.log('│  ENDPOINT                      │ METHOD │ STATUS │ DESC    │');
+  console.log('├─────────────────────────────────────────────────────────────┤');
+  
+  requiredEndpoints.forEach(endpoint => {
+    const found = registeredRoutes.find(r => 
+      r.path === endpoint.path && r.methods.includes(endpoint.method)
+    );
+    const status = found ? '✅ OK' : '❌ MISSING';
+    const statusColor = found ? '\x1b[32m' : '\x1b[31m';
+    const reset = '\x1b[0m';
+    
+    if (found) {
+      passCount++;
+    } else {
+      failCount++;
+    }
+    
+    const pathPadded = endpoint.path.padEnd(30);
+    const methodPadded = endpoint.method.padEnd(6);
+    console.log(`│ ${pathPadded} │ ${methodPadded} │ ${statusColor}${status}${reset} │`);
+  });
+  
+  console.log('└─────────────────────────────────────────────────────────────┘');
+  console.log(`\n📊 Self-Test Results: ${passCount}/${requiredEndpoints.length} endpoints registered`);
+  
+  if (failCount > 0) {
+    console.log(`\x1b[33m⚠️  Warning: ${failCount} endpoints are missing!\x1b[0m`);
+    console.log('   Missing endpoints may cause upload failures.');
+  } else {
+    console.log('\x1b[32m✅ All required endpoints are available!\x1b[0m');
+  }
+  
+  return { passCount, failCount, total: requiredEndpoints.length };
+}
+
+// ============================================
 // Start Server
 // ============================================
 app.listen(PORT, '0.0.0.0', () => {
@@ -1024,6 +1099,11 @@ app.listen(PORT, '0.0.0.0', () => {
   
   const stats = getStorageStats();
   console.log(`📊 Storage Stats: ${stats.usedGB}GB used of ${stats.totalGB}GB (${stats.fileCount} files)`);
+  
+  // Run startup self-test
+  runStartupSelfTest();
+  
+  console.log('\n🚀 Server ready to accept connections!\n');
 });
 
 module.exports = app;
