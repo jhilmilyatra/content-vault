@@ -470,25 +470,29 @@ Edge functions deploy automatically when you save changes in Lovable.
 
 | Function | Purpose | Auth Required |
 |----------|---------|---------------|
-| `vps-upload` | Handle file uploads | Yes |
-| `vps-file` | File operations | Yes |
-| `vps-owner-stats` | Owner statistics | Yes (Owner) |
+| `vps-upload` | Handle small file uploads (<5MB) | Yes |
+| `vps-chunked-upload` | Handle large file uploads with resumable chunks | Yes |
+| `vps-file` | File operations (get, delete) | Yes |
+| `vps-owner-stats` | Owner storage statistics | Yes (Owner) |
 | `shared-download` | Public file download | No |
 | `verify-share-link` | Verify shared links | No |
-| `guest-file-proxy` | Guest file access | No (validated) |
+| `guest-file-proxy` | Guest file download | No (validated) |
 | `guest-file-stream` | Guest file streaming | No (validated) |
-| `guest-folder-zip` | Guest folder download | No (validated) |
+| `guest-folder-zip` | Guest folder download as ZIP | No (validated) |
+| `guest-folder-contents` | Guest folder browsing | No (validated) |
+| `guest-folders` | Guest folder listing | No (validated) |
 | `guest-register` | Guest registration | No |
 | `guest-signin` | Guest authentication | No |
 | `guest-messages` | Guest messaging | No (validated) |
-| `guest-folders` | Guest folder listing | No (validated) |
-| `guest-folder-contents` | Guest folder contents | No (validated) |
-| `create-user` | Admin user creation | Yes (Admin) |
+| `create-user` | Admin user creation | Yes (Owner) |
 | `admin-suspend-user` | Admin user suspension | Yes (Admin) |
 | `owner-update-user` | Owner user updates | Yes (Owner) |
-| `reset-guest-password` | Password reset | No |
-| `reset-user-password` | Password reset | Yes (Admin) |
-| `telegram-upload` | Telegram bot upload | Token Auth |
+| `reset-guest-password` | Guest password reset | Yes (Member+) |
+| `reset-user-password` | User password reset | Yes (Admin) |
+| `telegram-upload` | Telegram bot file upload | Token Auth |
+| `track-file-view` | Track file views/downloads | Yes |
+| `system-monitor` | System health monitoring | Yes (Owner) |
+| `background-jobs` | Background task processing | Internal |
 
 ### Step 3.3: Secrets Management
 

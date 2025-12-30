@@ -1,6 +1,6 @@
 # 🔌 SecureFiles API Documentation
 
-> **Version:** 1.0.0  
+> **Version:** 1.1.0  
 > **Last Updated:** December 2024  
 > **Base URL:** `https://dgmxndvvsbjjbnoibaid.supabase.co/functions/v1`
 
@@ -1259,12 +1259,54 @@ The VPS storage server runs at `http://46.38.232.46:4000`:
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/upload-base64` | POST | Upload file (base64) |
-| `/files/:path` | GET | Download file |
+| `/upload-base64` | POST | Upload file (base64 encoded) |
+| `/upload` | POST | Upload file (multipart form) |
+| `/chunk-append` | POST | Append chunk to file (direct assembly) |
+| `/finalize-chunks` | POST | Verify and finalize chunked upload |
+| `/files/:path` | GET | Download/stream file |
 | `/files/:path` | HEAD | Check file exists |
 | `/delete` | DELETE | Delete file |
 | `/stats/:userId` | GET | User storage stats |
 | `/health` | GET | Server health check |
+
+### Chunked Upload Edge Function
+
+The `vps-chunked-upload` edge function supports resumable uploads:
+
+| Action | Description |
+|--------|-------------|
+| `init` | Initialize upload session, returns `uploadId` and `storageFileName` |
+| `status` | Get current upload progress with uploaded chunk indices |
+| `chunk` | Upload a single 5MB chunk |
+| `finalize` | Verify all chunks and create final file record |
+
+**Example Chunked Upload Flow:**
+
+```javascript
+// 1. Initialize
+const initRes = await supabase.functions.invoke('vps-chunked-upload', {
+  body: { fileName, mimeType, totalSize, totalChunks, folderId },
+  headers: { 'action': 'init' }
+});
+const { uploadId, storageFileName } = initRes.data;
+
+// 2. Upload chunks
+for (let i = 0; i < totalChunks; i++) {
+  const formData = new FormData();
+  formData.append('chunk', chunkBlob);
+  formData.append('uploadId', uploadId);
+  formData.append('chunkIndex', i.toString());
+  formData.append('storageFileName', storageFileName);
+  
+  await fetch(url + '?action=chunk', { method: 'POST', body: formData });
+}
+
+// 3. Finalize
+await supabase.functions.invoke('vps-chunked-upload', {
+  body: { uploadId, storageFileName },
+  headers: { 'action': 'finalize' }
+});
+```
 
 ### Security Considerations
 
@@ -1274,6 +1316,7 @@ The VPS storage server runs at `http://46.38.232.46:4000`:
 4. **Path Traversal:** File names validated to prevent directory access
 5. **CORS:** All endpoints include permissive CORS for web access
 6. **API Tokens:** 32+ character tokens required, hashed storage
+7. **Guest Validation:** Guest IDs verified against folder access records
 
 ### Webhook Integration
 
@@ -1295,4 +1338,4 @@ const channel = supabase
 ---
 
 *Last updated: December 2024*
-*API Version: 1.0.0*
+*API Version: 1.1.0*

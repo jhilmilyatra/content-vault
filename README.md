@@ -44,11 +44,19 @@ A modern, self-hostable file storage and sharing platform built with React, Type
 - 📥 **Bulk Download** - Download entire folders as ZIP with progress tracking
 - 📱 **Mobile Optimized** - Full mobile-responsive guest experience
 
+### Media Experience
+- 🎬 **YouTube-Style Video Player** - Full-featured player with gesture controls
+- 📱 **Portrait/Landscape Detection** - Auto-detects 9:16 and 16:9 aspect ratios
+- ✌️ **Double-Tap Controls** - Left/right to seek ±10s, center for fullscreen
+- 🔊 **Gesture Volume/Brightness** - Swipe on right/left sides to adjust
+- 🖼️ **Universal Image Viewer** - Pinch-to-zoom with pan controls
+
 ### Advanced Features
 - 📱 **Telegram Integration** - Upload files via Telegram bot
 - 💾 **VPS Storage Extension** - Connect additional VPS storage nodes
 - 🔔 **Real-time Notifications** - Live updates for messages and activities
 - 📈 **Usage Analytics** - Detailed usage metrics and reporting
+- ⬆️ **Chunked Uploads** - Resume-capable 5MB chunk uploads for large files
 
 ---
 
@@ -162,12 +170,24 @@ filevault/
 | `FilePreviewModal.tsx` | File preview dialog (images, videos, PDFs) | FileManager |
 | `ShareDialog.tsx` | Create/manage shareable file links | FileManager |
 | `ShareFolderDialog.tsx` | Share folders with guests dialog | FileManager |
+| `ChunkStatusGrid.tsx` | Visual chunk upload progress grid | Upload components |
+| `FinalizationProgress.tsx` | Upload finalization progress UI | Upload components |
+| `UploadProgressBar.tsx` | Individual file upload progress | FileManager |
+| `UploadSpeedGraph.tsx` | Real-time upload speed visualization | Upload components |
+| `UploadZone.tsx` | Drag-and-drop upload zone | FileManager |
+| `UploadFAB.tsx` | Floating action button for uploads | FileManager |
 
 #### `guest/` - Guest Portal Components
 | File | Purpose | Used By |
 |------|---------|---------|
 | `GuestFilePreviewModal.tsx` | File preview for guest users (video streaming) | GuestFolderView |
 | `ZipProgressModal.tsx` | Enterprise-grade ZIP download progress modal | GuestFolderView |
+
+#### `media/` - Media Components
+| File | Purpose | Used By |
+|------|---------|---------|
+| `VideoPlayer.tsx` | YouTube-style video player with gesture controls | FilePreviewModal, GuestFilePreviewModal |
+| `UniversalImageViewer.tsx` | Pinch-to-zoom image viewer with pan controls | FilePreviewModal, GuestFilePreviewModal |
 
 #### `landing/` - Landing Page
 | File | Purpose | Used By |
@@ -332,18 +352,38 @@ Guest (External, unlimited)
 
 **File Upload Flow:**
 1. User selects files in `FileManager.tsx`
-2. `fileService.ts` handles chunked upload
-3. Files go to VPS (primary) or Supabase Storage (fallback)
-4. Metadata stored in `files` table
+2. Small files (<5MB): Direct upload via `vps-upload` edge function
+3. Large files (>5MB): Chunked upload via `vps-chunked-upload` edge function
+4. Files stored on VPS storage server at `http://46.38.232.46:4000`
+5. Metadata stored in `files` table
+
+**Chunked Upload Flow:**
+1. **Init**: Create upload session with `action=init`
+2. **Upload**: Send 5MB chunks with `action=chunk`
+3. **Finalize**: Assemble file with `action=finalize`
+4. Progress tracked in `chunked_upload_sessions` and `upload_chunks` tables
 
 **Supported Operations:**
-- Upload (single/bulk)
+- Upload (single/bulk with chunking for large files)
 - Download (single/folder as ZIP)
 - Preview (images, videos, PDFs, audio)
 - Move to folders
 - Rename
 - Soft delete (trash)
 - Permanent delete
+
+### Video Player Features
+
+**YouTube/Netflix-Style Player (`VideoPlayer.tsx`):**
+- Auto-detects portrait (9:16) vs landscape (16:9) videos
+- Portrait videos constrained to `max-h-[70vh]` on mobile
+- Double-tap left/right: Seek ±10 seconds
+- Double-tap center: Toggle fullscreen
+- Swipe right side: Adjust volume
+- Swipe left side: Adjust brightness
+- Playback speed control (0.5x - 2x)
+- Keyboard shortcuts (Space, arrows, M, F)
+- Fullscreen mode preserves aspect ratio
 
 ### Guest Portal System
 
@@ -356,6 +396,7 @@ Guest (External, unlimited)
 **Guest Features:**
 - Browse shared folders (`GuestFolderView.tsx`)
 - Preview files with streaming (`GuestFilePreviewModal.tsx`)
+- Full video player with all controls (same as member experience)
 - Download individual files or folders as ZIP
 - Real-time chat with folder owner (`GuestHelpDesk.tsx`)
 
