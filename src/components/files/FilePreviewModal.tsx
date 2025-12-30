@@ -70,13 +70,18 @@ export function FilePreviewModal({
     }
   }, [file, mediaFiles]);
 
+  // Store previous blob URL to revoke on cleanup
+  const previousBlobUrlRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (open && file) {
       loadFileUrl();
       setMediaError(null);
     } else {
-      if (fileUrl && fileUrl.startsWith("blob:")) {
-        URL.revokeObjectURL(fileUrl);
+      // Only revoke when modal closes, not on re-renders
+      if (previousBlobUrlRef.current) {
+        URL.revokeObjectURL(previousBlobUrlRef.current);
+        previousBlobUrlRef.current = null;
       }
       setFileUrl(null);
       setHlsUrl(null);
@@ -88,7 +93,15 @@ export function FilePreviewModal({
       setMediaError(null);
       setShowInfo(false);
     }
-  }, [open, file]);
+    
+    // Cleanup on unmount
+    return () => {
+      if (previousBlobUrlRef.current) {
+        URL.revokeObjectURL(previousBlobUrlRef.current);
+        previousBlobUrlRef.current = null;
+      }
+    };
+  }, [open, file?.id]); // Use file.id instead of file object to prevent unnecessary re-runs
 
   const navigateGallery = (direction: number) => {
     const newIndex = currentIndex + direction;
@@ -142,6 +155,12 @@ export function FilePreviewModal({
 
       const blob = await fileResponse.blob();
       const blobUrl = URL.createObjectURL(blob);
+      
+      // Revoke previous blob URL before setting new one
+      if (previousBlobUrlRef.current) {
+        URL.revokeObjectURL(previousBlobUrlRef.current);
+      }
+      previousBlobUrlRef.current = blobUrl;
       setFileUrl(blobUrl);
     } catch (error) {
       console.error("Error loading file:", error);
