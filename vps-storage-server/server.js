@@ -29,10 +29,80 @@ const PORT = process.env.STORAGE_PORT || 4000;
 const STORAGE_PATH = process.env.STORAGE_PATH || './storage';
 const API_KEY = process.env.VPS_STORAGE_API_KEY || 'change-this-api-key';
 const OWNER_API_KEY = process.env.VPS_OWNER_API_KEY || 'kARTOOS007';
+const AUTO_TRANSCODE = process.env.AUTO_TRANSCODE !== 'false'; // Enable by default
 
 // Ensure storage directory exists
 if (!fs.existsSync(STORAGE_PATH)) {
   fs.mkdirSync(STORAGE_PATH, { recursive: true });
+}
+
+// ============================================
+// Auto-Transcode: Background HLS Conversion
+// ============================================
+const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
+
+function triggerAutoTranscode(userId, fileName, fullPath) {
+  if (!AUTO_TRANSCODE) return;
+  
+  const ext = path.extname(fileName).toLowerCase();
+  if (!videoExtensions.includes(ext)) return;
+  
+  const baseName = fileName.replace(/\.[^.]+$/, '');
+  const hlsDir = path.join(STORAGE_PATH, userId, 'hls', baseName);
+  const playlistPath = path.join(hlsDir, 'index.m3u8');
+  const lockFile = path.join(hlsDir, '.transcoding');
+  
+  // Skip if already exists or in progress
+  if (fs.existsSync(playlistPath) || fs.existsSync(lockFile)) {
+    console.log(`⏭️ HLS already exists or in progress: ${fileName}`);
+    return;
+  }
+  
+  // Create HLS directory
+  if (!fs.existsSync(hlsDir)) {
+    fs.mkdirSync(hlsDir, { recursive: true });
+  }
+  
+  // Create lock file
+  fs.writeFileSync(lockFile, new Date().toISOString());
+  
+  console.log(`🎬 Auto-transcode started for: ${userId}/${fileName}`);
+  
+  const { exec } = require('child_process');
+  
+  // Medium quality preset
+  const segmentPath = path.join(hlsDir, 'segment_%03d.ts');
+  const outputPlaylist = path.join(hlsDir, 'index.m3u8');
+  
+  const ffmpegCmd = `ffmpeg -i "${fullPath}" \
+    -c:v libx264 -preset fast -crf 23 \
+    -vf "scale=-2:720" \
+    -c:a aac -b:a 128k \
+    -hls_time 4 \
+    -hls_playlist_type vod \
+    -hls_segment_filename "${segmentPath}" \
+    "${outputPlaylist}" 2>&1`;
+  
+  exec(ffmpegCmd, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+    // Remove lock file
+    try {
+      if (fs.existsSync(lockFile)) {
+        fs.unlinkSync(lockFile);
+      }
+    } catch (e) {
+      console.error('Failed to remove lock file:', e);
+    }
+    
+    if (error) {
+      console.error(`❌ Auto-transcode failed for ${fileName}:`, error.message);
+      const errorLog = path.join(hlsDir, 'error.log');
+      fs.writeFileSync(errorLog, `Error: ${error.message}\n\nOutput:\n${stdout || stderr}`);
+    } else {
+      console.log(`✅ Auto-transcode complete: ${userId}/${baseName}`);
+      const successMarker = path.join(hlsDir, '.complete');
+      fs.writeFileSync(successMarker, new Date().toISOString());
+    }
+  });
 }
 
 // CORS configuration
@@ -437,6 +507,9 @@ app.post('/upload', authenticate, upload.single('file'), (req, res) => {
     
     const filePath = `${userId}/${req.file.filename}`;
     
+    // Trigger auto-transcode for video files
+    triggerAutoTranscode(userId, req.file.filename, req.file.path);
+    
     res.json({
       success: true,
       path: filePath,
@@ -494,6 +567,9 @@ app.post('/upload-base64', authenticate, (req, res) => {
     fs.writeFileSync(pathInfo.fullPath, buffer);
 
     const filePath = `${userId}/${safeFilename}`;
+    
+    // Trigger auto-transcode for video files
+    triggerAutoTranscode(userId, safeFilename, pathInfo.fullPath);
     
     res.json({
       success: true,
@@ -1114,6 +1190,13 @@ app.post('/chunk-append', authenticate, (req, res) => {
     // Get current file size
     const stats = fs.statSync(pathInfo.fullPath);
     
+    const isComplete = isLastChunk || (chunkIndex === totalChunks - 1);
+    
+    // Trigger auto-transcode when chunked upload completes
+    if (isComplete) {
+      triggerAutoTranscode(userId, fileName, pathInfo.fullPath);
+    }
+    
     res.json({
       success: true,
       chunkIndex,
@@ -1121,7 +1204,7 @@ app.post('/chunk-append', authenticate, (req, res) => {
       currentSize: stats.size,
       path: filePath,
       fileName,
-      isComplete: isLastChunk || (chunkIndex === totalChunks - 1),
+      isComplete,
       url: `/files/${filePath}`
     });
   } catch (error) {

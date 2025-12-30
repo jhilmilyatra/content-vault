@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { VideoPlayer } from "@/components/media/VideoPlayer";
+import { HLSPlayer } from "@/components/media/HLSPlayer";
 import { UniversalImageViewer } from "@/components/media/UniversalImageViewer";
 
 interface FilePreviewModalProps {
@@ -31,6 +32,7 @@ export function FilePreviewModal({
   onNavigate 
 }: FilePreviewModalProps) {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [hlsUrl, setHlsUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
@@ -77,6 +79,7 @@ export function FilePreviewModal({
         URL.revokeObjectURL(fileUrl);
       }
       setFileUrl(null);
+      setHlsUrl(null);
       setIsPlaying(false);
       setCurrentTime(0);
       setDuration(0);
@@ -102,6 +105,8 @@ export function FilePreviewModal({
   const loadFileUrl = async () => {
     if (!file) return;
     setLoading(true);
+    setHlsUrl(null);
+    
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData.session) {
@@ -115,6 +120,12 @@ export function FilePreviewModal({
           bytesTransferred: file.size_bytes
         }
       }).catch((err) => console.error('Failed to track view:', err));
+
+      // For videos, check if HLS version exists (non-blocking)
+      const isVideo = file.mime_type.startsWith('video/');
+      if (isVideo) {
+        checkHLSAvailability(file.storage_path, sessionData.session.access_token);
+      }
 
       const fileResponse = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`,
@@ -141,6 +152,47 @@ export function FilePreviewModal({
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Check if HLS version is available for video
+  const checkHLSAvailability = async (storagePath: string, accessToken: string) => {
+    try {
+      // Extract userId and fileName from storage path
+      const pathParts = storagePath.split('/');
+      const fileName = pathParts.pop() || '';
+      const userId = pathParts[0];
+      
+      // Get VPS endpoint from localStorage (storage nodes)
+      const storedNodes = localStorage.getItem('vps-storage-nodes');
+      if (!storedNodes) return;
+      
+      const nodes = JSON.parse(storedNodes);
+      const onlineNode = nodes.find((n: { status: string }) => n.status === 'online');
+      if (!onlineNode) return;
+      
+      // Check HLS status
+      const response = await fetch(
+        `${onlineNode.endpoint}/hls-status/${userId}/${fileName}`,
+        {
+          headers: {
+            Authorization: `Bearer ${onlineNode.apiKey}`,
+          },
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.hasHLS && data.playlistUrl) {
+          // Construct full HLS URL
+          const hlsFullUrl = `${onlineNode.endpoint}${data.playlistUrl}`;
+          console.log('HLS available:', hlsFullUrl);
+          setHlsUrl(hlsFullUrl);
+        }
+      }
+    } catch (error) {
+      // Silently fail - fall back to MP4
+      console.debug('HLS check failed, using MP4 fallback:', error);
     }
   };
 
@@ -338,10 +390,21 @@ export function FilePreviewModal({
         return (
           <div className="w-full h-full flex items-center justify-center overflow-hidden">
             <div className="w-full h-full max-h-[70vh]">
-              <VideoPlayer 
-                src={fileUrl} 
-                onError={() => setMediaError('Unable to play this file.')}
-              />
+              {hlsUrl ? (
+                <HLSPlayer 
+                  src={hlsUrl}
+                  fallbackSrc={fileUrl}
+                  onError={(err) => {
+                    console.warn('HLS playback failed, falling back to MP4:', err);
+                    setHlsUrl(null); // Clear HLS to fall back to VideoPlayer
+                  }}
+                />
+              ) : (
+                <VideoPlayer 
+                  src={fileUrl} 
+                  onError={() => setMediaError('Unable to play this file.')}
+                />
+              )}
             </div>
           </div>
         );
