@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { formatFileSize } from "@/lib/fileService";
@@ -55,6 +56,7 @@ const itemVariants = {
 
 export const TelegramUploadTracker = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [activeSessions, setActiveSessions] = useState<UploadSession[]>([]);
   const [recentUploads, setRecentUploads] = useState<RecentUpload[]>([]);
   const [loading, setLoading] = useState(true);
@@ -214,15 +216,29 @@ export const TelegramUploadTracker = () => {
         title="Telegram Uploads" 
         icon={<Bot className="w-5 h-5 text-primary" />}
         action={
-          <motion.button
-            onClick={handleRefresh}
-            className="text-sm text-muted-foreground hover:text-primary transition-colors p-1"
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            disabled={refreshing}
-          >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-          </motion.button>
+          <div className="flex items-center gap-2">
+            <motion.button
+              onClick={() => {
+                lightHaptic();
+                navigate('/dashboard/upload-history');
+              }}
+              className="text-xs text-primary hover:text-primary/80 flex items-center gap-1 transition-colors"
+              whileHover={{ x: 2 }}
+              whileTap={{ scale: 0.97 }}
+            >
+              View All
+              <ChevronRight className="w-3 h-3" />
+            </motion.button>
+            <motion.button
+              onClick={handleRefresh}
+              className="text-sm text-muted-foreground hover:text-primary transition-colors p-1"
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              disabled={refreshing}
+            >
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            </motion.button>
+          </div>
         }
       />
 
