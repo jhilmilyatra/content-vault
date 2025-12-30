@@ -130,8 +130,15 @@ async function getSystemHealth(supabase: any): Promise<Response> {
   const startTime = Date.now();
   const alerts: Alert[] = [];
 
-  // Check database health
-  const dbCheck = await checkDatabaseHealth(supabase);
+  // Run health checks IN PARALLEL for faster response
+  const [dbCheck, storageCheck, jobsCheck, tableGrowth, limitAlerts] = await Promise.all([
+    checkDatabaseHealth(supabase),
+    checkStorageHealth(supabase),
+    checkBackgroundJobs(supabase),
+    getTableGrowth(supabase),
+    checkUserLimits(supabase),
+  ]);
+
   if (dbCheck.status === "error") {
     alerts.push({
       id: crypto.randomUUID(),
@@ -144,28 +151,16 @@ async function getSystemHealth(supabase: any): Promise<Response> {
     });
   }
 
-  // Check storage health
-  const storageCheck = await checkStorageHealth(supabase);
-  
-  // Check edge functions (self-check)
+  alerts.push(...limitAlerts);
+
+  // Edge check is just self-timing (how long did parallel checks take)
   const edgeCheck: HealthCheck = {
     status: "ok",
     latency: Date.now() - startTime,
     lastChecked: new Date().toISOString(),
   };
 
-  // Check background jobs
-  const jobsCheck = await checkBackgroundJobs(supabase);
-
-  // Get metrics
   const edgeMetrics = getSystemMetrics();
-  
-  // Get table growth data
-  const tableGrowth = await getTableGrowth(supabase);
-  
-  // Check for users approaching limits
-  const limitAlerts = await checkUserLimits(supabase);
-  alerts.push(...limitAlerts);
 
   // Determine overall status
   let overallStatus: "healthy" | "degraded" | "critical" = "healthy";
@@ -174,6 +169,16 @@ async function getSystemHealth(supabase: any): Promise<Response> {
   } else if (dbCheck.status === "warning" || storageCheck.status === "warning" || jobsCheck.status === "warning") {
     overallStatus = "degraded";
   }
+
+  // Get storage metrics in parallel
+  const [storageMetrics, fileCount] = await Promise.all([
+    supabase.from("usage_metrics").select("storage_used_bytes").limit(PAGINATION.MAX_LIMIT),
+    supabase.from("files").select("*", { count: "exact", head: true }).eq("is_deleted", false),
+  ]);
+
+  const totalUsedBytes = storageMetrics.data?.reduce(
+    (sum: number, m: any) => sum + Number(m.storage_used_bytes), 0
+  ) || 0;
 
   const health: SystemHealth = {
     status: overallStatus,
@@ -186,15 +191,15 @@ async function getSystemHealth(supabase: any): Promise<Response> {
     alerts,
     metrics: {
       database: {
-        activeConnections: 0, // Would need pg_stat_activity
+        activeConnections: 0,
         queryLatencyP95: Object.values(edgeMetrics.latencyP95)[0] || 0,
         slowQueryCount: edgeMetrics.slowQueries.length,
         tableGrowth,
       },
       storage: {
-        totalUsedBytes: 0,
-        totalFiles: 0,
-        vpsHealth: [],
+        totalUsedBytes,
+        totalFiles: fileCount.count || 0,
+        vpsHealth: storageCheck.vpsDetails ? [storageCheck.vpsDetails] : [],
       },
       traffic: {
         requestsPerMinute: Object.values(edgeMetrics.requests).reduce((a, b) => a + b, 0),
@@ -222,25 +227,6 @@ async function getSystemHealth(supabase: any): Promise<Response> {
     },
     timestamp: new Date().toISOString(),
   };
-
-  // Update storage metrics
-  const { data: storageMetrics } = await supabase
-    .from("usage_metrics")
-    .select("storage_used_bytes")
-    .limit(PAGINATION.MAX_LIMIT);
-  
-  if (storageMetrics) {
-    health.metrics.storage.totalUsedBytes = storageMetrics.reduce(
-      (sum: number, m: any) => sum + Number(m.storage_used_bytes), 0
-    );
-  }
-
-  const { count: fileCount } = await supabase
-    .from("files")
-    .select("*", { count: "exact", head: true })
-    .eq("is_deleted", false);
-  
-  health.metrics.storage.totalFiles = fileCount || 0;
 
   return jsonResponse(health);
 }
@@ -279,19 +265,56 @@ async function checkDatabaseHealth(supabase: any): Promise<HealthCheck> {
   }
 }
 
-async function checkStorageHealth(supabase: any): Promise<HealthCheck> {
+interface StorageHealthCheck extends HealthCheck {
+  vpsDetails?: { endpoint: string; status: string; latency?: number; diskUsage?: number; error?: string };
+}
+
+async function checkStorageHealth(supabase: any): Promise<StorageHealthCheck> {
+  const startTime = Date.now();
+  
   try {
-    // Check VPS health
+    // Check VPS health with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
     const vpsResponse = await fetch(`${VPS_CONFIG.endpoint}/health`, {
       headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` },
-      signal: AbortSignal.timeout(5000),
-    }).catch(() => null);
+      signal: controller.signal,
+    }).catch((err) => {
+      console.warn("VPS health check failed:", err.message);
+      return null;
+    }).finally(() => clearTimeout(timeoutId));
 
-    if (!vpsResponse || !vpsResponse.ok) {
+    const vpsLatency = Date.now() - startTime;
+
+    if (!vpsResponse) {
       return {
         status: "warning",
-        message: "VPS storage node not responding",
+        latency: vpsLatency,
+        message: "VPS unreachable (network/firewall issue)",
         lastChecked: new Date().toISOString(),
+        vpsDetails: {
+          endpoint: VPS_CONFIG.endpoint,
+          status: "unreachable",
+          latency: vpsLatency,
+          error: "Connection failed - check VPS firewall allows Supabase Edge IPs",
+        },
+      };
+    }
+
+    if (!vpsResponse.ok) {
+      const errorText = await vpsResponse.text().catch(() => "Unknown error");
+      return {
+        status: "warning",
+        latency: vpsLatency,
+        message: `VPS returned ${vpsResponse.status}`,
+        lastChecked: new Date().toISOString(),
+        vpsDetails: {
+          endpoint: VPS_CONFIG.endpoint,
+          status: "unhealthy",
+          latency: vpsLatency,
+          error: errorText,
+        },
       };
     }
 
@@ -301,20 +324,42 @@ async function checkStorageHealth(supabase: any): Promise<HealthCheck> {
     if (vpsData.diskUsage && vpsData.diskUsage > 80) {
       return {
         status: "warning",
+        latency: vpsLatency,
         message: `VPS disk usage at ${vpsData.diskUsage}%`,
         lastChecked: new Date().toISOString(),
+        vpsDetails: {
+          endpoint: VPS_CONFIG.endpoint,
+          status: "warning",
+          latency: vpsLatency,
+          diskUsage: vpsData.diskUsage,
+        },
       };
     }
 
     return {
       status: "ok",
+      latency: vpsLatency,
       lastChecked: new Date().toISOString(),
+      vpsDetails: {
+        endpoint: VPS_CONFIG.endpoint,
+        status: "healthy",
+        latency: vpsLatency,
+        diskUsage: vpsData.diskUsage,
+      },
     };
   } catch (error) {
+    const vpsLatency = Date.now() - startTime;
     return {
       status: "error",
+      latency: vpsLatency,
       message: String(error),
       lastChecked: new Date().toISOString(),
+      vpsDetails: {
+        endpoint: VPS_CONFIG.endpoint,
+        status: "error",
+        latency: vpsLatency,
+        error: String(error),
+      },
     };
   }
 }
