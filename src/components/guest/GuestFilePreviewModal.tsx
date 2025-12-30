@@ -547,9 +547,8 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
       case "video":
         // Calculate aspect ratio for the video
         // For portrait videos on mobile, cap the height to avoid too tall containers
-        const aspectPadding = isPortraitVideo 
-          ? Math.min((1 / videoAspectRatio) * 100, 133) // Cap at 4:3 portrait max (133%)
-          : (1 / videoAspectRatio) * 100;
+        // YouTube/Netflix-style: Portrait videos get max-height constraint, landscape get aspect-video
+        // This prevents layout jumps and half-screen bugs on mobile
         
         return (
           // CRITICAL: Use block-level container with gesture support
@@ -558,10 +557,12 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
             className={`relative w-full bg-black overflow-hidden ${
               isFullscreen 
                 ? 'fixed inset-0 z-[9999] rounded-none flex items-center justify-center' 
-                : 'rounded-xl sm:rounded-2xl'
-            }`}
+                : isPortraitVideo 
+                  ? 'aspect-[9/16] max-h-[70vh] mx-auto' // Portrait: constrained height like YouTube
+                  : 'aspect-video' // Landscape: standard 16:9 container
+            } rounded-xl sm:rounded-2xl`}
             onMouseEnter={resetControlsTimeout}
-            onMouseLeave={() => setShowControls(false)}
+            onClick={resetControlsTimeout}
             onTouchStart={(e) => {
               resetControlsTimeout();
               handleGestureStart(e);
@@ -610,29 +611,20 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
               </div>
             )}
             
-            {/* Video Container - Fixed aspect ratio frame */}
+            {/* Video Element - object-contain for proper scaling */}
             <div 
-              className={`relative bg-black cursor-pointer z-[2] ${
+              className={`relative cursor-pointer z-[2] ${
                 isFullscreen 
                   ? 'w-full h-full flex items-center justify-center' 
-                  : isPortraitVideo 
-                    ? 'mx-auto max-w-[70%] sm:max-w-[50%] w-full' 
-                    : 'w-full'
+                  : 'w-full h-full'
               }`}
-              style={!isFullscreen ? { 
-                paddingTop: `${aspectPadding}%`,
-              } : undefined}
               onClick={!gestureActive ? handleVideoTap : undefined}
               onTouchEnd={!gestureActive ? handleVideoTap : undefined}
             >
               <video
                 ref={videoRef}
                 src={fileUrl}
-                className={`${
-                  isFullscreen 
-                    ? 'max-w-full max-h-full w-auto h-auto object-contain' 
-                    : 'absolute inset-0 w-full h-full object-contain'
-                }`}
+                className="w-full h-full object-contain"
                 style={{ filter: `brightness(${brightness})` }}
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
