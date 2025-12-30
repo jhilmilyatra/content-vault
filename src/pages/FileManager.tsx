@@ -62,6 +62,7 @@ import ShareDialog from "@/components/files/ShareDialog";
 import ShareFolderDialog from "@/components/files/ShareFolderDialog";
 import BulkActionsBar from "@/components/files/BulkActionsBar";
 import { FilePreviewModal } from "@/components/files/FilePreviewModal";
+import { IosActionSheet } from "@/components/ios/IosActionSheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -113,6 +114,11 @@ const FileManager = () => {
   const [shareFolderOpen, setShareFolderOpen] = useState(false);
   const [folderToShare, setFolderToShare] = useState<FolderItem | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  
+  // Mobile long-press action sheet state
+  const [actionSheetOpen, setActionSheetOpen] = useState(false);
+  const [actionSheetTarget, setActionSheetTarget] = useState<{ type: 'file' | 'folder'; item: FileItem | FolderItem } | null>(null);
+  const longPressTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const { user } = useAuth();
   const { toast } = useToast();
@@ -461,6 +467,111 @@ const FileManager = () => {
     weekAgo.setDate(weekAgo.getDate() - 7);
     return fileDate > weekAgo;
   }).length;
+
+  // Long-press handlers for mobile
+  const handleLongPressStart = useCallback((type: 'file' | 'folder', item: FileItem | FolderItem) => {
+    if (!isMobile || selectionMode) return;
+    
+    longPressTimeoutRef.current = setTimeout(() => {
+      mediumHaptic();
+      setActionSheetTarget({ type, item });
+      setActionSheetOpen(true);
+    }, 500);
+  }, [isMobile, selectionMode]);
+
+  const handleLongPressEnd = useCallback(() => {
+    if (longPressTimeoutRef.current) {
+      clearTimeout(longPressTimeoutRef.current);
+      longPressTimeoutRef.current = null;
+    }
+  }, []);
+
+  const handleLongPressMove = useCallback(() => {
+    // Cancel long press if user moves finger
+    handleLongPressEnd();
+  }, [handleLongPressEnd]);
+
+  // Get action sheet actions based on target type
+  const getActionSheetActions = useCallback(() => {
+    if (!actionSheetTarget) return [];
+
+    if (actionSheetTarget.type === 'file') {
+      const file = actionSheetTarget.item as FileItem;
+      return [
+        {
+          label: 'Preview',
+          icon: <Eye className="w-5 h-5" />,
+          onClick: () => {
+            setPreviewFile(file);
+            setPreviewOpen(true);
+          }
+        },
+        {
+          label: 'Download',
+          icon: <Download className="w-5 h-5" />,
+          onClick: () => handleDownload(file)
+        },
+        {
+          label: 'Share',
+          icon: <Share2 className="w-5 h-5" />,
+          onClick: () => {
+            setShareFile({ id: file.id, name: file.original_name });
+            setShareDialogOpen(true);
+          }
+        },
+        {
+          label: 'Rename',
+          icon: <Edit className="w-5 h-5" />,
+          onClick: () => {
+            setRenameTarget({ type: 'file', id: file.id, name: file.name });
+            setNewName(file.name);
+            setRenameDialogOpen(true);
+          }
+        },
+        {
+          label: 'Move to Trash',
+          icon: <Trash2 className="w-5 h-5" />,
+          destructive: true,
+          onClick: () => handleDeleteFile(file)
+        }
+      ];
+    } else {
+      const folder = actionSheetTarget.item as FolderItem;
+      return [
+        {
+          label: 'Open',
+          icon: <FolderOpen className="w-5 h-5" />,
+          onClick: () => handleNavigateToFolder(folder.id, folder.name)
+        },
+        {
+          label: 'Share Folder',
+          icon: <Share2 className="w-5 h-5" />,
+          onClick: () => {
+            setFolderToShare(folder);
+            setShareFolderOpen(true);
+          }
+        },
+        {
+          label: 'Rename',
+          icon: <Edit className="w-5 h-5" />,
+          onClick: () => {
+            setRenameTarget({ type: 'folder', id: folder.id, name: folder.name });
+            setNewName(folder.name);
+            setRenameDialogOpen(true);
+          }
+        },
+        {
+          label: 'Delete',
+          icon: <Trash2 className="w-5 h-5" />,
+          destructive: true,
+          onClick: () => {
+            setFolderToDelete(folder);
+            setDeleteFolderConfirmOpen(true);
+          }
+        }
+      ];
+    }
+  }, [actionSheetTarget, handleDownload, handleDeleteFile, handleNavigateToFolder]);
 
   return (
     <DashboardLayout>
@@ -843,6 +954,9 @@ const FileManager = () => {
                     whileHover={{ scale: 1.02, y: -2 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={handleFolderClick}
+                    onTouchStart={() => handleLongPressStart('folder', folder)}
+                    onTouchEnd={handleLongPressEnd}
+                    onTouchMove={handleLongPressMove}
                     className={`relative group cursor-pointer ${
                       viewMode === "grid"
                         ? "p-4 rounded-2xl bg-white/[0.02] border transition-all backdrop-blur-sm hover:bg-white/[0.04]"
@@ -979,6 +1093,9 @@ const FileManager = () => {
                     whileHover={{ scale: 1.02, y: -2 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={handleFileClick}
+                    onTouchStart={() => handleLongPressStart('file', file)}
+                    onTouchEnd={handleLongPressEnd}
+                    onTouchMove={handleLongPressMove}
                     className={`relative group cursor-pointer ${
                       viewMode === "grid"
                         ? "p-4 rounded-2xl bg-white/[0.02] border transition-all backdrop-blur-sm hover:bg-white/[0.04]"
@@ -1258,6 +1375,19 @@ const FileManager = () => {
               userId={user.id}
             />
           )}
+
+          {/* Mobile Long-Press Action Sheet */}
+          <IosActionSheet
+            open={actionSheetOpen}
+            onClose={() => {
+              setActionSheetOpen(false);
+              setActionSheetTarget(null);
+            }}
+            title={actionSheetTarget?.type === 'file' 
+              ? (actionSheetTarget.item as FileItem).name 
+              : (actionSheetTarget?.item as FolderItem)?.name}
+            actions={getActionSheetActions()}
+          />
         </div>
 
         {/* Mobile FAB */}
