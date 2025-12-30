@@ -19,6 +19,7 @@ import {
   Download,
   BarChart3,
   Flame,
+  RotateCcw,
   X
 } from 'lucide-react';
 import { GlassCard, GlassCardHeader } from '@/components/ios/GlassCard';
@@ -83,6 +84,7 @@ const ContentManagement = () => {
   const [fileToPermanentDelete, setFileToPermanentDelete] = useState<UserFile | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [permanentDeleting, setPermanentDeleting] = useState(false);
+  const [restoring, setRestoring] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'active' | 'trash'>('active');
 
   useEffect(() => {
@@ -290,6 +292,38 @@ const ContentManagement = () => {
     } finally {
       setPermanentDeleting(false);
       setFileToPermanentDelete(null);
+    }
+  };
+
+  const handleRestoreFile = async (file: UserFile) => {
+    setRestoring(file.id);
+    lightHaptic();
+    
+    try {
+      const { error } = await supabase
+        .from('files')
+        .update({ 
+          is_deleted: false, 
+          deleted_at: null 
+        })
+        .eq('id', file.id);
+
+      if (error) throw error;
+
+      // Move file from trash to active in local state
+      setTrashedFiles(prev => prev.filter(f => f.id !== file.id));
+      setFiles(prev => [{ ...file, is_deleted: false }, ...prev]);
+      setTotalFiles(prev => prev + 1);
+      setTotalSize(prev => prev + file.size_bytes);
+      
+      toast.success('File restored', {
+        description: `${file.original_name} has been restored.`,
+      });
+    } catch (error) {
+      console.error('Failed to restore file:', error);
+      toast.error('Failed to restore file');
+    } finally {
+      setRestoring(null);
     }
   };
 
@@ -598,16 +632,32 @@ const ContentManagement = () => {
                           </button>
                         </>
                       ) : (
-                        <button
-                          onClick={() => {
-                            lightHaptic();
-                            setFileToPermanentDelete(file);
-                          }}
-                          className="p-2 rounded-xl bg-gradient-to-r from-red-500/30 to-orange-500/30 text-red-400 hover:from-red-500/40 hover:to-orange-500/40 transition-colors"
-                          title="Permanently Delete"
-                        >
-                          <Flame className="w-4 h-4" />
-                        </button>
+                        <>
+                          {/* Restore Button */}
+                          <button
+                            onClick={() => handleRestoreFile(file)}
+                            disabled={restoring === file.id}
+                            className="p-2 rounded-xl bg-teal-500/20 text-teal-400 hover:bg-teal-500/30 transition-colors disabled:opacity-50"
+                            title="Restore File"
+                          >
+                            {restoring === file.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <RotateCcw className="w-4 h-4" />
+                            )}
+                          </button>
+                          {/* Permanent Delete Button */}
+                          <button
+                            onClick={() => {
+                              lightHaptic();
+                              setFileToPermanentDelete(file);
+                            }}
+                            className="p-2 rounded-xl bg-gradient-to-r from-red-500/30 to-orange-500/30 text-red-400 hover:from-red-500/40 hover:to-orange-500/40 transition-colors"
+                            title="Permanently Delete"
+                          >
+                            <Flame className="w-4 h-4" />
+                          </button>
+                        </>
                       )}
                     </div>
                   </motion.div>
