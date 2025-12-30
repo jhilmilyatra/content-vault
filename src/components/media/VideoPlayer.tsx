@@ -12,9 +12,11 @@ interface VideoPlayerProps {
   src: string;
   onError?: () => void;
   className?: string;
+  /** Set to true for cross-origin sources that support CORS, false for proxied/guest URLs */
+  crossOrigin?: boolean;
 }
 
-export function VideoPlayer({ src, onError, className = "" }: VideoPlayerProps) {
+export function VideoPlayer({ src, onError, className = "", crossOrigin = true }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -443,7 +445,7 @@ export function VideoPlayer({ src, onError, className = "" }: VideoPlayerProps) 
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
           playsInline
-          crossOrigin="anonymous"
+          crossOrigin={crossOrigin ? "anonymous" : undefined}
           preload="metadata"
           controlsList="nodownload"
         />
