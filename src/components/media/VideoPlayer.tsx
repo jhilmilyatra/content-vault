@@ -428,7 +428,11 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
       {/* Video element */}
       <div 
         className={`relative cursor-pointer z-[2] ${
-          isFullscreen ? 'w-full h-full flex items-center justify-center' : 'w-full h-full'
+          isFullscreen 
+            ? isPortraitVideo 
+              ? 'h-full max-w-[56.25vh] mx-auto flex items-center justify-center' 
+              : 'w-full h-full flex items-center justify-center'
+            : 'w-full h-full'
         }`}
         onClick={!gestureActive ? handleVideoTap : undefined}
         onTouchEnd={!gestureActive ? handleVideoTap : undefined}
@@ -436,7 +440,9 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
         <video
           ref={videoRef}
           src={src}
-          className="w-full h-full object-contain"
+          className={`object-contain ${
+            isFullscreen && isPortraitVideo ? 'h-full w-auto max-h-screen' : 'w-full h-full'
+          }`}
           style={{ filter: `brightness(${brightness})` }}
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
