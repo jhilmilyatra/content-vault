@@ -422,14 +422,14 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
             {/* Video Element */}
             <div 
               ref={videoContainerRef}
-              className="relative flex-1 flex items-center justify-center"
+              className="relative flex-1 flex items-center justify-center min-h-0"
               onClick={handleVideoTap}
               onTouchEnd={handleVideoTap}
             >
               <video
                 ref={videoRef}
                 src={fileUrl}
-                className="max-w-full max-h-[60vh] sm:max-h-[60vh] object-contain pointer-events-none"
+                className="w-full h-full max-h-[50vh] sm:max-h-[60vh] object-contain pointer-events-none"
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
                 onEnded={handleMediaEnded}
@@ -438,7 +438,9 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                 onPause={() => setIsPlaying(false)}
                 playsInline
                 webkit-playsinline="true"
+                x-webkit-airplay="allow"
                 crossOrigin="anonymous"
+                preload="metadata"
               />
               
               {/* Double-tap seek indicators */}
@@ -473,46 +475,52 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
               )}
             </div>
 
-            {/* Video Controls - Always visible on mobile */}
+            {/* Video Controls - Always visible on mobile, optimized layout */}
             <div 
-              className={`p-3 sm:p-4 bg-gradient-to-t from-black/90 to-transparent transition-opacity ${
+              className={`p-2 sm:p-4 bg-gradient-to-t from-black/95 via-black/80 to-transparent transition-opacity ${
                 showControls ? "opacity-100" : "sm:opacity-0"
               }`}
             >
-              {/* Progress bar */}
-              <div className="mb-2 sm:mb-3">
+              {/* Progress bar with larger touch target on mobile */}
+              <div className="mb-2 sm:mb-3 px-1">
                 <Slider
                   value={[currentTime]}
                   min={0}
                   max={duration || 100}
                   step={0.1}
                   onValueChange={handleSeek}
-                  className="cursor-pointer touch-manipulation"
+                  className="cursor-pointer touch-manipulation [&_[role=slider]]:h-5 [&_[role=slider]]:w-5 sm:[&_[role=slider]]:h-4 sm:[&_[role=slider]]:w-4"
                 />
+                {/* Time display below progress on mobile */}
+                <div className="flex justify-between text-[10px] sm:text-xs text-white/60 mt-1 sm:hidden">
+                  <span>{formatTime(currentTime)}</span>
+                  <span>{formatTime(duration)}</span>
+                </div>
               </div>
 
-              {/* Control buttons */}
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1 sm:gap-2">
+              {/* Control buttons - Optimized mobile layout */}
+              <div className="flex items-center justify-between gap-1 sm:gap-2">
+                {/* Left controls */}
+                <div className="flex items-center gap-0.5 sm:gap-2">
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={skipBackward}
-                    className="text-white hover:bg-white/20 h-9 w-9 sm:h-10 sm:w-10 touch-manipulation active:scale-95"
+                    className="text-white hover:bg-white/20 h-10 w-10 sm:h-10 sm:w-10 touch-manipulation active:scale-90 transition-transform"
                   >
-                    <SkipBack className="w-4 h-4 sm:w-5 sm:h-5" />
+                    <SkipBack className="w-5 h-5" />
                   </Button>
                   
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={togglePlay}
-                    className="text-white hover:bg-white/20 h-10 w-10 sm:h-10 sm:w-10 touch-manipulation active:scale-95"
+                    className="text-white hover:bg-white/20 h-12 w-12 sm:h-10 sm:w-10 touch-manipulation active:scale-90 transition-transform"
                   >
                     {isPlaying ? (
-                      <Pause className="w-5 h-5 sm:w-6 sm:h-6" />
+                      <Pause className="w-6 h-6" />
                     ) : (
-                      <Play className="w-5 h-5 sm:w-6 sm:h-6" />
+                      <Play className="w-6 h-6 ml-0.5" />
                     )}
                   </Button>
                   
@@ -520,33 +528,35 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                     variant="ghost"
                     size="icon"
                     onClick={skipForward}
-                    className="text-white hover:bg-white/20 h-9 w-9 sm:h-10 sm:w-10 touch-manipulation active:scale-95"
+                    className="text-white hover:bg-white/20 h-10 w-10 sm:h-10 sm:w-10 touch-manipulation active:scale-90 transition-transform"
                   >
-                    <SkipForward className="w-4 h-4 sm:w-5 sm:h-5" />
+                    <SkipForward className="w-5 h-5" />
                   </Button>
 
-                  <span className="text-white text-xs sm:text-sm ml-1 sm:ml-2 whitespace-nowrap">
+                  {/* Time display - desktop only */}
+                  <span className="hidden sm:inline text-white text-sm ml-2 whitespace-nowrap">
                     {formatTime(currentTime)} / {formatTime(duration)}
                   </span>
                 </div>
 
-                <div className="flex items-center gap-1 sm:gap-2">
+                {/* Right controls */}
+                <div className="flex items-center gap-0.5 sm:gap-2">
                   {/* Playback speed control */}
                   <div className="relative">
                     <Button
                       variant="ghost"
                       onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                      className="text-white hover:bg-white/20 h-8 px-2 text-xs sm:text-sm font-medium touch-manipulation"
+                      className="text-white hover:bg-white/20 h-10 w-10 sm:h-8 sm:w-auto sm:px-2 text-xs font-medium touch-manipulation"
                     >
-                      {playbackSpeed}x
+                      <span className="text-sm">{playbackSpeed}x</span>
                     </Button>
                     {showSpeedMenu && (
-                      <div className="absolute bottom-full mb-2 right-0 bg-black/90 rounded-lg border border-white/20 overflow-hidden min-w-[80px]">
+                      <div className="absolute bottom-full mb-2 right-0 bg-black/95 rounded-lg border border-white/20 overflow-hidden min-w-[80px] z-50">
                         {playbackSpeeds.map((speed) => (
                           <button
                             key={speed}
                             onClick={() => changePlaybackSpeed(speed)}
-                            className={`w-full px-3 py-2 text-sm text-left hover:bg-white/20 transition-colors ${
+                            className={`w-full px-4 py-3 sm:py-2 text-sm text-left hover:bg-white/20 transition-colors touch-manipulation ${
                               playbackSpeed === speed ? 'text-primary bg-white/10' : 'text-white'
                             }`}
                           >
@@ -587,12 +597,12 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                     variant="ghost"
                     size="icon"
                     onClick={toggleMute}
-                    className="sm:hidden text-white hover:bg-white/20 h-9 w-9 touch-manipulation active:scale-95"
+                    className="sm:hidden text-white hover:bg-white/20 h-10 w-10 touch-manipulation active:scale-90 transition-transform"
                   >
                     {isMuted || volume === 0 ? (
-                      <VolumeX className="w-4 h-4" />
+                      <VolumeX className="w-5 h-5" />
                     ) : (
-                      <Volume2 className="w-4 h-4" />
+                      <Volume2 className="w-5 h-5" />
                     )}
                   </Button>
 
@@ -600,9 +610,9 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                     variant="ghost"
                     size="icon"
                     onClick={toggleFullscreen}
-                    className="text-white hover:bg-white/20 h-9 w-9 sm:h-10 sm:w-10 touch-manipulation active:scale-95"
+                    className="text-white hover:bg-white/20 h-10 w-10 touch-manipulation active:scale-90 transition-transform"
                   >
-                    <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />
+                    <Maximize className="w-5 h-5" />
                   </Button>
                 </div>
               </div>
