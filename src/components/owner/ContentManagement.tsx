@@ -5,26 +5,37 @@ import {
   Trash2, 
   Loader2, 
   HardDrive, 
-  Users, 
   Play, 
   Eye, 
-  Download,
   RefreshCw,
   Search,
   Film,
   Image as ImageIcon,
   FileText,
-  ExternalLink,
   Shield,
-  Zap
+  Zap,
+  Radio,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import { GlassCard, GlassCardHeader } from '@/components/ios/GlassCard';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { getCacheStats, clearThumbnailCache } from '@/lib/thumbnailCache';
+import { broadcastCacheInvalidation } from '@/hooks/useCacheInvalidation';
 import { mediumHaptic, lightHaptic } from '@/lib/haptics';
 import { Input } from '@/components/ui/input';
 import { VideoPlayer } from '@/components/media';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface UserFile {
   id: string;
@@ -50,11 +61,14 @@ const ContentManagement = () => {
   const [files, setFiles] = useState<UserFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [clearing, setClearing] = useState(false);
+  const [broadcasting, setBroadcasting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFile, setSelectedFile] = useState<UserFile | null>(null);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [totalFiles, setTotalFiles] = useState(0);
   const [totalSize, setTotalSize] = useState(0);
+  const [fileToDelete, setFileToDelete] = useState<UserFile | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -112,11 +126,67 @@ const ContentManagement = () => {
     try {
       await clearThumbnailCache();
       setLocalCacheStats({ count: 0, totalSizeMB: 0 });
-      toast.success('All local caches cleared');
+      toast.success('Local cache cleared');
     } catch (error) {
-      toast.error('Failed to clear caches');
+      toast.error('Failed to clear cache');
     } finally {
       setClearing(false);
+    }
+  };
+
+  const handleBroadcastCacheClear = async () => {
+    mediumHaptic();
+    setBroadcasting(true);
+    try {
+      // Clear local cache first
+      await clearThumbnailCache();
+      setLocalCacheStats({ count: 0, totalSizeMB: 0 });
+      
+      // Broadcast to all connected clients
+      const success = await broadcastCacheInvalidation();
+      
+      if (success) {
+        toast.success('Cache invalidation broadcast sent', {
+          description: 'All connected clients will clear their caches.',
+        });
+      } else {
+        toast.warning('Broadcast may not have reached all clients');
+      }
+    } catch (error) {
+      toast.error('Failed to broadcast cache invalidation');
+    } finally {
+      setBroadcasting(false);
+    }
+  };
+
+  const handleDeleteFile = async (file: UserFile) => {
+    setDeleting(true);
+    try {
+      // Soft delete the file
+      const { error } = await supabase
+        .from('files')
+        .update({ 
+          is_deleted: true, 
+          deleted_at: new Date().toISOString() 
+        })
+        .eq('id', file.id);
+
+      if (error) throw error;
+
+      // Remove from local state
+      setFiles(prev => prev.filter(f => f.id !== file.id));
+      setTotalFiles(prev => prev - 1);
+      setTotalSize(prev => prev - file.size_bytes);
+      
+      toast.success('File deleted', {
+        description: `${file.original_name} has been moved to trash.`,
+      });
+    } catch (error) {
+      console.error('Failed to delete file:', error);
+      toast.error('Failed to delete file');
+    } finally {
+      setDeleting(false);
+      setFileToDelete(null);
     }
   };
 
@@ -257,14 +327,27 @@ const ContentManagement = () => {
               ) : (
                 <Trash2 className="w-4 h-4" />
               )}
-              Clear Local Cache
+              Clear My Cache
             </button>
             
-            <div className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-muted-foreground text-sm inline-flex items-center gap-2">
-              <Database className="w-4 h-4" />
-              Server-side cache managed automatically
-            </div>
+            <button
+              onClick={handleBroadcastCacheClear}
+              disabled={broadcasting}
+              className="px-4 py-3 rounded-xl bg-gradient-to-r from-amber-500/20 to-red-500/20 border border-amber-500/30 text-amber-400 hover:from-amber-500/30 hover:to-red-500/30 transition-colors text-sm font-medium inline-flex items-center gap-2 disabled:opacity-50"
+            >
+              {broadcasting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Radio className="w-4 h-4" />
+              )}
+              Clear All User Caches
+            </button>
           </div>
+          
+          <p className="text-xs text-muted-foreground mt-3">
+            <Radio className="w-3 h-3 inline mr-1" />
+            "Clear All User Caches" broadcasts a signal to all connected clients to clear their local thumbnail caches.
+          </p>
         </div>
       </GlassCard>
 
@@ -345,6 +428,16 @@ const ContentManagement = () => {
                           <Eye className="w-4 h-4" />
                         </button>
                       )}
+                      <button
+                        onClick={() => {
+                          lightHaptic();
+                          setFileToDelete(file);
+                        }}
+                        className="p-2 rounded-xl bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                        title="Delete File"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </motion.div>
                 ))}
@@ -417,6 +510,45 @@ const ContentManagement = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!fileToDelete} onOpenChange={(open) => !open && setFileToDelete(null)}>
+        <AlertDialogContent className="ios-glass border-white/10">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-foreground">
+              <AlertTriangle className="w-5 h-5 text-red-400" />
+              Delete File
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
+              Are you sure you want to delete <span className="font-medium text-foreground">{fileToDelete?.original_name}</span>?
+              <br />
+              <span className="text-xs">Owner: {fileToDelete?.user_name} ({fileToDelete?.user_email})</span>
+              <br />
+              <span className="text-xs text-amber-400">This will move the file to trash. The user can still recover it.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel 
+              disabled={deleting}
+              className="ios-button-secondary"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => fileToDelete && handleDeleteFile(fileToDelete)}
+              disabled={deleting}
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              {deleting ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : (
+                <Trash2 className="w-4 h-4 mr-2" />
+              )}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
