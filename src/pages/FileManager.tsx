@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PageTransition } from "@/components/ui/PageTransition";
 import { LazyImage } from "@/components/ui/LazyImage";
+import { VideoThumbnail } from "@/components/media/VideoThumbnail";
 import { GlassCard } from "@/components/ios/GlassCard";
 import { PremiumOnboarding } from "@/components/onboarding/PremiumOnboarding";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
@@ -1001,13 +1002,30 @@ const FileManager = () => {
                         />
                       </div>
                     )}
-                    {/* Thumbnail with LazyImage for images/videos */}
-                    {file.mime_type.startsWith("image/") || file.mime_type.startsWith("video/") ? (
+                    {/* Thumbnail with lazy loading */}
+                    {file.mime_type.startsWith("video/") ? (
                       <div
-                        className={`overflow-hidden ${
+                        className={`overflow-hidden rounded-xl ${
                           viewMode === "grid"
-                            ? "w-full aspect-square rounded-xl mb-3 mx-auto"
-                            : "w-12 h-12 rounded-xl flex-shrink-0"
+                            ? "w-full aspect-square mb-3 mx-auto"
+                            : "w-12 h-12 flex-shrink-0"
+                        }`}
+                      >
+                        <VideoThumbnail
+                          thumbnailUrl={file.thumbnail_url}
+                          fallbackUrl={file.thumbnail_url ? undefined : `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`}
+                          alt={file.name}
+                          className="w-full h-full object-cover"
+                          aspectRatio="square"
+                          showPlayIndicator={viewMode === "grid"}
+                        />
+                      </div>
+                    ) : file.mime_type.startsWith("image/") ? (
+                      <div
+                        className={`overflow-hidden rounded-xl ${
+                          viewMode === "grid"
+                            ? "w-full aspect-square mb-3 mx-auto"
+                            : "w-12 h-12 flex-shrink-0"
                         }`}
                       >
                         <LazyImage
@@ -1015,16 +1033,8 @@ const FileManager = () => {
                           alt={file.name}
                           className="w-full h-full object-cover"
                           aspectRatio="square"
-                          placeholderColor={file.mime_type.startsWith("image/") ? "rgba(236,72,153,0.1)" : "rgba(139,92,246,0.1)"}
+                          placeholderColor="rgba(236,72,153,0.1)"
                         />
-                        {/* Video play indicator */}
-                        {file.mime_type.startsWith("video/") && (
-                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center border border-white/20">
-                              <FileVideo className="w-5 h-5 text-white" />
-                            </div>
-                          </div>
-                        )}
                       </div>
                     ) : (
                       <div
