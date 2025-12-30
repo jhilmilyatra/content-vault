@@ -1414,6 +1414,231 @@ app.post('/verify-file', authenticate, (req, res) => {
 });
 
 // ============================================
+// Manual Re-Transcode Endpoint
+// ============================================
+app.post('/transcode', authenticate, (req, res) => {
+  try {
+    const { userId, fileName, force } = req.body;
+    
+    if (!userId || !fileName) {
+      return res.status(400).json({ error: 'Missing userId or fileName' });
+    }
+    
+    if (!isValidUUID(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+    
+    if (!isValidFilename(fileName)) {
+      return res.status(400).json({ error: 'Invalid filename format' });
+    }
+    
+    const ext = path.extname(fileName).toLowerCase();
+    if (!videoExtensions.includes(ext)) {
+      return res.status(400).json({ error: 'File is not a video' });
+    }
+    
+    const pathInfo = getSafePath(userId, fileName);
+    if (!pathInfo) {
+      return res.status(400).json({ error: 'Invalid path parameters' });
+    }
+    
+    if (!fs.existsSync(pathInfo.fullPath)) {
+      return res.status(404).json({ error: 'Video file not found' });
+    }
+    
+    const baseName = fileName.replace(/\.[^.]+$/, '');
+    const hlsDir = path.join(STORAGE_PATH, userId, 'hls', baseName);
+    const masterPlaylist = path.join(hlsDir, 'index.m3u8');
+    const lockFile = path.join(hlsDir, '.transcoding');
+    
+    // Check if already transcoding
+    if (fs.existsSync(lockFile)) {
+      try {
+        const lockData = JSON.parse(fs.readFileSync(lockFile, 'utf-8'));
+        return res.status(409).json({ 
+          error: 'Transcoding already in progress',
+          status: lockData
+        });
+      } catch {
+        return res.status(409).json({ error: 'Transcoding already in progress' });
+      }
+    }
+    
+    // Check if already exists (unless force=true)
+    if (fs.existsSync(masterPlaylist) && !force) {
+      return res.status(200).json({ 
+        message: 'HLS already exists',
+        hlsPath: `/hls/${userId}/${baseName}/index.m3u8`,
+        force: 'Set force=true to re-transcode'
+      });
+    }
+    
+    // If forcing re-transcode, delete existing HLS files
+    if (force && fs.existsSync(hlsDir)) {
+      fs.rmSync(hlsDir, { recursive: true, force: true });
+      console.log(`🗑️ Deleted existing HLS: ${userId}/${baseName}`);
+    }
+    
+    // Trigger transcoding
+    triggerAutoTranscode(userId, fileName, pathInfo.fullPath);
+    
+    res.json({
+      success: true,
+      message: 'Transcoding started',
+      fileName,
+      hlsPath: `/hls/${userId}/${baseName}/index.m3u8`,
+      statusPath: `/transcode-status/${userId}/${baseName}`
+    });
+  } catch (error) {
+    console.error('Transcode trigger error:', error);
+    res.status(500).json({ error: 'Failed to start transcoding', message: error.message });
+  }
+});
+
+// ============================================
+// Transcode Status Endpoint
+// ============================================
+app.get('/transcode-status/:userId/:baseName', authenticate, (req, res) => {
+  try {
+    const { userId, baseName } = req.params;
+    
+    if (!isValidUUID(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+    
+    const hlsDir = path.join(STORAGE_PATH, userId, 'hls', baseName);
+    const masterPlaylist = path.join(hlsDir, 'index.m3u8');
+    const lockFile = path.join(hlsDir, '.transcoding');
+    const completeMarker = path.join(hlsDir, '.complete');
+    const errorLog = path.join(hlsDir, 'error.log');
+    
+    // Check if transcoding is in progress
+    if (fs.existsSync(lockFile)) {
+      try {
+        const lockData = JSON.parse(fs.readFileSync(lockFile, 'utf-8'));
+        return res.json({
+          status: 'transcoding',
+          ...lockData
+        });
+      } catch {
+        return res.json({ status: 'transcoding' });
+      }
+    }
+    
+    // Check if complete
+    if (fs.existsSync(completeMarker)) {
+      try {
+        const completeData = JSON.parse(fs.readFileSync(completeMarker, 'utf-8'));
+        return res.json({
+          status: 'complete',
+          hlsPath: `/hls/${userId}/${baseName}/index.m3u8`,
+          ...completeData
+        });
+      } catch {
+        return res.json({
+          status: 'complete',
+          hlsPath: `/hls/${userId}/${baseName}/index.m3u8`
+        });
+      }
+    }
+    
+    // Check if error
+    if (fs.existsSync(errorLog)) {
+      const errorContent = fs.readFileSync(errorLog, 'utf-8');
+      return res.json({
+        status: 'error',
+        error: errorContent.substring(0, 500)
+      });
+    }
+    
+    // Not started
+    res.json({ status: 'not_started' });
+  } catch (error) {
+    console.error('Transcode status error:', error);
+    res.status(500).json({ error: 'Failed to get status', message: error.message });
+  }
+});
+
+// ============================================
+// Batch Transcode Endpoint (Owner Only)
+// ============================================
+app.post('/transcode-all', requireOwner, (req, res) => {
+  try {
+    const { userId, force } = req.body;
+    
+    let usersToProcess = [];
+    
+    if (userId) {
+      if (!isValidUUID(userId)) {
+        return res.status(400).json({ error: 'Invalid user ID format' });
+      }
+      usersToProcess = [userId];
+    } else {
+      // Get all user directories
+      if (fs.existsSync(STORAGE_PATH)) {
+        usersToProcess = fs.readdirSync(STORAGE_PATH)
+          .filter(entry => isValidUUID(entry) && fs.statSync(path.join(STORAGE_PATH, entry)).isDirectory());
+      }
+    }
+    
+    const results = [];
+    
+    for (const uid of usersToProcess) {
+      const userDir = path.join(STORAGE_PATH, uid);
+      if (!fs.existsSync(userDir)) continue;
+      
+      const files = fs.readdirSync(userDir);
+      
+      for (const file of files) {
+        const ext = path.extname(file).toLowerCase();
+        if (!videoExtensions.includes(ext)) continue;
+        
+        const baseName = file.replace(/\.[^.]+$/, '');
+        const hlsDir = path.join(STORAGE_PATH, uid, 'hls', baseName);
+        const masterPlaylist = path.join(hlsDir, 'index.m3u8');
+        const lockFile = path.join(hlsDir, '.transcoding');
+        
+        // Skip if already in progress
+        if (fs.existsSync(lockFile)) {
+          results.push({ userId: uid, fileName: file, status: 'already_transcoding' });
+          continue;
+        }
+        
+        // Skip if already exists (unless force)
+        if (fs.existsSync(masterPlaylist) && !force) {
+          results.push({ userId: uid, fileName: file, status: 'already_exists' });
+          continue;
+        }
+        
+        // Delete existing if forcing
+        if (force && fs.existsSync(hlsDir)) {
+          fs.rmSync(hlsDir, { recursive: true, force: true });
+        }
+        
+        // Trigger transcode
+        const fullPath = path.join(userDir, file);
+        triggerAutoTranscode(uid, file, fullPath);
+        results.push({ userId: uid, fileName: file, status: 'started' });
+      }
+    }
+    
+    const started = results.filter(r => r.status === 'started').length;
+    const skipped = results.filter(r => r.status !== 'started').length;
+    
+    res.json({
+      success: true,
+      message: `Started transcoding ${started} videos, skipped ${skipped}`,
+      started,
+      skipped,
+      results
+    });
+  } catch (error) {
+    console.error('Batch transcode error:', error);
+    res.status(500).json({ error: 'Batch transcode failed', message: error.message });
+  }
+});
+
+// ============================================
 // Storage Stats Helper Function
 // ============================================
 function getStorageStats() {
