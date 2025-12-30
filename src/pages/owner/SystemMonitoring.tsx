@@ -37,6 +37,14 @@ import {
   Area,
 } from "recharts";
 
+interface VpsHealthDetails {
+  endpoint: string;
+  status: string;
+  latency?: number;
+  diskUsage?: number;
+  error?: string;
+}
+
 interface SystemHealth {
   status: "healthy" | "degraded" | "critical";
   checks: {
@@ -48,7 +56,7 @@ interface SystemHealth {
   alerts: Alert[];
   metrics: {
     database: { queryLatencyP95: number; slowQueryCount: number; tableGrowth: { table: string; rowCount: number; sizeEstimate: string }[] };
-    storage: { totalUsedBytes: number; totalFiles: number };
+    storage: { totalUsedBytes: number; totalFiles: number; vpsHealth?: VpsHealthDetails[] };
     traffic: { requestsPerMinute: number; topEndpoints: { endpoint: string; count: number; avgLatency: number }[] };
     abuse: { rateLimitViolations: number; bannedClients: number };
   };
@@ -98,14 +106,15 @@ const SystemMonitoring = () => {
       if (response.data) {
         setHealth(response.data);
         
-        // Add to latency history
+        // Add to latency history - VPS latency now comes from Edge Function
         const now = new Date();
+        const vpsDetails = response.data.metrics?.storage?.vpsHealth?.[0];
         const newPoint: LatencyDataPoint = {
           time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
           timestamp: now.getTime(),
           db: response.data.checks?.database?.latency || null,
           edge: response.data.checks?.edgeFunctions?.latency || null,
-          vps: null, // Will be populated by VPS test
+          vps: vpsDetails?.latency || response.data.checks?.storage?.latency || null,
         };
         
         setLatencyHistory(prev => {
@@ -121,37 +130,7 @@ const SystemMonitoring = () => {
     }
   }, []);
 
-  // Test VPS latency separately
-  const testVpsLatency = useCallback(async () => {
-    const startTime = performance.now();
-    try {
-      const response = await fetch("http://46.38.232.46:4000/health", {
-        method: "GET",
-        headers: { "Authorization": "Bearer kARTOOS007" },
-      });
-      
-      if (response.ok) {
-        const latency = Math.round(performance.now() - startTime);
-        
-        setLatencyHistory(prev => {
-          if (prev.length === 0) return prev;
-          const updated = [...prev];
-          updated[updated.length - 1] = {
-            ...updated[updated.length - 1],
-            vps: latency,
-          };
-          return updated;
-        });
-        
-        return latency;
-      }
-    } catch (error) {
-      console.error("VPS latency test failed:", error);
-    }
-    return null;
-  }, []);
-
-  // Run full latency test
+  // Run full latency test - VPS is tested via Edge Function (browser can't reach VPS due to CORS)
   const runLatencyTest = async () => {
     setTestingLatency(true);
     lightHaptic();
@@ -160,32 +139,19 @@ const SystemMonitoring = () => {
     const startDb = performance.now();
     
     try {
-      // Test DB latency
-      const { data: dbData } = await supabase
-        .from("profiles")
-        .select("id")
-        .limit(1);
+      // Test DB latency (direct from browser)
+      await supabase.from("profiles").select("id").limit(1);
       const dbLatency = Math.round(performance.now() - startDb);
       
-      // Test Edge latency
+      // Test Edge latency (includes VPS check inside)
       const startEdge = performance.now();
-      await supabase.functions.invoke("health", { body: {} });
+      const { data: monitorData } = await supabase.functions.invoke("system-monitor", { body: {} });
       const edgeLatency = Math.round(performance.now() - startEdge);
       
-      // Test VPS latency
-      const startVps = performance.now();
-      let vpsLatency: number | null = null;
-      try {
-        const vpsRes = await fetch("http://46.38.232.46:4000/health", {
-          method: "GET",
-          headers: { "Authorization": "Bearer kARTOOS007" },
-        });
-        if (vpsRes.ok) {
-          vpsLatency = Math.round(performance.now() - startVps);
-        }
-      } catch (e) {
-        console.error("VPS test failed:", e);
-      }
+      // VPS latency comes from the Edge Function (it can reach VPS, browser can't due to CORS)
+      const vpsDetails = monitorData?.metrics?.storage?.vpsHealth?.[0];
+      const vpsLatency = vpsDetails?.latency || monitorData?.checks?.storage?.latency || null;
+      const vpsStatus = vpsDetails?.status || "unknown";
       
       const newPoint: LatencyDataPoint = {
         time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
@@ -200,7 +166,17 @@ const SystemMonitoring = () => {
         return updated.slice(-20);
       });
       
-      toast.success(`Latency: DB ${dbLatency}ms | Edge ${edgeLatency}ms | VPS ${vpsLatency || 'N/A'}ms`);
+      if (monitorData) {
+        setHealth(monitorData);
+      }
+      
+      const vpsMsg = vpsStatus === "healthy" 
+        ? `VPS ${vpsLatency}ms` 
+        : vpsStatus === "unreachable" 
+          ? "VPS unreachable (firewall)" 
+          : `VPS ${vpsStatus}`;
+      
+      toast.success(`DB ${dbLatency}ms | Edge ${edgeLatency}ms | ${vpsMsg}`);
     } catch (error) {
       toast.error("Latency test failed");
     } finally {
@@ -210,13 +186,11 @@ const SystemMonitoring = () => {
 
   useEffect(() => {
     fetchHealth();
-    testVpsLatency();
     const interval = setInterval(() => {
       fetchHealth();
-      testVpsLatency();
     }, 30000);
     return () => clearInterval(interval);
-  }, [fetchHealth, testVpsLatency]);
+  }, [fetchHealth]);
 
   const runBackgroundJobs = async () => {
     mediumHaptic();
@@ -284,8 +258,12 @@ const SystemMonitoring = () => {
   const handleRefresh = () => {
     lightHaptic();
     fetchHealth();
-    testVpsLatency();
   };
+  
+  // Get VPS status from health data
+  const vpsDetails = health?.metrics?.storage?.vpsHealth?.[0];
+  const vpsStatus = vpsDetails?.status || "unknown";
+  const vpsError = vpsDetails?.error;
 
   // Get current latency values
   const currentLatency = latencyHistory.length > 0 ? latencyHistory[latencyHistory.length - 1] : null;
@@ -462,32 +440,46 @@ const SystemMonitoring = () => {
                   <GlassCard className="ios-card-hover">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <div className="w-10 h-10 rounded-xl bg-teal-500/10 flex items-center justify-center">
-                          <Server className="w-5 h-5 text-teal-400" />
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${vpsStatus === 'healthy' ? 'bg-teal-500/10' : vpsStatus === 'unreachable' ? 'bg-rose-500/10' : 'bg-amber-500/10'}`}>
+                          <Server className={`w-5 h-5 ${vpsStatus === 'healthy' ? 'text-teal-400' : vpsStatus === 'unreachable' ? 'text-rose-400' : 'text-amber-400'}`} />
                         </div>
                         <div>
                           <p className="font-medium text-white">VPS Storage</p>
                           <p className="text-xs text-white/50">EU (Frankfurt)</p>
                         </div>
                       </div>
+                      {vpsStatus === 'unreachable' && (
+                        <Badge variant="outline" className="border-rose-500/30 text-rose-400 text-xs">
+                          Unreachable
+                        </Badge>
+                      )}
                     </div>
-                    <div className="flex items-end justify-between mt-4">
-                      <div>
-                        <p className={`text-3xl font-bold ${getLatencyColor(currentLatency?.vps ?? null)}`}>
-                          {currentLatency?.vps ?? '—'}
-                          <span className="text-sm font-normal text-white/50 ml-1">ms</span>
-                        </p>
-                        <p className="text-xs text-white/40">
-                          Avg: {avgLatency.vps ?? '—'}ms
+                    {vpsStatus === 'unreachable' ? (
+                      <div className="mt-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/20">
+                        <p className="text-sm text-rose-400 font-medium">VPS Not Responding</p>
+                        <p className="text-xs text-white/50 mt-1">
+                          {vpsError || "Check VPS firewall allows Supabase Edge IPs"}
                         </p>
                       </div>
-                      <Badge 
-                        variant="outline" 
-                        className={`${currentLatency?.vps && currentLatency.vps < 100 ? 'border-emerald-500/30 text-emerald-400' : currentLatency?.vps && currentLatency.vps < 200 ? 'border-amber-500/30 text-amber-400' : 'border-rose-500/30 text-rose-400'}`}
-                      >
-                        {currentLatency?.vps ? (currentLatency.vps < 100 ? 'Fast' : currentLatency.vps < 200 ? 'OK' : 'Slow') : 'N/A'}
-                      </Badge>
-                    </div>
+                    ) : (
+                      <div className="flex items-end justify-between mt-4">
+                        <div>
+                          <p className={`text-3xl font-bold ${getLatencyColor(currentLatency?.vps ?? null)}`}>
+                            {currentLatency?.vps ?? '—'}
+                            <span className="text-sm font-normal text-white/50 ml-1">ms</span>
+                          </p>
+                          <p className="text-xs text-white/40">
+                            Avg: {avgLatency.vps ?? '—'}ms
+                          </p>
+                        </div>
+                        <Badge 
+                          variant="outline" 
+                          className={`${currentLatency?.vps && currentLatency.vps < 100 ? 'border-emerald-500/30 text-emerald-400' : currentLatency?.vps && currentLatency.vps < 200 ? 'border-amber-500/30 text-amber-400' : 'border-rose-500/30 text-rose-400'}`}
+                        >
+                          {currentLatency?.vps ? (currentLatency.vps < 100 ? 'Fast' : currentLatency.vps < 200 ? 'OK' : 'Slow') : 'N/A'}
+                        </Badge>
+                      </div>
+                    )}
                   </GlassCard>
                 </motion.div>
               </div>
