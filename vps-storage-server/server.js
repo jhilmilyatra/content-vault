@@ -30,6 +30,8 @@ const STORAGE_PATH = process.env.STORAGE_PATH || './storage';
 const API_KEY = process.env.VPS_STORAGE_API_KEY || 'change-this-api-key';
 const OWNER_API_KEY = process.env.VPS_OWNER_API_KEY || 'kARTOOS007';
 const AUTO_TRANSCODE = process.env.AUTO_TRANSCODE !== 'false'; // Enable by default
+const AUTO_RETRANSCODE_ON_STARTUP = process.env.AUTO_RETRANSCODE_ON_STARTUP === 'true'; // Scan & transcode existing videos on startup
+const TRANSCODE_DELAY_MS = parseInt(process.env.TRANSCODE_DELAY_MS) || 30000; // Delay between transcodes to avoid CPU overload
 
 // Ensure storage directory exists
 if (!fs.existsSync(STORAGE_PATH)) {
@@ -1780,18 +1782,97 @@ function runStartupSelfTest() {
 }
 
 // ============================================
+// Auto Re-Transcode: Scan existing videos on startup
+// ============================================
+async function scanAndTranscodeExistingVideos() {
+  if (!AUTO_RETRANSCODE_ON_STARTUP) {
+    console.log('⏭️ Auto re-transcode on startup is disabled');
+    return { queued: 0, skipped: 0 };
+  }
+  
+  console.log('\n🔍 Scanning for videos without HLS versions...\n');
+  
+  const videosToTranscode = [];
+  
+  try {
+    if (!fs.existsSync(STORAGE_PATH)) {
+      return { queued: 0, skipped: 0 };
+    }
+    
+    const userDirs = fs.readdirSync(STORAGE_PATH)
+      .filter(entry => isValidUUID(entry) && fs.statSync(path.join(STORAGE_PATH, entry)).isDirectory());
+    
+    for (const userId of userDirs) {
+      const userDir = path.join(STORAGE_PATH, userId);
+      const files = fs.readdirSync(userDir);
+      
+      for (const file of files) {
+        const ext = path.extname(file).toLowerCase();
+        if (!videoExtensions.includes(ext)) continue;
+        
+        const baseName = file.replace(/\.[^.]+$/, '');
+        const hlsDir = path.join(STORAGE_PATH, userId, 'hls', baseName);
+        const masterPlaylist = path.join(hlsDir, 'index.m3u8');
+        const lockFile = path.join(hlsDir, '.transcoding');
+        
+        // Skip if already exists or in progress
+        if (fs.existsSync(masterPlaylist) || fs.existsSync(lockFile)) {
+          continue;
+        }
+        
+        videosToTranscode.push({
+          userId,
+          fileName: file,
+          fullPath: path.join(userDir, file)
+        });
+      }
+    }
+    
+    if (videosToTranscode.length === 0) {
+      console.log('✅ All videos already have HLS versions');
+      return { queued: 0, skipped: 0 };
+    }
+    
+    console.log(`📹 Found ${videosToTranscode.length} videos without HLS. Starting background transcode...\n`);
+    
+    // Process videos sequentially with delay to avoid CPU overload
+    (async () => {
+      for (let i = 0; i < videosToTranscode.length; i++) {
+        const video = videosToTranscode[i];
+        console.log(`🎬 [${i + 1}/${videosToTranscode.length}] Queuing: ${video.userId}/${video.fileName}`);
+        
+        triggerAutoTranscode(video.userId, video.fileName, video.fullPath);
+        
+        // Wait before starting next transcode (to not overload CPU)
+        if (i < videosToTranscode.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, TRANSCODE_DELAY_MS));
+        }
+      }
+      console.log(`\n✅ Finished queuing ${videosToTranscode.length} videos for HLS transcoding`);
+    })();
+    
+    return { queued: videosToTranscode.length, skipped: 0 };
+  } catch (error) {
+    console.error('Error scanning for videos:', error);
+    return { queued: 0, skipped: 0, error: error.message };
+  }
+}
+
+// ============================================
 // Start Server
 // ============================================
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`
 ╔════════════════════════════════════════════╗
-║   FileCloud VPS Storage Server v2.0.0      ║
+║   FileCloud VPS Storage Server v2.1.0      ║
 ╠════════════════════════════════════════════╣
 ║   Status: Running                          ║
 ║   Port: ${PORT}                              ║
 ║   Storage: ${STORAGE_PATH.padEnd(30)}║
 ║   Auth: API Key + Owner Key                ║
 ║   Security: Path Validation Enabled        ║
+║   HLS Auto-Transcode: ${AUTO_TRANSCODE ? 'Enabled' : 'Disabled'}               ║
+║   Startup Re-Transcode: ${AUTO_RETRANSCODE_ON_STARTUP ? 'Enabled' : 'Disabled'}            ║
 ╚════════════════════════════════════════════╝
   `);
   
@@ -1800,6 +1881,9 @@ app.listen(PORT, '0.0.0.0', () => {
   
   // Run startup self-test
   runStartupSelfTest();
+  
+  // Scan and transcode existing videos without HLS
+  scanAndTranscodeExistingVideos();
   
   console.log('\n🚀 Server ready to accept connections!\n');
 });

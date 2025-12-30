@@ -42,6 +42,15 @@
 #                        Default: /app/storage
 #                        💡 Mount a volume here for persistence
 #
+# AUTO_TRANSCODE         Enable auto HLS transcoding for new uploads
+#                        Default: true
+#
+# AUTO_RETRANSCODE_ON_STARTUP  Scan and transcode existing videos on startup
+#                        Default: false (set to true to enable)
+#
+# TRANSCODE_DELAY_MS     Delay between transcodes to avoid CPU overload
+#                        Default: 30000 (30 seconds)
+#
 # DATA_PATH              Path for application data
 #                        Default: /app/data
 #
