@@ -12,9 +12,12 @@ import {
   AlertCircle, 
   Bot,
   ChevronRight,
-  RefreshCw
+  RefreshCw,
+  X,
+  Loader2
 } from "lucide-react";
-import { lightHaptic } from "@/lib/haptics";
+import { lightHaptic, heavyHaptic } from "@/lib/haptics";
+import { toast } from "sonner";
 
 interface UploadSession {
   id: string;
@@ -56,6 +59,7 @@ export const TelegramUploadTracker = () => {
   const [recentUploads, setRecentUploads] = useState<RecentUpload[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
 
   const fetchData = async () => {
     if (!user) return;
@@ -141,6 +145,46 @@ export const TelegramUploadTracker = () => {
     fetchData();
   };
 
+  const handleCancelUpload = async (session: UploadSession) => {
+    heavyHaptic();
+    
+    // Add to cancelling state
+    setCancellingIds(prev => new Set(prev).add(session.id));
+    
+    try {
+      // Delete the upload session (this will also trigger cleanup of upload_chunks via trigger)
+      const { error } = await supabase
+        .from("chunked_upload_sessions")
+        .delete()
+        .eq("id", session.id)
+        .eq("user_id", user?.id);
+      
+      if (error) {
+        throw error;
+      }
+      
+      // Also clean up the upload_chunks table
+      await supabase
+        .from("upload_chunks")
+        .delete()
+        .eq("upload_id", session.upload_id);
+      
+      toast.success(`Cancelled upload: ${session.file_name}`);
+      
+      // Remove from local state immediately for snappy UI
+      setActiveSessions(prev => prev.filter(s => s.id !== session.id));
+    } catch (error) {
+      console.error("Error cancelling upload:", error);
+      toast.error("Failed to cancel upload");
+    } finally {
+      setCancellingIds(prev => {
+        const next = new Set(prev);
+        next.delete(session.id);
+        return next;
+      });
+    }
+  };
+
   const getUploadProgress = (session: UploadSession) => {
     const uploadedCount = session.uploaded_chunks?.length || 0;
     return Math.round((uploadedCount / session.total_chunks) * 100);
@@ -211,11 +255,13 @@ export const TelegramUploadTracker = () => {
                 {activeSessions.map((session) => {
                   const progress = getUploadProgress(session);
                   const isExpiringSoon = new Date(session.expires_at).getTime() - Date.now() < 3600000;
+                  const isCancelling = cancellingIds.has(session.id);
                   
                   return (
                     <motion.div
                       key={session.id}
                       variants={itemVariants}
+                      exit={{ opacity: 0, x: -20, height: 0 }}
                       className="p-3 rounded-xl ios-glass-subtle space-y-2"
                     >
                       <div className="flex items-center gap-3">
@@ -231,10 +277,24 @@ export const TelegramUploadTracker = () => {
                             {formatFileSize(session.total_size)} • {session.uploaded_chunks?.length || 0}/{session.total_chunks} chunks
                           </p>
                         </div>
-                        <div className="text-right">
+                        <div className="flex items-center gap-2">
                           <span className={`text-sm font-medium ${progress === 100 ? 'text-emerald-400' : 'text-primary'}`}>
                             {progress}%
                           </span>
+                          <motion.button
+                            onClick={() => handleCancelUpload(session)}
+                            disabled={isCancelling}
+                            className="w-7 h-7 rounded-lg bg-destructive/10 hover:bg-destructive/20 flex items-center justify-center transition-colors"
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            title="Cancel upload"
+                          >
+                            {isCancelling ? (
+                              <Loader2 className="w-3.5 h-3.5 text-destructive animate-spin" />
+                            ) : (
+                              <X className="w-3.5 h-3.5 text-destructive" />
+                            )}
+                          </motion.button>
                         </div>
                       </div>
                       
