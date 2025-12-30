@@ -4,7 +4,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Cloud, Eye, EyeOff, Loader2, MessageCircle, ArrowLeft } from "lucide-react";
+import { Eye, EyeOff, Loader2, MessageCircle, ArrowLeft } from "lucide-react";
+import logoImage from "@/assets/logo.png";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
@@ -168,22 +169,14 @@ const Auth = () => {
 
         {/* Logo */}
         <div className="flex items-center gap-3 mb-8">
-          <motion.div 
+          <motion.img 
+            src={logoImage}
+            alt="FileCloud"
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ delay: 0.2, duration: 0.5, ease: "easeOut" }}
-            className="w-12 h-12 rounded-2xl bg-gradient-to-br from-teal-400 to-blue-600 flex items-center justify-center shadow-[0_0_30px_rgba(20,184,166,0.3)]"
-          >
-            <Cloud className="w-7 h-7 text-white" />
-          </motion.div>
-          <motion.span 
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.3 }}
-            className="text-xl font-bold text-white"
-          >
-            CloudVault
-          </motion.span>
+            className="h-12 w-auto object-contain"
+          />
         </div>
 
         {/* Glass Card */}
