@@ -273,9 +273,9 @@ async function checkStorageHealth(supabase: any): Promise<StorageHealthCheck> {
   const startTime = Date.now();
   
   try {
-    // Check VPS health with timeout
+    // Check VPS health with SHORT timeout (2s) - don't block if unreachable
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
     
     const vpsResponse = await fetch(`${VPS_CONFIG.endpoint}/health`, {
       headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` },
@@ -401,60 +401,58 @@ async function checkBackgroundJobs(supabase: any): Promise<HealthCheck> {
 
 async function getTableGrowth(supabase: any): Promise<{ table: string; rowCount: number; sizeEstimate: string }[]> {
   const tables = ["guest_messages", "audit_logs", "usage_metrics", "files", "shared_links"];
-  const growth: { table: string; rowCount: number; sizeEstimate: string }[] = [];
-
-  for (const table of tables) {
-    const { count } = await supabase
-      .from(table)
-      .select("*", { count: "exact", head: true });
-    
-    // Rough size estimate (avg 500 bytes per row)
-    const estimatedBytes = (count || 0) * 500;
-    const sizeEstimate = formatBytes(estimatedBytes);
-    
-    growth.push({ table, rowCount: count || 0, sizeEstimate });
-  }
-
-  return growth.sort((a, b) => b.rowCount - a.rowCount);
+  
+  // Run ALL table counts in parallel instead of sequential
+  const counts = await Promise.all(
+    tables.map(table => 
+      supabase.from(table).select("*", { count: "exact", head: true })
+        .then(({ count }: { count: number | null }) => ({ table, count: count || 0 }))
+    )
+  );
+  
+  return counts
+    .map(({ table, count }) => ({
+      table,
+      rowCount: count,
+      sizeEstimate: formatBytes(count * 500),
+    }))
+    .sort((a, b) => b.rowCount - a.rowCount);
 }
 
 async function checkUserLimits(supabase: any): Promise<Alert[]> {
-  const alerts: Alert[] = [];
-
-  // Check users approaching storage limit
-  const { data: users } = await supabase
+  // Single optimized query with JOIN instead of N+1 queries
+  const { data: usersWithUsage } = await supabase
     .from("subscriptions")
-    .select("user_id, storage_limit_gb")
-    .limit(PAGINATION.MAX_LIMIT);
+    .select(`
+      user_id,
+      storage_limit_gb,
+      usage_metrics!inner(storage_used_bytes)
+    `)
+    .limit(100);
 
-  if (users) {
-    for (const user of users) {
-      const { data: metrics } = await supabase
-        .from("usage_metrics")
-        .select("storage_used_bytes")
-        .eq("user_id", user.user_id)
-        .single();
+  if (!usersWithUsage) return [];
 
-      if (metrics) {
-        const usedGB = Number(metrics.storage_used_bytes) / (1024 * 1024 * 1024);
-        const usagePercent = (usedGB / user.storage_limit_gb) * 100;
-
-        if (usagePercent > 90) {
-          alerts.push({
-            id: crypto.randomUUID(),
-            level: "warning",
-            title: "User approaching storage limit",
-            message: `User ${user.user_id} at ${Math.round(usagePercent)}% storage capacity`,
-            source: "storage",
-            timestamp: new Date().toISOString(),
-            resolved: false,
-          });
-        }
-      }
-    }
-  }
-
-  return alerts;
+  return usersWithUsage
+    .filter((user: any) => {
+      const usedBytes = user.usage_metrics?.[0]?.storage_used_bytes || user.usage_metrics?.storage_used_bytes || 0;
+      const usedGB = Number(usedBytes) / (1024 * 1024 * 1024);
+      const usagePercent = (usedGB / user.storage_limit_gb) * 100;
+      return usagePercent > 90;
+    })
+    .map((user: any) => {
+      const usedBytes = user.usage_metrics?.[0]?.storage_used_bytes || user.usage_metrics?.storage_used_bytes || 0;
+      const usedGB = Number(usedBytes) / (1024 * 1024 * 1024);
+      const usagePercent = (usedGB / user.storage_limit_gb) * 100;
+      return {
+        id: crypto.randomUUID(),
+        level: "warning" as const,
+        title: "User approaching storage limit",
+        message: `User ${user.user_id} at ${Math.round(usagePercent)}% storage capacity`,
+        source: "storage",
+        timestamp: new Date().toISOString(),
+        resolved: false,
+      };
+    });
 }
 
 function getMetricsSnapshot(): Response {
