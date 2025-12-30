@@ -5,6 +5,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-api-key",
 };
 
+// Primary VPS storage - hardcoded
+const VPS_ENDPOINT = "http://46.38.232.46:4000";
+const VPS_API_KEY = "kARTOOS007";
+
 interface TelegramUploadRequest {
   file_name: string;
   file_data: string; // Base64 encoded file data
@@ -19,6 +23,17 @@ async function hashToken(token: string): Promise<string> {
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Helper function to convert Uint8Array to base64 without stack overflow
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  const CHUNK_SIZE = 0x8000; // 32KB chunks
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+    const chunk = bytes.subarray(i, Math.min(i + CHUNK_SIZE, bytes.length));
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  return btoa(binary);
 }
 
 Deno.serve(async (req) => {
@@ -125,7 +140,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`Processing upload for user ${userId}: ${file_name}`);
+    console.log(`📦 Processing Telegram upload for user ${userId}: ${file_name}`);
 
     // Decode base64 file data
     let bytes: Uint8Array;
@@ -151,27 +166,45 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Generate unique filename
+    // Generate unique filename for VPS storage
     const fileExt = file_name.split(".").pop()?.toLowerCase() || "bin";
     const storageName = `${crypto.randomUUID()}.${fileExt}`;
     const storagePath = `${userId}/${storageName}`;
 
-    // Upload to storage
-    const { error: uploadError } = await supabase.storage
-      .from("user-files")
-      .upload(storagePath, bytes, {
-        contentType: mime_type,
-        cacheControl: "3600",
-        upsert: false,
-      });
+    console.log(`📤 Uploading to VPS: ${VPS_ENDPOINT}`);
 
-    if (uploadError) {
-      console.error("Storage upload error:", uploadError);
+    // Convert file data to base64 using chunked approach (avoids stack overflow)
+    const base64Data = uint8ArrayToBase64(bytes);
+
+    // Upload to VPS storage
+    const vpsResponse = await fetch(`${VPS_ENDPOINT}/upload-base64`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${VPS_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fileName: storageName,
+        originalName: file_name,
+        mimeType: mime_type,
+        data: base64Data,
+        userId: userId,
+      }),
+    });
+
+    if (!vpsResponse.ok) {
+      const errorText = await vpsResponse.text();
+      console.error(`VPS upload error: ${vpsResponse.status} - ${errorText}`);
       return new Response(
-        JSON.stringify({ error: "Failed to upload file to storage", details: uploadError.message }),
+        JSON.stringify({ error: "Failed to upload file to storage", details: errorText }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    const vpsResult = await vpsResponse.json();
+    const finalStoragePath = vpsResult.path || storagePath;
+
+    console.log(`✅ VPS upload successful: ${finalStoragePath}`);
 
     // Create file record in database
     const { data: fileRecord, error: dbError } = await supabase
@@ -183,15 +216,30 @@ Deno.serve(async (req) => {
         original_name: file_name,
         mime_type: mime_type,
         size_bytes: bytes.length,
-        storage_path: storagePath,
+        storage_path: finalStoragePath,
       })
       .select()
       .single();
 
     if (dbError) {
       console.error("Database insert error:", dbError);
-      // Try to clean up the uploaded file
-      await supabase.storage.from("user-files").remove([storagePath]);
+      
+      // Try to clean up the uploaded file from VPS
+      try {
+        await fetch(`${VPS_ENDPOINT}/delete`, {
+          method: "DELETE",
+          headers: {
+            "Authorization": `Bearer ${VPS_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: userId,
+            fileName: storageName,
+          }),
+        });
+      } catch (cleanupError) {
+        console.error("Failed to cleanup VPS file:", cleanupError);
+      }
       
       return new Response(
         JSON.stringify({ error: "Failed to create file record", details: dbError.message }),
@@ -199,7 +247,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`File uploaded successfully: ${fileRecord.id}`);
+    console.log(`✅ File uploaded successfully: ${fileRecord.id}`);
 
     return new Response(
       JSON.stringify({
@@ -219,7 +267,7 @@ Deno.serve(async (req) => {
     console.error("Telegram upload error:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
     return new Response(
-      JSON.stringify({ error: "Internal server error" }),
+      JSON.stringify({ error: "Internal server error", details: message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
