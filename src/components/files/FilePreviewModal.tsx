@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { FileItem, formatFileSize } from "@/lib/fileService";
+import { FileItem, formatFileSize, getDirectVPSUrl, getDirectHLSUrl, checkVPSHealth, getVPSEndpoint, getVPSApiKey } from "@/lib/fileService";
 import { supabase } from "@/integrations/supabase/client";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { 
@@ -33,10 +33,12 @@ export function FilePreviewModal({
 }: FilePreviewModalProps) {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [hlsUrl, setHlsUrl] = useState<string | null>(null);
+  const [rawVideoUrl, setRawVideoUrl] = useState<string | null>(null); // Direct VPS fallback
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
+  const [vpsOnline, setVpsOnline] = useState(true);
 
   // Audio player state
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -85,6 +87,7 @@ export function FilePreviewModal({
       }
       setFileUrl(null);
       setHlsUrl(null);
+      setRawVideoUrl(null);
       setIsPlaying(false);
       setCurrentTime(0);
       setDuration(0);
@@ -92,6 +95,7 @@ export function FilePreviewModal({
       setShowSpeedMenu(false);
       setMediaError(null);
       setShowInfo(false);
+      setVpsOnline(true);
     }
     
     // Cleanup on unmount
@@ -119,6 +123,8 @@ export function FilePreviewModal({
     if (!file) return;
     setLoading(true);
     setHlsUrl(null);
+    setRawVideoUrl(null);
+    setMediaError(null);
     
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -126,6 +132,7 @@ export function FilePreviewModal({
         throw new Error("Not authenticated");
       }
 
+      // Track view (non-blocking)
       supabase.functions.invoke('track-file-view', {
         body: {
           fileId: file.id,
@@ -134,34 +141,56 @@ export function FilePreviewModal({
         }
       }).catch((err) => console.error('Failed to track view:', err));
 
-      // For videos, check if HLS version exists (non-blocking)
+      // Check VPS health first
+      const isVpsOnline = await checkVPSHealth();
+      setVpsOnline(isVpsOnline);
+
       const isVideo = file.mime_type.startsWith('video/');
-      if (isVideo) {
-        checkHLSAvailability(file.storage_path, sessionData.session.access_token);
-      }
-
-      const fileResponse = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`,
-        {
-          headers: {
-            Authorization: `Bearer ${sessionData.session.access_token}`,
-          },
-        }
-      );
-
-      if (!fileResponse.ok) {
-        throw new Error("Failed to fetch file");
-      }
-
-      const blob = await fileResponse.blob();
-      const blobUrl = URL.createObjectURL(blob);
       
-      // Revoke previous blob URL before setting new one
-      if (previousBlobUrlRef.current) {
-        URL.revokeObjectURL(previousBlobUrlRef.current);
+      if (isVpsOnline) {
+        // VPS is online - use direct URLs for best performance
+        const directUrl = getDirectVPSUrl(file.storage_path);
+        
+        if (isVideo) {
+          // Set raw video URL for fallback
+          setRawVideoUrl(directUrl);
+          
+          // Check HLS availability
+          await checkHLSAvailability(file.storage_path);
+        }
+        
+        // For non-video files or as primary URL
+        setFileUrl(directUrl);
+      } else {
+        // VPS offline - fall back to edge function
+        console.log('VPS offline, using edge function fallback');
+        
+        const fileResponse = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`,
+          {
+            headers: {
+              Authorization: `Bearer ${sessionData.session.access_token}`,
+            },
+          }
+        );
+
+        if (!fileResponse.ok) {
+          throw new Error("Failed to fetch file");
+        }
+
+        const blob = await fileResponse.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        
+        if (previousBlobUrlRef.current) {
+          URL.revokeObjectURL(previousBlobUrlRef.current);
+        }
+        previousBlobUrlRef.current = blobUrl;
+        setFileUrl(blobUrl);
+        
+        if (isVideo) {
+          setRawVideoUrl(blobUrl);
+        }
       }
-      previousBlobUrlRef.current = blobUrl;
-      setFileUrl(blobUrl);
     } catch (error) {
       console.error("Error loading file:", error);
       toast({
@@ -175,27 +204,23 @@ export function FilePreviewModal({
   };
 
   // Check if HLS version is available for video
-  const checkHLSAvailability = async (storagePath: string, accessToken: string) => {
+  const checkHLSAvailability = async (storagePath: string) => {
     try {
       // Extract userId and fileName from storage path
       const pathParts = storagePath.split('/');
       const fileName = pathParts.pop() || '';
       const userId = pathParts[0];
+      const baseName = fileName.replace(/\.[^/.]+$/, '');
       
-      // Get VPS endpoint from localStorage (storage nodes)
-      const storedNodes = localStorage.getItem('vps-storage-nodes');
-      if (!storedNodes) return;
-      
-      const nodes = JSON.parse(storedNodes);
-      const onlineNode = nodes.find((n: { status: string }) => n.status === 'online');
-      if (!onlineNode) return;
+      const vpsEndpoint = getVPSEndpoint();
+      const vpsApiKey = getVPSApiKey();
       
       // Check HLS status
       const response = await fetch(
-        `${onlineNode.endpoint}/hls-status/${userId}/${fileName}`,
+        `${vpsEndpoint}/hls-status/${userId}/${fileName}`,
         {
           headers: {
-            Authorization: `Bearer ${onlineNode.apiKey}`,
+            Authorization: `Bearer ${vpsApiKey}`,
           },
         }
       );
@@ -204,7 +229,7 @@ export function FilePreviewModal({
         const data = await response.json();
         if (data.hasHLS && data.playlistUrl) {
           // Construct full HLS URL
-          const hlsFullUrl = `${onlineNode.endpoint}${data.playlistUrl}`;
+          const hlsFullUrl = `${vpsEndpoint}${data.playlistUrl}`;
           console.log('HLS available:', hlsFullUrl);
           setHlsUrl(hlsFullUrl);
         }
@@ -226,6 +251,7 @@ export function FilePreviewModal({
         throw new Error("Not authenticated");
       }
 
+      // Track download (non-blocking)
       supabase.functions.invoke('track-file-view', {
         body: {
           fileId: file.id,
@@ -234,13 +260,27 @@ export function FilePreviewModal({
         }
       }).catch((err) => console.error('Failed to track download:', err));
 
-      const downloadUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`;
+      let downloadUrl: string;
+      let fetchOptions: RequestInit = {};
       
-      const response = await fetch(downloadUrl, {
-        headers: {
-          Authorization: `Bearer ${sessionData.session.access_token}`,
-        },
-      });
+      // Use direct VPS URL if online, otherwise fall back to edge function
+      if (vpsOnline) {
+        downloadUrl = getDirectVPSUrl(file.storage_path);
+        fetchOptions = {
+          headers: {
+            Authorization: `Bearer ${getVPSApiKey()}`,
+          },
+        };
+      } else {
+        downloadUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`;
+        fetchOptions = {
+          headers: {
+            Authorization: `Bearer ${sessionData.session.access_token}`,
+          },
+        };
+      }
+      
+      const response = await fetch(downloadUrl, fetchOptions);
       
       if (!response.ok) throw new Error("Failed to fetch file");
       
@@ -412,7 +452,7 @@ export function FilePreviewModal({
               {hlsUrl ? (
                 <HLSPlayer 
                   src={hlsUrl}
-                  fallbackSrc={fileUrl}
+                  fallbackSrc={rawVideoUrl || fileUrl}
                   onError={(err) => {
                     console.warn('HLS playback failed, falling back to MP4:', err);
                     setHlsUrl(null); // Clear HLS to fall back to VideoPlayer
@@ -420,8 +460,10 @@ export function FilePreviewModal({
                 />
               ) : (
                 <VideoPlayer 
-                  src={fileUrl} 
+                  src={fileUrl}
+                  fallbackSrc={rawVideoUrl || undefined}
                   onError={() => setMediaError('Unable to play this file.')}
+                  crossOrigin={!vpsOnline} // Only use crossOrigin for edge function URLs
                 />
               )}
             </div>

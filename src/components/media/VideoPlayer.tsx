@@ -10,13 +10,14 @@ import { useIsMobile } from "@/hooks/use-mobile";
 
 interface VideoPlayerProps {
   src: string;
+  fallbackSrc?: string; // Fallback URL if primary fails
   onError?: () => void;
   className?: string;
   /** Set to true for cross-origin sources that support CORS, false for proxied/guest URLs */
   crossOrigin?: boolean;
 }
 
-export function VideoPlayer({ src, onError, className = "", crossOrigin = true }: VideoPlayerProps) {
+export function VideoPlayer({ src, fallbackSrc, onError, className = "", crossOrigin = true }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
@@ -31,7 +32,8 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
-  
+  const [useFallback, setUseFallback] = useState(false);
+  const [currentSrc, setCurrentSrc] = useState(src);
   // UI state
   const [showControls, setShowControls] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -199,9 +201,16 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
   }, []);
 
   const handleMediaError = useCallback(() => {
+    // Try fallback if available and not already using it
+    if (fallbackSrc && !useFallback) {
+      console.log('Primary video source failed, trying fallback:', fallbackSrc);
+      setUseFallback(true);
+      setCurrentSrc(fallbackSrc);
+      return;
+    }
     setMediaError('Unable to play this file. The format may not be supported by your browser.');
     onError?.();
-  }, [onError]);
+  }, [onError, fallbackSrc, useFallback]);
 
   // Buffering handlers
   const handleWaiting = useCallback(() => {
@@ -354,7 +363,7 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
         >
           <video
             ref={videoRef}
-            src={src}
+            src={currentSrc}
             className={`max-w-full max-h-full object-contain ${
               isPortraitVideo ? 'h-full w-auto' : 'w-full h-auto'
             }`}
@@ -514,7 +523,7 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
       >
         <video
           ref={videoRef}
-          src={src}
+          src={currentSrc}
           className="max-w-full max-h-full object-contain"
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
