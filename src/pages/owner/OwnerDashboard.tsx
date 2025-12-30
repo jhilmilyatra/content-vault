@@ -12,11 +12,13 @@ import {
   Activity,
   Shield,
   AlertTriangle,
+  Database,
 } from "lucide-react";
 import { GlassCard, GlassCardHeader, StatCard } from "@/components/ios/GlassCard";
 import { SkeletonStats } from "@/components/ios/SkeletonLoader";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import VpsHealthWidget from "@/components/owner/VpsHealthWidget";
+import ContentManagement from "@/components/owner/ContentManagement";
 
 interface GlobalStats {
   totalUsers: number;
@@ -199,6 +201,9 @@ const OwnerDashboard = () => {
             </div>
           </GlassCard>
         </div>
+
+        {/* Content & Cache Management */}
+        <ContentManagement />
 
         {/* Recent Activity */}
         <GlassCard variant="elevated" className="animate-fade-up" style={{ animationDelay: "0.35s" }}>
