@@ -962,6 +962,52 @@ app.get('/files/:userId/:fileName', (req, res) => {
     };
     const contentType = mimeTypes[ext] || 'application/octet-stream';
 
+    // CDN-optimized cache headers
+    // Videos/media: 7 days cache with immutable (content-addressed filenames)
+    // Static assets: 1 year cache
+    // Dynamic: 1 hour cache
+    const isMedia = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v', '.mp3', '.wav', '.ogg', '.flac', '.aac'].includes(ext);
+    const isImage = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico'].includes(ext);
+    const isHLSSegment = ext === '.ts';
+    const isHLSPlaylist = ext === '.m3u8';
+    
+    let cacheControl;
+    if (isHLSSegment) {
+      cacheControl = 'public, max-age=86400, immutable'; // 24 hours, immutable
+    } else if (isHLSPlaylist) {
+      cacheControl = 'public, max-age=30, stale-while-revalidate=60';
+    } else if (isMedia || isImage) {
+      cacheControl = 'public, max-age=604800, stale-while-revalidate=86400'; // 7 days + 1 day stale
+    } else {
+      cacheControl = 'public, max-age=3600, stale-while-revalidate=300'; // 1 hour + 5 min stale
+    }
+    
+    // Generate ETag for cache validation
+    const etag = `"${stat.size}-${stat.mtimeMs}"`;
+    
+    // Handle conditional GET (If-None-Match for cache validation)
+    const ifNoneMatch = req.headers['if-none-match'];
+    if (ifNoneMatch === etag) {
+      return res.status(304).end();
+    }
+    
+    // Common headers for CDN optimization
+    const commonHeaders = {
+      'Content-Type': contentType,
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': cacheControl,
+      'ETag': etag,
+      'Last-Modified': stat.mtime.toUTCString(),
+      'Vary': 'Range, Accept-Encoding',
+      // CORS headers for cross-origin access
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
+      'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges, ETag',
+      // Timing for CDN debugging
+      'Timing-Allow-Origin': '*',
+    };
+
     // Handle range requests for video/audio streaming
     if (range) {
       const parts = range.replace(/bytes=/, '').split('-');
@@ -978,25 +1024,17 @@ app.get('/files/:userId/:fileName', (req, res) => {
       const stream = fs.createReadStream(pathInfo.fullPath, { start, end });
       
       res.writeHead(206, {
+        ...commonHeaders,
         'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-        'Accept-Ranges': 'bytes',
         'Content-Length': chunkSize,
-        'Content-Type': contentType,
-        // HLS segments should be cached for longer, immutable
-        'Cache-Control': ext === '.ts' ? 'public, max-age=86400, immutable' : 
-                         ext === '.m3u8' ? 'public, max-age=2' : 'public, max-age=3600',
       });
       
       stream.pipe(res);
     } else {
       // Full file download with streaming
       res.writeHead(200, {
+        ...commonHeaders,
         'Content-Length': fileSize,
-        'Content-Type': contentType,
-        'Accept-Ranges': 'bytes',
-        // HLS segments should be cached for longer, immutable
-        'Cache-Control': ext === '.ts' ? 'public, max-age=86400, immutable' : 
-                         ext === '.m3u8' ? 'public, max-age=2' : 'public, max-age=3600',
       });
       
       const stream = fs.createReadStream(pathInfo.fullPath);
