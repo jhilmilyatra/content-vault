@@ -336,10 +336,12 @@ export function FilePreviewModal({
 
       case "video":
         return (
-          <VideoPlayer 
-            src={fileUrl} 
-            onError={() => setMediaError('Unable to play this file.')}
-          />
+          <div className="w-full flex items-center justify-center overflow-hidden">
+            <VideoPlayer 
+              src={fileUrl} 
+              onError={() => setMediaError('Unable to play this file.')}
+            />
+          </div>
         );
 
       case "audio":
