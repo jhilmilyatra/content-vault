@@ -336,11 +336,13 @@ export function FilePreviewModal({
 
       case "video":
         return (
-          <div className="w-full flex items-center justify-center overflow-hidden p-0">
-            <VideoPlayer 
-              src={fileUrl} 
-              onError={() => setMediaError('Unable to play this file.')}
-            />
+          <div className="w-full h-full flex items-center justify-center overflow-hidden">
+            <div className="w-full h-full max-h-[70vh]">
+              <VideoPlayer 
+                src={fileUrl} 
+                onError={() => setMediaError('Unable to play this file.')}
+              />
+            </div>
           </div>
         );
 
@@ -570,13 +572,13 @@ export function FilePreviewModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
         ref={modalContainerRef}
-        className="max-w-6xl w-[95vw] max-h-[95vh] p-0 gap-0 overflow-hidden bg-black/95 backdrop-blur-2xl border-white/10 rounded-3xl"
+        className="max-w-6xl w-[95vw] h-[100dvh] max-h-[95dvh] p-0 gap-0 overflow-hidden bg-black/95 backdrop-blur-2xl border-white/10 rounded-3xl flex flex-col"
       >
         {/* Premium Header */}
         <motion.div 
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between p-4 sm:p-5 border-b border-white/[0.06] bg-white/[0.02]"
+          className="flex items-center justify-between p-4 sm:p-5 border-b border-white/[0.06] bg-white/[0.02] shrink-0"
         >
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <div className="p-2 rounded-xl bg-gradient-to-br from-gold/20 to-gold/5 border border-gold/20">
@@ -644,8 +646,8 @@ export function FilePreviewModal({
         </motion.div>
 
         {/* Content */}
-        <div className={`flex-1 overflow-auto ${
-          isVideoOrImage ? 'p-0 flex items-center justify-center' : 'p-4'
+        <div className={`flex-1 min-h-0 overflow-hidden ${
+          isVideoOrImage ? 'p-0 flex items-center justify-center' : 'p-4 overflow-auto'
         }`}>
           <AnimatePresence mode="wait">
             {loading ? (
