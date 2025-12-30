@@ -98,18 +98,17 @@ export function FilePreviewModal({
     return fileType === 'audio' ? audioRef.current : videoRef.current;
   };
 
-  // Handle controls auto-hide
+  // Handle controls auto-hide (3 seconds timeout)
   const resetControlsTimeout = useCallback(() => {
     if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current);
     }
     setShowControls(true);
-    if (isPlaying) {
-      controlsTimeoutRef.current = setTimeout(() => {
-        setShowControls(false);
-      }, 3000);
-    }
-  }, [isPlaying]);
+    // Always auto-hide after 3 seconds when playing or in fullscreen
+    controlsTimeoutRef.current = setTimeout(() => {
+      setShowControls(false);
+    }, 3000);
+  }, []);
 
   useEffect(() => {
     if (open && file) {
@@ -1023,17 +1022,19 @@ export function FilePreviewModal({
               </motion.div>
             </div>
             
-            {/* Fullscreen close button - top right corner - ALWAYS visible on mobile */}
+            {/* Fullscreen close button - top right corner - shows/hides with controls */}
             {isFullscreen && (
               <motion.button
                 initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
+                animate={{ opacity: showControls ? 1 : 0 }}
+                transition={{ duration: 0.2 }}
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleFullscreen();
                 }}
+                style={{ pointerEvents: showControls ? 'auto' : 'none' }}
                 className="absolute top-4 right-4 z-[10001] w-12 h-12 sm:w-11 sm:h-11 rounded-full bg-black/70 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/90 transition-all touch-manipulation active:scale-90 shadow-lg"
               >
                 <X className="w-6 h-6 sm:w-5 sm:h-5" />

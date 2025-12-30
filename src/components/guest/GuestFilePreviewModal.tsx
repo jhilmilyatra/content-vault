@@ -54,6 +54,7 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
   // Double-tap seek state
   const lastTapRef = useRef<{ time: number; x: number } | null>(null);
   const [seekIndicator, setSeekIndicator] = useState<{ side: 'left' | 'right'; visible: boolean }>({ side: 'left', visible: false });
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -64,6 +65,17 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
   const [brightness, setBrightness] = useState(1); // 0.2 to 1.5
   const [gestureIndicator, setGestureIndicator] = useState<{ type: 'volume' | 'brightness'; value: number; visible: boolean }>({ type: 'volume', value: 1, visible: false });
   const gestureStartRef = useRef<{ x: number; y: number; startVolume: number; startBrightness: number } | null>(null);
+  
+  // Handle controls auto-hide (3 seconds timeout)
+  const resetControlsTimeout = () => {
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    setShowControls(true);
+    controlsTimeoutRef.current = setTimeout(() => {
+      setShowControls(false);
+    }, 3000);
+  };
 
   const playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
   
@@ -98,6 +110,9 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
     return () => {
       // Ensure body scroll is restored on unmount
       document.body.style.overflow = '';
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
     };
   }, [open, file]);
 
@@ -545,14 +560,11 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                 ? 'fixed inset-0 z-[9999] rounded-none flex items-center justify-center' 
                 : 'rounded-xl sm:rounded-2xl'
             }`}
-            onMouseEnter={() => setShowControls(true)}
-            onMouseLeave={() => setShowControls(isPlaying ? false : true)}
+            onMouseEnter={resetControlsTimeout}
+            onMouseLeave={() => setShowControls(false)}
             onTouchStart={(e) => {
-              setShowControls(true);
+              resetControlsTimeout();
               handleGestureStart(e);
-              if (isPlaying) {
-                setTimeout(() => setShowControls(false), 3000);
-              }
             }}
             onTouchMove={handleGestureMove}
             onTouchEnd={handleGestureEnd}
@@ -816,14 +828,16 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
               </div>
             </div>
             
-            {/* Fullscreen close button - top right corner - ALWAYS visible on mobile */}
+            {/* Fullscreen close button - top right corner - shows/hides with controls */}
             {isFullscreen && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleFullscreen();
                 }}
-                className="absolute top-4 right-4 z-[10001] w-12 h-12 sm:w-11 sm:h-11 rounded-full bg-black/70 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/90 transition-all touch-manipulation active:scale-90 shadow-lg"
+                className={`absolute top-4 right-4 z-[10001] w-12 h-12 sm:w-11 sm:h-11 rounded-full bg-black/70 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/90 transition-all touch-manipulation active:scale-90 shadow-lg ${
+                  showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                }`}
               >
                 <X className="w-6 h-6 sm:w-5 sm:h-5" />
               </button>
