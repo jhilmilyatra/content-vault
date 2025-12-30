@@ -47,6 +47,10 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
   
+  // Video aspect ratio detection
+  const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9); // Default 16:9
+  const [isPortraitVideo, setIsPortraitVideo] = useState(false);
+  
   // Double-tap seek state
   const lastTapRef = useRef<{ time: number; x: number } | null>(null);
   const [seekIndicator, setSeekIndicator] = useState<{ side: 'left' | 'right'; visible: boolean }>({ side: 'left', visible: false });
@@ -300,6 +304,16 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
     const media = getMediaRef();
     if (media) {
       setDuration(media.duration);
+      
+      // Detect video aspect ratio
+      if (media instanceof HTMLVideoElement) {
+        const { videoWidth, videoHeight } = media;
+        if (videoWidth && videoHeight) {
+          const ratio = videoWidth / videoHeight;
+          setVideoAspectRatio(ratio);
+          setIsPortraitVideo(ratio < 1); // Portrait if width < height
+        }
+      }
     }
   };
 
@@ -412,6 +426,12 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
         );
 
       case "video":
+        // Calculate aspect ratio padding (height/width * 100)
+        // For portrait videos on mobile, cap the height to avoid too tall containers
+        const aspectPadding = isPortraitVideo 
+          ? Math.min((1 / videoAspectRatio) * 100, 133) // Cap at 4:3 portrait max (133%)
+          : (1 / videoAspectRatio) * 100;
+        
         return (
           <div 
             className="flex-1 flex flex-col bg-black rounded-xl sm:rounded-2xl overflow-hidden"
@@ -425,12 +445,13 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
               }
             }}
           >
-            {/* Video Container - YouTube/Netflix style fixed 16:9 frame */}
-            {/* Using padding-top fallback for legacy browser support */}
+            {/* Video Container - Auto aspect ratio detection */}
             <div 
               ref={videoContainerRef}
-              className="relative w-full bg-black flex-shrink-0"
-              style={{ paddingTop: '56.25%' }} /* 16:9 aspect ratio */
+              className={`relative w-full bg-black flex-shrink-0 transition-all duration-300 ${
+                isPortraitVideo ? 'mx-auto max-w-[70%] sm:max-w-[50%]' : ''
+              }`}
+              style={{ paddingTop: `${aspectPadding}%` }}
               onClick={handleVideoTap}
               onTouchEnd={handleVideoTap}
             >
