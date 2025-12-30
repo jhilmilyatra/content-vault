@@ -8,6 +8,42 @@ const corsHeaders = {
 
 // Performance tracking
 const SLOW_THRESHOLD_MS = 200;
+const VPS_TIMEOUT_MS = 5000;
+const MAX_RETRIES = 2;
+
+// Fetch with timeout and retry
+async function fetchWithRetry(
+  url: string, 
+  options: RequestInit, 
+  retries = MAX_RETRIES
+): Promise<Response> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), VPS_TIMEOUT_MS);
+      
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error) {
+      lastError = error as Error;
+      console.log(`VPS attempt ${attempt + 1}/${retries + 1} failed: ${lastError.message}`);
+      
+      if (attempt < retries) {
+        // Exponential backoff: 100ms, 200ms, 400ms...
+        await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(2, attempt)));
+      }
+    }
+  }
+  
+  throw lastError || new Error("VPS fetch failed after retries");
+}
 
 Deno.serve(async (req) => {
   const startTime = performance.now();
@@ -81,7 +117,7 @@ Deno.serve(async (req) => {
         // Check if file exists on VPS
         const vpsStartTime = performance.now();
         try {
-          const checkResponse = await fetch(`${vpsEndpoint}/files/${storagePath}`, {
+          const checkResponse = await fetchWithRetry(`${vpsEndpoint}/files/${storagePath}`, {
             method: "HEAD",
             headers: { "Authorization": `Bearer ${vpsApiKey}` },
           });
@@ -108,7 +144,7 @@ Deno.serve(async (req) => {
             );
           }
         } catch (e) {
-          console.log("VPS check failed, trying Supabase");
+          console.log("VPS check failed after retries, trying Supabase");
         }
       }
       
@@ -186,11 +222,11 @@ Deno.serve(async (req) => {
     }
 
     if (action === "get") {
-      // Try VPS first
+      // Try VPS first with retries
       if (vpsEndpoint && vpsApiKey) {
         const vpsStartTime = performance.now();
         try {
-          const vpsResponse = await fetch(`${vpsEndpoint}/files/${storagePath}`, {
+          const vpsResponse = await fetchWithRetry(`${vpsEndpoint}/files/${storagePath}`, {
             headers: { "Authorization": `Bearer ${vpsApiKey}` },
           });
           
@@ -215,7 +251,7 @@ Deno.serve(async (req) => {
             });
           }
         } catch (e) {
-          console.error("VPS get error:", e);
+          console.error("VPS get error after retries:", e);
         }
       }
       
