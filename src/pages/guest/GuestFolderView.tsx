@@ -32,6 +32,8 @@ import {
 } from 'lucide-react';
 import { GuestFilePreviewModal } from '@/components/guest/GuestFilePreviewModal';
 import { ZipProgressModal } from '@/components/guest/ZipProgressModal';
+import { VideoThumbnail } from '@/components/media/VideoThumbnail';
+import { LazyImage } from '@/components/ui/LazyImage';
 
 interface GuestFileItem {
   id: string;
@@ -492,32 +494,58 @@ const GuestFolderView = () => {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.03 }}
                     >
-                      <Card className="hover:border-primary/50 hover:shadow-md transition-all group">
-                        <CardContent className="p-3 sm:p-4">
-                          <div className="text-center mb-2 sm:mb-3">
-                            <IconComponent className="w-8 h-8 sm:w-10 sm:h-10 text-muted-foreground mx-auto group-hover:text-primary transition-colors" />
-                          </div>
-                          <p className="text-xs sm:text-sm font-medium truncate mb-1">{file.name}</p>
-                          <p className="text-[10px] sm:text-xs text-muted-foreground mb-2 sm:mb-3">
-                            {formatFileSize(file.size_bytes)}
-                          </p>
-                          <div className="flex items-center gap-1 sm:gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1 h-8 touch-manipulation"
-                              onClick={() => handlePreview(file)}
-                            >
-                              <Eye className="w-3 h-3" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1 h-8 touch-manipulation"
-                              onClick={() => handleDownload(file)}
-                            >
-                              <Download className="w-3 h-3" />
-                            </Button>
+                      <Card className="hover:border-primary/50 hover:shadow-md transition-all group overflow-hidden">
+                        <CardContent className="p-0">
+                          {/* Thumbnail area for images/videos */}
+                          {file.mime_type.startsWith('video/') ? (
+                            <div className="w-full aspect-square">
+                              <VideoThumbnail
+                                thumbnailUrl={null}
+                                alt={file.name}
+                                aspectRatio="square"
+                                showPlayIndicator={true}
+                                onClick={() => handlePreview(file)}
+                              />
+                            </div>
+                          ) : file.mime_type.startsWith('image/') ? (
+                            <div className="w-full aspect-square">
+                              <LazyImage
+                                src={`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/guest-file-proxy?guestId=${guest?.id}&storagePath=${encodeURIComponent(file.storage_path)}`}
+                                alt={file.name}
+                                aspectRatio="square"
+                                placeholderColor="rgba(236,72,153,0.1)"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-full aspect-square flex items-center justify-center bg-muted/30">
+                              <IconComponent className="w-10 h-10 sm:w-12 sm:h-12 text-muted-foreground group-hover:text-primary transition-colors" />
+                            </div>
+                          )}
+                          
+                          {/* File info and actions */}
+                          <div className="p-3 sm:p-4">
+                            <p className="text-xs sm:text-sm font-medium truncate mb-1">{file.name}</p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground mb-2 sm:mb-3">
+                              {formatFileSize(file.size_bytes)}
+                            </p>
+                            <div className="flex items-center gap-1 sm:gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 h-8 touch-manipulation"
+                                onClick={() => handlePreview(file)}
+                              >
+                                <Eye className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 h-8 touch-manipulation"
+                                onClick={() => handleDownload(file)}
+                              >
+                                <Download className="w-3 h-3" />
+                              </Button>
+                            </div>
                           </div>
                         </CardContent>
                       </Card>
@@ -537,7 +565,27 @@ const GuestFolderView = () => {
                           className="flex items-center justify-between p-3 sm:p-4 hover:bg-muted/50 transition-colors"
                         >
                           <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                            <IconComponent className="w-6 h-6 sm:w-8 sm:h-8 text-muted-foreground flex-shrink-0" />
+                            {file.mime_type.startsWith('video/') ? (
+                              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg overflow-hidden flex-shrink-0">
+                                <VideoThumbnail
+                                  thumbnailUrl={null}
+                                  alt={file.name}
+                                  aspectRatio="square"
+                                  showPlayIndicator={false}
+                                />
+                              </div>
+                            ) : file.mime_type.startsWith('image/') ? (
+                              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg overflow-hidden flex-shrink-0">
+                                <LazyImage
+                                  src={`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/guest-file-proxy?guestId=${guest?.id}&storagePath=${encodeURIComponent(file.storage_path)}`}
+                                  alt={file.name}
+                                  aspectRatio="square"
+                                  placeholderColor="rgba(236,72,153,0.1)"
+                                />
+                              </div>
+                            ) : (
+                              <IconComponent className="w-6 h-6 sm:w-8 sm:h-8 text-muted-foreground flex-shrink-0" />
+                            )}
                             <div className="min-w-0">
                               <p className="font-medium text-sm truncate">{file.name}</p>
                               <p className="text-xs text-muted-foreground">
