@@ -37,9 +37,98 @@ if (!fs.existsSync(STORAGE_PATH)) {
 }
 
 // ============================================
-// Auto-Transcode: Background HLS Conversion
+// Auto-Transcode: Multi-Quality HLS Conversion
 // ============================================
 const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
+
+// Quality presets for adaptive bitrate streaming
+const HLS_QUALITIES = [
+  { name: '360p', height: 360, videoBitrate: '800k', audioBitrate: '64k', bandwidth: 900000 },
+  { name: '480p', height: 480, videoBitrate: '1400k', audioBitrate: '96k', bandwidth: 1500000 },
+  { name: '720p', height: 720, videoBitrate: '2800k', audioBitrate: '128k', bandwidth: 3000000 },
+  { name: '1080p', height: 1080, videoBitrate: '5000k', audioBitrate: '192k', bandwidth: 5500000 },
+];
+
+/**
+ * Generate master playlist for adaptive streaming
+ */
+function generateMasterPlaylist(hlsDir, availableQualities) {
+  const lines = ['#EXTM3U', '#EXT-X-VERSION:3'];
+  
+  for (const q of availableQualities) {
+    lines.push(`#EXT-X-STREAM-INF:BANDWIDTH=${q.bandwidth},RESOLUTION=${q.width}x${q.height},NAME="${q.name}"`);
+    lines.push(`${q.name}/index.m3u8`);
+  }
+  
+  const masterPath = path.join(hlsDir, 'index.m3u8');
+  fs.writeFileSync(masterPath, lines.join('\n'));
+  return masterPath;
+}
+
+/**
+ * Get video resolution using ffprobe
+ */
+function getVideoResolution(filePath) {
+  return new Promise((resolve, reject) => {
+    const { exec } = require('child_process');
+    const cmd = `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "${filePath}"`;
+    
+    exec(cmd, (error, stdout) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      const [width, height] = stdout.trim().split('x').map(Number);
+      resolve({ width, height });
+    });
+  });
+}
+
+/**
+ * Transcode to a specific quality
+ */
+function transcodeQuality(fullPath, hlsDir, quality, sourceResolution) {
+  return new Promise((resolve, reject) => {
+    const { exec } = require('child_process');
+    
+    const qualityDir = path.join(hlsDir, quality.name);
+    if (!fs.existsSync(qualityDir)) {
+      fs.mkdirSync(qualityDir, { recursive: true });
+    }
+    
+    const segmentPath = path.join(qualityDir, 'segment_%03d.ts');
+    const outputPlaylist = path.join(qualityDir, 'index.m3u8');
+    
+    // Calculate width maintaining aspect ratio
+    const aspectRatio = sourceResolution.width / sourceResolution.height;
+    const targetWidth = Math.round(quality.height * aspectRatio);
+    // Ensure width is even for h264
+    const width = targetWidth % 2 === 0 ? targetWidth : targetWidth + 1;
+    
+    const ffmpegCmd = `ffmpeg -i "${fullPath}" \
+      -c:v libx264 -preset fast -b:v ${quality.videoBitrate} \
+      -vf "scale=${width}:${quality.height}" \
+      -c:a aac -b:a ${quality.audioBitrate} \
+      -hls_time 4 \
+      -hls_playlist_type vod \
+      -hls_segment_filename "${segmentPath}" \
+      "${outputPlaylist}" 2>&1`;
+    
+    exec(ffmpegCmd, { maxBuffer: 50 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) {
+        reject({ quality: quality.name, error: error.message, output: stdout || stderr });
+      } else {
+        resolve({ 
+          name: quality.name, 
+          height: quality.height, 
+          width,
+          bandwidth: quality.bandwidth,
+          playlist: outputPlaylist 
+        });
+      }
+    });
+  });
+}
 
 function triggerAutoTranscode(userId, fileName, fullPath) {
   if (!AUTO_TRANSCODE) return;
@@ -49,11 +138,11 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
   
   const baseName = fileName.replace(/\.[^.]+$/, '');
   const hlsDir = path.join(STORAGE_PATH, userId, 'hls', baseName);
-  const playlistPath = path.join(hlsDir, 'index.m3u8');
+  const masterPlaylist = path.join(hlsDir, 'index.m3u8');
   const lockFile = path.join(hlsDir, '.transcoding');
   
   // Skip if already exists or in progress
-  if (fs.existsSync(playlistPath) || fs.existsSync(lockFile)) {
+  if (fs.existsSync(masterPlaylist) || fs.existsSync(lockFile)) {
     console.log(`⏭️ HLS already exists or in progress: ${fileName}`);
     return;
   }
@@ -63,46 +152,112 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
     fs.mkdirSync(hlsDir, { recursive: true });
   }
   
-  // Create lock file
-  fs.writeFileSync(lockFile, new Date().toISOString());
+  // Create lock file with progress info
+  fs.writeFileSync(lockFile, JSON.stringify({ 
+    started: new Date().toISOString(),
+    status: 'analyzing',
+    progress: 0
+  }));
   
-  console.log(`🎬 Auto-transcode started for: ${userId}/${fileName}`);
+  console.log(`🎬 Multi-quality transcode started for: ${userId}/${fileName}`);
   
-  const { exec } = require('child_process');
-  
-  // Medium quality preset
-  const segmentPath = path.join(hlsDir, 'segment_%03d.ts');
-  const outputPlaylist = path.join(hlsDir, 'index.m3u8');
-  
-  const ffmpegCmd = `ffmpeg -i "${fullPath}" \
-    -c:v libx264 -preset fast -crf 23 \
-    -vf "scale=-2:720" \
-    -c:a aac -b:a 128k \
-    -hls_time 4 \
-    -hls_playlist_type vod \
-    -hls_segment_filename "${segmentPath}" \
-    "${outputPlaylist}" 2>&1`;
-  
-  exec(ffmpegCmd, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
-    // Remove lock file
+  // Async transcoding pipeline
+  (async () => {
     try {
+      // Get source video resolution
+      const sourceRes = await getVideoResolution(fullPath);
+      console.log(`📐 Source resolution: ${sourceRes.width}x${sourceRes.height}`);
+      
+      // Filter qualities that don't exceed source resolution
+      const applicableQualities = HLS_QUALITIES.filter(q => q.height <= sourceRes.height);
+      
+      if (applicableQualities.length === 0) {
+        // Source is smaller than 360p, just use source resolution
+        applicableQualities.push({
+          name: 'source',
+          height: sourceRes.height,
+          videoBitrate: '1000k',
+          audioBitrate: '128k',
+          bandwidth: 1200000
+        });
+      }
+      
+      console.log(`🎯 Transcoding to: ${applicableQualities.map(q => q.name).join(', ')}`);
+      
+      // Update lock file
+      fs.writeFileSync(lockFile, JSON.stringify({ 
+        started: new Date().toISOString(),
+        status: 'transcoding',
+        qualities: applicableQualities.map(q => q.name),
+        progress: 0
+      }));
+      
+      // Transcode each quality sequentially (to avoid overwhelming CPU)
+      const completedQualities = [];
+      for (let i = 0; i < applicableQualities.length; i++) {
+        const quality = applicableQualities[i];
+        console.log(`⏳ Transcoding ${quality.name} (${i + 1}/${applicableQualities.length})...`);
+        
+        try {
+          const result = await transcodeQuality(fullPath, hlsDir, quality, sourceRes);
+          completedQualities.push(result);
+          
+          // Update progress
+          const progress = Math.round(((i + 1) / applicableQualities.length) * 100);
+          fs.writeFileSync(lockFile, JSON.stringify({ 
+            started: new Date().toISOString(),
+            status: 'transcoding',
+            qualities: applicableQualities.map(q => q.name),
+            completed: completedQualities.map(q => q.name),
+            progress
+          }));
+          
+          console.log(`✅ ${quality.name} complete`);
+        } catch (err) {
+          console.error(`⚠️ Failed to transcode ${quality.name}:`, err.error);
+          // Continue with other qualities
+        }
+      }
+      
+      if (completedQualities.length === 0) {
+        throw new Error('All quality transcodes failed');
+      }
+      
+      // Generate master playlist
+      generateMasterPlaylist(hlsDir, completedQualities);
+      console.log(`📝 Master playlist created with ${completedQualities.length} qualities`);
+      
+      // Remove lock file and create success marker
       if (fs.existsSync(lockFile)) {
         fs.unlinkSync(lockFile);
       }
-    } catch (e) {
-      console.error('Failed to remove lock file:', e);
-    }
-    
-    if (error) {
-      console.error(`❌ Auto-transcode failed for ${fileName}:`, error.message);
-      const errorLog = path.join(hlsDir, 'error.log');
-      fs.writeFileSync(errorLog, `Error: ${error.message}\n\nOutput:\n${stdout || stderr}`);
-    } else {
-      console.log(`✅ Auto-transcode complete: ${userId}/${baseName}`);
+      
       const successMarker = path.join(hlsDir, '.complete');
-      fs.writeFileSync(successMarker, new Date().toISOString());
+      fs.writeFileSync(successMarker, JSON.stringify({
+        completed: new Date().toISOString(),
+        qualities: completedQualities.map(q => ({ name: q.name, resolution: `${q.width}x${q.height}` })),
+        sourceResolution: `${sourceRes.width}x${sourceRes.height}`
+      }));
+      
+      console.log(`🎉 Multi-quality transcode complete: ${userId}/${baseName}`);
+      
+    } catch (error) {
+      console.error(`❌ Multi-quality transcode failed for ${fileName}:`, error.message || error);
+      
+      // Remove lock file
+      try {
+        if (fs.existsSync(lockFile)) {
+          fs.unlinkSync(lockFile);
+        }
+      } catch (e) {
+        console.error('Failed to remove lock file:', e);
+      }
+      
+      // Write error log
+      const errorLog = path.join(hlsDir, 'error.log');
+      fs.writeFileSync(errorLog, `Error: ${error.message || error}\n\nTimestamp: ${new Date().toISOString()}`);
     }
-  });
+  })();
 }
 
 // CORS configuration
