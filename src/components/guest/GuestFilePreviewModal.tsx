@@ -414,22 +414,22 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
       case "video":
         return (
           <div 
-            className="flex-1 flex flex-col bg-black rounded-lg overflow-hidden"
+            className="flex-1 flex flex-col bg-black rounded-xl sm:rounded-2xl overflow-hidden"
             onMouseEnter={() => setShowControls(true)}
             onMouseLeave={() => setShowControls(isPlaying ? false : true)}
             onTouchStart={() => setShowControls(true)}
           >
-            {/* Video Element */}
+            {/* Video Container - 16:9 aspect ratio, full width, responsive */}
             <div 
               ref={videoContainerRef}
-              className="relative flex-1 flex items-center justify-center min-h-0"
+              className="relative w-full aspect-video bg-black"
               onClick={handleVideoTap}
               onTouchEnd={handleVideoTap}
             >
               <video
                 ref={videoRef}
                 src={fileUrl}
-                className="w-full h-full max-h-[50vh] sm:max-h-[60vh] object-contain pointer-events-none"
+                className="absolute inset-0 w-full h-full object-contain"
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
                 onEnded={handleMediaEnded}
@@ -441,6 +441,7 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                 x-webkit-airplay="allow"
                 crossOrigin="anonymous"
                 preload="metadata"
+                controlsList="nodownload"
               />
               
               {/* Double-tap seek indicators */}
@@ -450,49 +451,47 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                     seekIndicator.side === 'left' ? 'left-8' : 'right-8'
                   }`}
                 >
-                  <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
                     {seekIndicator.side === 'left' ? (
-                      <SkipBack className="w-7 h-7 text-white" />
+                      <SkipBack className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
                     ) : (
-                      <SkipForward className="w-7 h-7 text-white" />
+                      <SkipForward className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
                     )}
                   </div>
-                  <span className="text-white text-sm font-medium">
+                  <span className="text-white text-xs sm:text-sm font-medium">
                     {seekIndicator.side === 'left' ? '-10s' : '+10s'}
                   </span>
                 </div>
               )}
               
-              {/* Play overlay button */}
+              {/* Play overlay button - tap to play */}
               {!isPlaying && !seekIndicator.visible && (
-                <div
-                  className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity hover:bg-black/40 touch-manipulation pointer-events-none"
-                >
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-primary/90 flex items-center justify-center">
-                    <Play className="w-8 h-8 sm:w-10 sm:h-10 text-primary-foreground ml-1" />
+                <div className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity">
+                  <div className="w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-white/90 flex items-center justify-center shadow-xl">
+                    <Play className="w-7 h-7 sm:w-10 sm:h-10 text-black ml-0.5 sm:ml-1" />
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Video Controls - Always visible on mobile, optimized layout */}
+            {/* Video Controls - Always visible on mobile, gradient overlay */}
             <div 
-              className={`p-2 sm:p-4 bg-gradient-to-t from-black/95 via-black/80 to-transparent transition-opacity ${
+              className={`p-3 sm:p-4 bg-gradient-to-t from-black via-black/80 to-transparent transition-opacity duration-200 ${
                 showControls ? "opacity-100" : "sm:opacity-0"
               }`}
             >
               {/* Progress bar with larger touch target on mobile */}
-              <div className="mb-2 sm:mb-3 px-1">
+              <div className="mb-3 sm:mb-4">
                 <Slider
                   value={[currentTime]}
                   min={0}
                   max={duration || 100}
                   step={0.1}
                   onValueChange={handleSeek}
-                  className="cursor-pointer touch-manipulation [&_[role=slider]]:h-5 [&_[role=slider]]:w-5 sm:[&_[role=slider]]:h-4 sm:[&_[role=slider]]:w-4"
+                  className="cursor-pointer touch-manipulation [&_[role=slider]]:h-4 [&_[role=slider]]:w-4 sm:[&_[role=slider]]:h-3 sm:[&_[role=slider]]:w-3 [&_[role=slider]]:border-2 [&_[role=slider]]:border-white"
                 />
                 {/* Time display below progress on mobile */}
-                <div className="flex justify-between text-[10px] sm:text-xs text-white/60 mt-1 sm:hidden">
+                <div className="flex justify-between text-[11px] sm:text-xs text-white/70 mt-1.5 sm:hidden font-medium tabular-nums">
                   <span>{formatTime(currentTime)}</span>
                   <span>{formatTime(duration)}</span>
                 </div>
