@@ -280,6 +280,7 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
           <VideoPlayer 
             src={fileUrl} 
             onError={() => setMediaError('Unable to play this file.')}
+            crossOrigin={false}
           />
         );
 
