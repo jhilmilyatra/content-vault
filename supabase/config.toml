@@ -21,6 +21,12 @@ verify_jwt = false
 [functions.telegram-upload]
 verify_jwt = false
 
+[functions.telegram-folders]
+verify_jwt = false
+
+[functions.telegram-chunked-upload]
+verify_jwt = false
+
 [functions.system-monitor]
 verify_jwt = false
 
