@@ -16,6 +16,9 @@ import {
   Zap,
   Radio,
   AlertTriangle,
+  Download,
+  BarChart3,
+  Flame,
   X
 } from 'lucide-react';
 import { GlassCard, GlassCardHeader } from '@/components/ios/GlassCard';
@@ -37,6 +40,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+interface FileAnalytics {
+  views: number;
+  downloads: number;
+  bandwidth: number;
+}
+
 interface UserFile {
   id: string;
   name: string;
@@ -49,6 +58,8 @@ interface UserFile {
   thumbnail_url?: string;
   user_email?: string;
   user_name?: string;
+  is_deleted?: boolean;
+  analytics?: FileAnalytics;
 }
 
 interface CacheStats {
@@ -59,6 +70,7 @@ interface CacheStats {
 const ContentManagement = () => {
   const [localCacheStats, setLocalCacheStats] = useState<CacheStats>({ count: 0, totalSizeMB: 0 });
   const [files, setFiles] = useState<UserFile[]>([]);
+  const [trashedFiles, setTrashedFiles] = useState<UserFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [clearing, setClearing] = useState(false);
   const [broadcasting, setBroadcasting] = useState(false);
@@ -68,7 +80,10 @@ const ContentManagement = () => {
   const [totalFiles, setTotalFiles] = useState(0);
   const [totalSize, setTotalSize] = useState(0);
   const [fileToDelete, setFileToDelete] = useState<UserFile | null>(null);
+  const [fileToPermanentDelete, setFileToPermanentDelete] = useState<UserFile | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [permanentDeleting, setPermanentDeleting] = useState(false);
+  const [viewMode, setViewMode] = useState<'active' | 'trash'>('active');
 
   useEffect(() => {
     loadData();
@@ -81,17 +96,27 @@ const ContentManagement = () => {
       const cacheStats = await getCacheStats();
       setLocalCacheStats(cacheStats);
 
-      // Load file statistics
-      const { data: filesData, count } = await supabase
+      // Load active files
+      const { data: activeFilesData, count: activeCount } = await supabase
         .from('files')
-        .select('id, name, original_name, mime_type, size_bytes, storage_path, created_at, user_id, thumbnail_url', { count: 'exact' })
+        .select('id, name, original_name, mime_type, size_bytes, storage_path, created_at, user_id, thumbnail_url, is_deleted', { count: 'exact' })
         .eq('is_deleted', false)
         .order('created_at', { ascending: false })
         .limit(50);
 
-      if (filesData) {
+      // Load trashed files
+      const { data: trashedFilesData } = await supabase
+        .from('files')
+        .select('id, name, original_name, mime_type, size_bytes, storage_path, created_at, user_id, thumbnail_url, is_deleted, deleted_at')
+        .eq('is_deleted', true)
+        .order('deleted_at', { ascending: false })
+        .limit(50);
+
+      const allFiles = [...(activeFilesData || []), ...(trashedFilesData || [])];
+
+      if (allFiles.length > 0) {
         // Get user info for each file
-        const userIds = [...new Set(filesData.map(f => f.user_id))];
+        const userIds = [...new Set(allFiles.map(f => f.user_id))];
         const { data: profiles } = await supabase
           .from('profiles')
           .select('user_id, email, full_name')
@@ -99,17 +124,46 @@ const ContentManagement = () => {
 
         const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
 
-        const enrichedFiles = filesData.map(file => ({
+        // Get file analytics (views and downloads)
+        const fileIds = allFiles.map(f => f.id);
+        const { data: viewsData } = await supabase
+          .from('file_views')
+          .select('file_id, view_type, bytes_transferred')
+          .in('file_id', fileIds);
+
+        // Aggregate analytics per file
+        const analyticsMap = new Map<string, FileAnalytics>();
+        viewsData?.forEach(view => {
+          const current = analyticsMap.get(view.file_id) || { views: 0, downloads: 0, bandwidth: 0 };
+          if (view.view_type === 'download') {
+            current.downloads++;
+          } else {
+            current.views++;
+          }
+          current.bandwidth += view.bytes_transferred || 0;
+          analyticsMap.set(view.file_id, current);
+        });
+
+        const enrichActiveFiles = (activeFilesData || []).map(file => ({
           ...file,
           user_email: profileMap.get(file.user_id)?.email || 'Unknown',
           user_name: profileMap.get(file.user_id)?.full_name || 'Unknown User',
+          analytics: analyticsMap.get(file.id) || { views: 0, downloads: 0, bandwidth: 0 },
         }));
 
-        setFiles(enrichedFiles);
-        setTotalFiles(count || 0);
+        const enrichTrashedFiles = (trashedFilesData || []).map(file => ({
+          ...file,
+          user_email: profileMap.get(file.user_id)?.email || 'Unknown',
+          user_name: profileMap.get(file.user_id)?.full_name || 'Unknown User',
+          analytics: analyticsMap.get(file.id) || { views: 0, downloads: 0, bandwidth: 0 },
+        }));
 
-        // Calculate total size
-        const totalBytes = filesData.reduce((acc, f) => acc + Number(f.size_bytes), 0);
+        setFiles(enrichActiveFiles);
+        setTrashedFiles(enrichTrashedFiles);
+        setTotalFiles(activeCount || 0);
+
+        // Calculate total size of active files
+        const totalBytes = (activeFilesData || []).reduce((acc, f) => acc + Number(f.size_bytes), 0);
         setTotalSize(totalBytes);
       }
     } catch (error) {
@@ -173,8 +227,9 @@ const ContentManagement = () => {
 
       if (error) throw error;
 
-      // Remove from local state
+      // Move file from active to trash in local state
       setFiles(prev => prev.filter(f => f.id !== file.id));
+      setTrashedFiles(prev => [{ ...file, is_deleted: true }, ...prev]);
       setTotalFiles(prev => prev - 1);
       setTotalSize(prev => prev - file.size_bytes);
       
@@ -187,6 +242,54 @@ const ContentManagement = () => {
     } finally {
       setDeleting(false);
       setFileToDelete(null);
+    }
+  };
+
+  const handlePermanentDelete = async (file: UserFile) => {
+    setPermanentDeleting(true);
+    mediumHaptic();
+    
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        throw new Error('Not authenticated');
+      }
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/owner-delete-file`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${sessionData.session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fileId: file.id,
+            storagePath: file.storage_path,
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Delete failed');
+      }
+
+      // Remove from trashed files
+      setTrashedFiles(prev => prev.filter(f => f.id !== file.id));
+      
+      toast.success('Permanently deleted', {
+        description: `${file.original_name} has been removed from storage.`,
+      });
+    } catch (error) {
+      console.error('Failed to permanently delete file:', error);
+      toast.error('Failed to delete file', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    } finally {
+      setPermanentDeleting(false);
+      setFileToPermanentDelete(null);
     }
   };
 
@@ -221,7 +324,9 @@ const ContentManagement = () => {
     return <FileText className="w-4 h-4 text-blue-400" />;
   };
 
-  const filteredFiles = files.filter(file => 
+  const displayFiles = viewMode === 'active' ? files : trashedFiles;
+  
+  const filteredFiles = displayFiles.filter(file => 
     file.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     file.original_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     file.user_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -357,14 +462,41 @@ const ContentManagement = () => {
           title="Content Browser" 
           icon={<Film className="w-5 h-5 text-purple-400" />}
           action={
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search files or users..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 w-48 ios-input h-9 text-sm"
-              />
+            <div className="flex items-center gap-3">
+              {/* View Mode Toggle */}
+              <div className="flex rounded-xl bg-white/5 p-1">
+                <button
+                  onClick={() => setViewMode('active')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    viewMode === 'active' 
+                      ? 'bg-primary text-white' 
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Active ({files.length})
+                </button>
+                <button
+                  onClick={() => setViewMode('trash')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    viewMode === 'trash' 
+                      ? 'bg-red-500 text-white' 
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Trash2 className="w-3 h-3 inline mr-1" />
+                  Trash ({trashedFiles.length})
+                </button>
+              </div>
+              
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search files or users..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 w-48 ios-input h-9 text-sm"
+                />
+              </div>
             </div>
           }
         />
@@ -408,36 +540,75 @@ const ContentManagement = () => {
                       </p>
                     </div>
 
+                    {/* Analytics Badge */}
+                    {file.analytics && (file.analytics.views > 0 || file.analytics.downloads > 0) && (
+                      <div className="flex items-center gap-2 text-xs">
+                        {file.analytics.views > 0 && (
+                          <span className="flex items-center gap-1 text-teal-400" title="Views">
+                            <Eye className="w-3 h-3" />
+                            {file.analytics.views}
+                          </span>
+                        )}
+                        {file.analytics.downloads > 0 && (
+                          <span className="flex items-center gap-1 text-purple-400" title="Downloads">
+                            <Download className="w-3 h-3" />
+                            {file.analytics.downloads}
+                          </span>
+                        )}
+                        {file.analytics.bandwidth > 0 && (
+                          <span className="flex items-center gap-1 text-amber-400" title="Bandwidth Used">
+                            <BarChart3 className="w-3 h-3" />
+                            {formatSize(file.analytics.bandwidth)}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     {/* Actions */}
                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {file.mime_type.startsWith('video/') && (
+                      {viewMode === 'active' ? (
+                        <>
+                          {file.mime_type.startsWith('video/') && (
+                            <button
+                              onClick={() => handleStreamFile(file)}
+                              className="p-2 rounded-xl bg-primary/20 text-primary hover:bg-primary/30 transition-colors"
+                              title="Stream Video"
+                            >
+                              <Play className="w-4 h-4" />
+                            </button>
+                          )}
+                          {file.mime_type.startsWith('image/') && (
+                            <button
+                              onClick={() => handleStreamFile(file)}
+                              className="p-2 rounded-xl bg-teal-500/20 text-teal-400 hover:bg-teal-500/30 transition-colors"
+                              title="View Image"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              lightHaptic();
+                              setFileToDelete(file);
+                            }}
+                            className="p-2 rounded-xl bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                            title="Move to Trash"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      ) : (
                         <button
-                          onClick={() => handleStreamFile(file)}
-                          className="p-2 rounded-xl bg-primary/20 text-primary hover:bg-primary/30 transition-colors"
-                          title="Stream Video"
+                          onClick={() => {
+                            lightHaptic();
+                            setFileToPermanentDelete(file);
+                          }}
+                          className="p-2 rounded-xl bg-gradient-to-r from-red-500/30 to-orange-500/30 text-red-400 hover:from-red-500/40 hover:to-orange-500/40 transition-colors"
+                          title="Permanently Delete"
                         >
-                          <Play className="w-4 h-4" />
+                          <Flame className="w-4 h-4" />
                         </button>
                       )}
-                      {file.mime_type.startsWith('image/') && (
-                        <button
-                          onClick={() => handleStreamFile(file)}
-                          className="p-2 rounded-xl bg-teal-500/20 text-teal-400 hover:bg-teal-500/30 transition-colors"
-                          title="View Image"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => {
-                          lightHaptic();
-                          setFileToDelete(file);
-                        }}
-                        className="p-2 rounded-xl bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
-                        title="Delete File"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
                     </div>
                   </motion.div>
                 ))}
@@ -445,8 +616,17 @@ const ContentManagement = () => {
 
               {filteredFiles.length === 0 && !loading && (
                 <div className="text-center py-12 text-muted-foreground">
-                  <Database className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p>No files found</p>
+                  {viewMode === 'active' ? (
+                    <>
+                      <Database className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                      <p>No files found</p>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                      <p>Trash is empty</p>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -545,6 +725,50 @@ const ContentManagement = () => {
                 <Trash2 className="w-4 h-4 mr-2" />
               )}
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Permanent Delete Confirmation Dialog */}
+      <AlertDialog open={!!fileToPermanentDelete} onOpenChange={(open) => !open && setFileToPermanentDelete(null)}>
+        <AlertDialogContent className="ios-glass border-red-500/20">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-foreground">
+              <Flame className="w-5 h-5 text-orange-500" />
+              Permanent Deletion
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground space-y-2">
+              <span className="block">
+                You are about to <span className="font-bold text-red-400">permanently delete</span>{' '}
+                <span className="font-medium text-foreground">{fileToPermanentDelete?.original_name}</span>
+              </span>
+              <span className="block text-xs">
+                Owner: {fileToPermanentDelete?.user_name} ({fileToPermanentDelete?.user_email})
+              </span>
+              <span className="block text-xs text-red-400 bg-red-500/10 p-2 rounded-lg mt-2">
+                ⚠️ This action is IRREVERSIBLE. The file will be removed from VPS storage and cannot be recovered.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel 
+              disabled={permanentDeleting}
+              className="ios-button-secondary"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => fileToPermanentDelete && handlePermanentDelete(fileToPermanentDelete)}
+              disabled={permanentDeleting}
+              className="bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white"
+            >
+              {permanentDeleting ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : (
+                <Flame className="w-4 h-4 mr-2" />
+              )}
+              Delete Forever
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
