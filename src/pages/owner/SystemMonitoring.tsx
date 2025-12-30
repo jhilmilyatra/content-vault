@@ -259,6 +259,12 @@ const SystemMonitoring = () => {
     lightHaptic();
     fetchHealth();
   };
+
+  const handleResetHistory = () => {
+    lightHaptic();
+    setLatencyHistory([]);
+    toast.success("Latency history cleared");
+  };
   
   // Get VPS status from health data
   const vpsDetails = health?.metrics?.storage?.vpsHealth?.[0];
@@ -308,8 +314,17 @@ const SystemMonitoring = () => {
                 className="ios-button-secondary px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2"
               >
                 <Gauge className={`w-4 h-4 ${testingLatency ? "animate-pulse" : ""}`} />
-                Test Latency
+                Test
               </button>
+              {latencyHistory.length > 0 && (
+                <button 
+                  onClick={handleResetHistory}
+                  className="ios-button-secondary px-3 py-2 rounded-xl text-sm font-medium text-white/60 hover:text-white"
+                  title="Clear latency history"
+                >
+                  <XCircle className="w-4 h-4" />
+                </button>
+              )}
               <button 
                 onClick={handleRefresh} 
                 disabled={loading}
