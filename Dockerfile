@@ -34,10 +34,12 @@ RUN mkdir -p /app/storage /app/data
 # Copy built frontend
 COPY --from=builder /app/dist ./dist
 
-# Copy VPS storage server and install its dependencies
+# Copy VPS storage server
 COPY vps-storage-server ./vps-storage-server
+
+# Install VPS server dependencies
 WORKDIR /app/vps-storage-server
-RUN npm install
+RUN npm install --production
 WORKDIR /app
 
 # Set environment variables
