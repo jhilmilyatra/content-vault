@@ -28,6 +28,7 @@ import {
   Home,
   RefreshCw,
   FolderArchive,
+  LogOut,
 } from 'lucide-react';
 import { GuestFilePreviewModal } from '@/components/guest/GuestFilePreviewModal';
 import { ZipProgressModal } from '@/components/guest/ZipProgressModal';
@@ -51,9 +52,14 @@ interface FolderItem {
 const GuestFolderView = () => {
   const { folderId } = useParams<{ folderId: string }>();
   const navigate = useNavigate();
-  const { guest, loading: authLoading } = useGuestAuth();
+  const { guest, loading: authLoading, signOut } = useGuestAuth();
   const { toast } = useToast();
   const isMobile = useIsMobile();
+
+  const handleSignOut = () => {
+    signOut();
+    navigate('/guest-auth');
+  };
 
   const [folder, setFolder] = useState<FolderItem | null>(null);
   const [files, setFiles] = useState<GuestFileItem[]>([]);
@@ -381,6 +387,16 @@ const GuestFolderView = () => {
                 <List className="w-4 h-4" />
               </button>
             </div>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={handleSignOut}
+              title="Sign Out"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="hidden sm:inline ml-2">Sign Out</span>
+            </Button>
           </div>
         </div>
       </header>
