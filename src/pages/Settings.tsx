@@ -7,10 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
-import { User, Lock, Bell, Save, Loader2, Key, Copy, RefreshCw, Check, Bot, ArrowLeft } from 'lucide-react';
+import { User, Lock, Bell, Save, Loader2, Key, Copy, RefreshCw, Check, Bot, ArrowLeft, HardDrive } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { PageTransition } from '@/components/ui/PageTransition';
 import { GlassCard, IosSegmentedControl, IosToggle } from '@/components/ios';
+import CacheManagement from '@/components/settings/CacheManagement';
 import { lightHaptic, mediumHaptic } from '@/lib/haptics';
 
 const Settings = () => {
@@ -128,6 +129,7 @@ const Settings = () => {
     { value: 'profile', label: 'Profile', icon: <User className="w-4 h-4" /> },
     { value: 'security', label: 'Security', icon: <Lock className="w-4 h-4" /> },
     { value: 'api', label: 'API', icon: <Key className="w-4 h-4" /> },
+    { value: 'storage', label: 'Storage', icon: <HardDrive className="w-4 h-4" /> },
     { value: 'preferences', label: 'Alerts', icon: <Bell className="w-4 h-4" /> },
   ];
 
@@ -409,6 +411,9 @@ const Settings = () => {
             </GlassCard>
           </motion.div>
         )}
+
+        {/* Storage Tab */}
+        {activeTab === 'storage' && <CacheManagement />}
 
         {/* Preferences Tab */}
         {activeTab === 'preferences' && (
