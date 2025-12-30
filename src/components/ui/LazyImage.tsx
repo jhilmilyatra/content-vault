@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { getCachedThumbnail, cacheThumbnail } from "@/lib/thumbnailCache";
 
 interface LazyImageProps {
   src: string;
@@ -11,11 +12,11 @@ interface LazyImageProps {
   placeholderColor?: string;
   blurHash?: string;
   priority?: boolean;
+  /** Enable IndexedDB caching */
+  enableCache?: boolean;
   onLoad?: () => void;
   onError?: () => void;
 }
-
-// Generate a tiny placeholder gradient based on average color
 function generatePlaceholder(color: string = "rgba(255,255,255,0.05)"): string {
   return `linear-gradient(135deg, ${color} 0%, rgba(0,0,0,0.1) 100%)`;
 }
@@ -37,14 +38,17 @@ export const LazyImage = memo(function LazyImage({
   placeholderColor,
   blurHash,
   priority = false,
+  enableCache = true,
   onLoad,
   onError,
 }: LazyImageProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isInView, setIsInView] = useState(priority);
   const [hasError, setHasError] = useState(false);
+  const [cachedSrc, setCachedSrc] = useState<string | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const blobUrlRef = useRef<string | null>(null);
 
   // Intersection Observer for lazy loading
   useEffect(() => {
@@ -70,23 +74,79 @@ export const LazyImage = memo(function LazyImage({
     return () => observer.disconnect();
   }, [priority]);
 
-  // Preload image when in view
+  // Check cache and preload image when in view
   useEffect(() => {
     if (!isInView || !src) return;
 
-    const img = new Image();
-    img.src = src;
-    
-    img.onload = () => {
-      setIsLoaded(true);
-      onLoad?.();
+    let isMounted = true;
+
+    const loadImage = async () => {
+      // Try to get from cache first
+      if (enableCache) {
+        try {
+          const cached = await getCachedThumbnail(src);
+          if (cached && isMounted) {
+            blobUrlRef.current = cached;
+            setCachedSrc(cached);
+            setIsLoaded(true);
+            onLoad?.();
+            return;
+          }
+        } catch {
+          // Continue to fetch if cache fails
+        }
+      }
+
+      // Fetch the image
+      try {
+        const response = await fetch(src, { credentials: 'include' });
+        if (!response.ok) throw new Error('Failed to fetch');
+        
+        const blob = await response.blob();
+        if (!isMounted) return;
+
+        const blobUrl = URL.createObjectURL(blob);
+        blobUrlRef.current = blobUrl;
+        setCachedSrc(blobUrl);
+        setIsLoaded(true);
+        onLoad?.();
+
+        // Cache for future use (only images under 5MB)
+        if (enableCache && blob.size < 5 * 1024 * 1024) {
+          cacheThumbnail(src, blob).catch(() => {});
+        }
+      } catch {
+        // Fall back to direct src on error
+        if (isMounted) {
+          setCachedSrc(src);
+          const img = new Image();
+          img.src = src;
+          img.onload = () => {
+            if (isMounted) {
+              setIsLoaded(true);
+              onLoad?.();
+            }
+          };
+          img.onerror = () => {
+            if (isMounted) {
+              setHasError(true);
+              onError?.();
+            }
+          };
+        }
+      }
     };
-    
-    img.onerror = () => {
-      setHasError(true);
-      onError?.();
+
+    loadImage();
+
+    return () => {
+      isMounted = false;
+      // Clean up blob URL
+      if (blobUrlRef.current?.startsWith('blob:')) {
+        URL.revokeObjectURL(blobUrlRef.current);
+      }
     };
-  }, [isInView, src, onLoad, onError]);
+  }, [isInView, src, enableCache, onLoad, onError]);
 
   const placeholder = generatePlaceholder(placeholderColor);
 
@@ -166,10 +226,10 @@ export const LazyImage = memo(function LazyImage({
       )}
 
       {/* Actual image */}
-      {isInView && !hasError && (
+      {isInView && !hasError && cachedSrc && (
         <motion.img
           ref={imgRef}
-          src={src}
+          src={cachedSrc}
           alt={alt}
           loading={priority ? "eager" : "lazy"}
           decoding="async"
@@ -180,10 +240,6 @@ export const LazyImage = memo(function LazyImage({
             "w-full h-full object-cover",
             className
           )}
-          onLoad={() => {
-            setIsLoaded(true);
-            onLoad?.();
-          }}
           onError={() => {
             setHasError(true);
             onError?.();
