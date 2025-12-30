@@ -564,6 +564,10 @@ const requireOwner = (req, res, next) => {
   next();
 };
 
+// Aliases for middleware (backwards compatibility)
+const authenticateOwner = requireOwner;
+const authenticateRequest = authenticate;
+
 // ============================================
 // Multer Configuration with Validation
 // ============================================
