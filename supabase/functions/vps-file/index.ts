@@ -220,24 +220,44 @@ Deno.serve(async (req) => {
       }
       
       // Fallback to Supabase storage
-      const { data, error } = await supabase.storage
-        .from("user-files")
-        .download(storagePath);
-      
-      if (error) throw error;
-      
-      const totalTime = performance.now() - startTime;
-      if (totalTime > SLOW_THRESHOLD_MS) {
-        console.warn(`⚠️ SLOW_EDGE [vps-file:get-fallback] ${Math.round(totalTime)}ms`);
+      try {
+        const { data, error } = await supabase.storage
+          .from("user-files")
+          .download(storagePath);
+        
+        if (error) {
+          console.error("Supabase storage error:", error);
+          return new Response(
+            JSON.stringify({ 
+              error: "File not available", 
+              details: "VPS storage is offline and file not found in cloud backup"
+            }),
+            { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        
+        const totalTime = performance.now() - startTime;
+        if (totalTime > SLOW_THRESHOLD_MS) {
+          console.warn(`⚠️ SLOW_EDGE [vps-file:get-fallback] ${Math.round(totalTime)}ms`);
+        }
+        
+        return new Response(data, {
+          headers: { 
+            ...corsHeaders, 
+            "Content-Type": data.type,
+            "Cache-Control": "private, max-age=300, stale-while-revalidate=600"
+          },
+        });
+      } catch (fallbackError) {
+        console.error("Supabase fallback error:", fallbackError);
+        return new Response(
+          JSON.stringify({ 
+            error: "File unavailable", 
+            details: "Storage servers are currently unreachable. Please try again later."
+          }),
+          { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
-      
-      return new Response(data, {
-        headers: { 
-          ...corsHeaders, 
-          "Content-Type": data.type,
-          "Cache-Control": "private, max-age=300, stale-while-revalidate=600"
-        },
-      });
     }
 
     return new Response(
