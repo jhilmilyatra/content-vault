@@ -2,15 +2,15 @@
  * Sign HLS URL Edge Function
  * 
  * Generates HMAC-signed URLs for secure HLS streaming.
- * Prevents hotlinking and unauthorized access to video content.
+ * Also checks if HLS is available on the VPS.
  * 
  * Features:
  * - Time-limited URL expiry
  * - HMAC-SHA256 signature verification
+ * - VPS HLS availability check
  * - Per-user access validation
  */
 
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -18,8 +18,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// VPS Configuration
+const VPS_ENDPOINT = Deno.env.get('VPS_STORAGE_URL') || 'http://46.38.232.46:4000';
+const VPS_API_KEY = Deno.env.get('VPS_STORAGE_API_KEY') || 'kARTOOS007';
+
 // Signing secret - should match VPS server
-const SIGNING_SECRET = Deno.env.get('HLS_SIGNING_SECRET') || Deno.env.get('VPS_STORAGE_API_KEY') || 'default-signing-secret';
+const SIGNING_SECRET = Deno.env.get('HLS_SIGNING_SECRET') || VPS_API_KEY || 'default-signing-secret';
 
 /**
  * Generate HMAC-SHA256 signature
@@ -56,15 +60,26 @@ async function signUrl(baseUrl: string, path: string, expiresInSec: number = 360
   return `${baseUrl}${path}?exp=${exp}&sig=${sig}`;
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    // Parse request
-    const { storagePath, vpsEndpoint, expiresIn } = await req.json();
+    // Support both GET (query params) and POST (JSON body)
+    let storagePath: string | null = null;
+    let expiresIn: number | null = null;
+
+    if (req.method === 'GET') {
+      const url = new URL(req.url);
+      storagePath = url.searchParams.get('storagePath');
+      expiresIn = parseInt(url.searchParams.get('expiresIn') || '3600');
+    } else {
+      const body = await req.json().catch(() => ({}));
+      storagePath = body.storagePath;
+      expiresIn = body.expiresIn || 3600;
+    }
     
     if (!storagePath) {
       return new Response(
@@ -73,87 +88,115 @@ serve(async (req) => {
       );
     }
     
-    // Optional: Verify user has access to this file
+    // Verify user authentication
     const authHeader = req.headers.get('Authorization');
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
     if (authHeader) {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-      const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-      const supabase = createClient(supabaseUrl, supabaseKey, {
-        global: { headers: { Authorization: authHeader } }
-      });
-      
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+      const token = authHeader.replace('Bearer ', '');
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
       
       if (authError || !user) {
-        console.warn('Auth error or no user:', authError?.message);
-        // Continue without user validation for guest access
-      } else {
-        // Validate user owns the file or is owner/admin
-        const userId = storagePath.split('/')[0];
-        
-        // Check if user is accessing their own files
+        return new Response(
+          JSON.stringify({ error: 'Invalid token' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      // Validate user owns the file (unless owner/admin)
+      const userId = storagePath.split('/')[0];
+      
+      if (userId !== user.id) {
         const { data: userRole } = await supabase
           .rpc('get_user_role', { _user_id: user.id });
         
-        if (userId !== user.id && userRole !== 'owner' && userRole !== 'admin') {
-          // Check if user has guest access
-          const { data: guestAccess } = await supabase
-            .from('guest_folder_access')
-            .select('id')
-            .eq('guest_id', user.id)
-            .limit(1);
-          
-          if (!guestAccess || guestAccess.length === 0) {
-            console.warn(`User ${user.id} denied access to ${storagePath}`);
-            return new Response(
-              JSON.stringify({ error: 'Access denied' }),
-              { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            );
-          }
+        if (userRole !== 'owner' && userRole !== 'admin') {
+          return new Response(
+            JSON.stringify({ error: 'Access denied' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
         }
       }
+    } else {
+      return new Response(
+        JSON.stringify({ error: 'No authorization header' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
     
     // Parse the storage path to get HLS path
-    // storagePath: userId/videoFile.mp4 -> HLS path: /hls/userId/videoFile/index.m3u8
+    // storagePath: userId/videoFile.mp4 -> HLS path: /hls/userId/videoFile/master.m3u8
     const pathParts = storagePath.split('/');
     const userId = pathParts[0];
     const fileName = pathParts.pop() || '';
     const baseName = fileName.replace(/\.[^.]+$/, '');
     
-    const hlsPath = `/hls/${userId}/${baseName}/index.m3u8`;
-    
-    // Get VPS endpoint from request or environment
-    const baseUrl = vpsEndpoint || Deno.env.get('VPS_STORAGE_URL') || 'https://storage.cloudvault.app';
-    
-    // Generate signed URL (default 1 hour expiry for playlists)
-    const expirySeconds = expiresIn || 3600;
-    const signedUrl = await signUrl(baseUrl, hlsPath, expirySeconds);
-    
-    // Also generate signed URLs for potential quality variants
-    const signedUrls: Record<string, string> = {
-      master: signedUrl,
-    };
-    
-    // Generate variant URLs with longer expiry (segments are immutable)
-    const qualities = ['360p', '480p', '720p', '1080p'];
-    for (const q of qualities) {
-      const variantPath = `/hls/${userId}/${baseName}/${q}/index.m3u8`;
-      signedUrls[q] = await signUrl(baseUrl, variantPath, expirySeconds * 2); // 2x expiry for variants
+    // Check if HLS exists on VPS
+    try {
+      const hlsCheckResponse = await fetch(
+        `${VPS_ENDPOINT}/hls-status/${userId}/${fileName}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${VPS_API_KEY}`,
+          },
+        }
+      );
+      
+      if (!hlsCheckResponse.ok) {
+        // HLS not available
+        return new Response(
+          JSON.stringify({ 
+            available: false, 
+            message: 'HLS not available for this video' 
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      const hlsStatus = await hlsCheckResponse.json();
+      
+      if (!hlsStatus.hasHLS) {
+        return new Response(
+          JSON.stringify({ 
+            available: false, 
+            status: hlsStatus.status,
+            progress: hlsStatus.progress,
+            message: 'HLS transcoding in progress or not started' 
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      // HLS is available - generate signed URL
+      const hlsPath = `/hls/${userId}/${baseName}/master.m3u8`;
+      const expirySeconds = expiresIn || 3600;
+      const signedUrl = await signUrl(VPS_ENDPOINT, hlsPath, expirySeconds);
+      
+      console.log(`HLS URL generated for: ${storagePath}`);
+      
+      return new Response(
+        JSON.stringify({
+          available: true,
+          signedUrl,
+          qualities: hlsStatus.qualities || [],
+          expiresAt: new Date((Math.floor(Date.now() / 1000) + expirySeconds) * 1000).toISOString(),
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+      
+    } catch (vpsError) {
+      console.error('VPS HLS check failed:', vpsError);
+      return new Response(
+        JSON.stringify({ 
+          available: false, 
+          message: 'VPS unreachable, HLS unavailable' 
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
-    
-    console.log(`Signed HLS URL generated for: ${storagePath}`);
-    
-    return new Response(
-      JSON.stringify({
-        success: true,
-        signedUrl,
-        signedUrls,
-        expiresAt: new Date((Math.floor(Date.now() / 1000) + expirySeconds) * 1000).toISOString(),
-        hlsPath,
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
     
   } catch (error: unknown) {
     console.error('Sign HLS URL error:', error);

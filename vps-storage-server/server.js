@@ -516,34 +516,16 @@ function getSafePath(userId, filename) {
 // ============================================
 
 /**
- * Extract token from Authorization header OR query param
- * Supports: Bearer header, ?token= query param
- */
-function extractToken(req) {
-  // First try Authorization header
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    return authHeader.split(' ')[1];
-  }
-  
-  // Fallback to query param (for browser-compatible direct URLs)
-  if (req.query.token) {
-    return req.query.token;
-  }
-  
-  return null;
-}
-
-/**
- * Standard API key authentication
- * Accepts token via Bearer header OR ?token= query param
+ * Standard API key authentication (Bearer header only)
  */
 const authenticate = (req, res, next) => {
-  const token = extractToken(req);
+  const authHeader = req.headers.authorization;
   
-  if (!token) {
-    return res.status(401).json({ error: 'Missing authorization token' });
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing or invalid authorization header' });
   }
+  
+  const token = authHeader.split(' ')[1];
   
   // Check if it's owner key
   if (token === OWNER_API_KEY) {
@@ -564,14 +546,15 @@ const authenticate = (req, res, next) => {
 
 /**
  * Owner-only access middleware
- * Accepts token via Bearer header OR ?token= query param
  */
 const requireOwner = (req, res, next) => {
-  const token = extractToken(req);
+  const authHeader = req.headers.authorization;
   
-  if (!token) {
-    return res.status(401).json({ error: 'Missing authorization token' });
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing or invalid authorization header' });
   }
+  
+  const token = authHeader.split(' ')[1];
   
   if (token !== OWNER_API_KEY) {
     return res.status(403).json({ error: 'Owner access required' });

@@ -270,22 +270,24 @@ const PRIMARY_VPS_CONFIG = {
 const STORAGE_NODES_KEY = "vps_storage_nodes";
 
 /**
- * Get direct VPS file URL with authentication token
- * Uses query param auth for browser-compatible direct access
+ * Get direct VPS file URL (no auth needed - files endpoint is public)
+ * NOTE: Only works when accessed from same origin or with proper CORS
+ * For cross-origin HTTPS access, use the edge function proxy instead
  */
 export const getDirectVPSUrl = (storagePath: string): string => {
-  return `${PRIMARY_VPS_CONFIG.endpoint}/files/${storagePath}?token=${PRIMARY_VPS_CONFIG.apiKey}`;
+  return `${PRIMARY_VPS_CONFIG.endpoint}/files/${storagePath}`;
 };
 
 /**
- * Get direct VPS HLS URL with authentication token
+ * Get direct VPS HLS URL for video streaming
+ * NOTE: Only works when accessed from same origin or with proper CORS
  */
 export const getDirectHLSUrl = (storagePath: string): string => {
   const pathParts = storagePath.split('/');
   const fileName = pathParts.pop() || '';
   const userId = pathParts[0];
   const baseName = fileName.replace(/\.[^/.]+$/, '');
-  return `${PRIMARY_VPS_CONFIG.endpoint}/hls/${userId}/${baseName}/master.m3u8?token=${PRIMARY_VPS_CONFIG.apiKey}`;
+  return `${PRIMARY_VPS_CONFIG.endpoint}/hls/${userId}/${baseName}/master.m3u8`;
 };
 
 /**

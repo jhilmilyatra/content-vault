@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { FileItem, formatFileSize, getDirectVPSUrl, getDirectHLSUrl, checkVPSHealth, getVPSEndpoint, getVPSApiKey } from "@/lib/fileService";
+import { FileItem, formatFileSize } from "@/lib/fileService";
 import { supabase } from "@/integrations/supabase/client";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { 
@@ -141,56 +141,35 @@ export function FilePreviewModal({
         }
       }).catch((err) => console.error('Failed to track view:', err));
 
-      // Check VPS health first
-      const isVpsOnline = await checkVPSHealth();
-      setVpsOnline(isVpsOnline);
-
       const isVideo = file.mime_type.startsWith('video/');
       
-      if (isVpsOnline) {
-        // VPS is online - use direct URLs for best performance
-        const directUrl = getDirectVPSUrl(file.storage_path);
-        
-        if (isVideo) {
-          // Set raw video URL for fallback
-          setRawVideoUrl(directUrl);
-          
-          // Check HLS availability
-          await checkHLSAvailability(file.storage_path);
+      // Always use edge function as proxy (handles HTTPS/CORS properly)
+      // The edge function will try VPS first, then fall back to Supabase storage
+      const fileResponse = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=url`,
+        {
+          headers: {
+            Authorization: `Bearer ${sessionData.session.access_token}`,
+          },
         }
-        
-        // For non-video files or as primary URL
-        setFileUrl(directUrl);
-      } else {
-        // VPS offline - fall back to edge function
-        console.log('VPS offline, using edge function fallback');
-        
-        const fileResponse = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`,
-          {
-            headers: {
-              Authorization: `Bearer ${sessionData.session.access_token}`,
-            },
-          }
-        );
+      );
 
-        if (!fileResponse.ok) {
-          throw new Error("Failed to fetch file");
-        }
-
-        const blob = await fileResponse.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        
-        if (previousBlobUrlRef.current) {
-          URL.revokeObjectURL(previousBlobUrlRef.current);
-        }
-        previousBlobUrlRef.current = blobUrl;
-        setFileUrl(blobUrl);
-        
-        if (isVideo) {
-          setRawVideoUrl(blobUrl);
-        }
+      if (!fileResponse.ok) {
+        const errorData = await fileResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to get file URL");
       }
+
+      const urlData = await fileResponse.json();
+      
+      if (isVideo) {
+        // For videos, check if HLS is available via edge function
+        await checkHLSAvailability(file.storage_path);
+        // Set raw video URL as fallback
+        setRawVideoUrl(urlData.url);
+      }
+      
+      setFileUrl(urlData.url);
+      setVpsOnline(urlData.storage === 'vps');
     } catch (error) {
       console.error("Error loading file:", error);
       toast({
@@ -203,35 +182,27 @@ export function FilePreviewModal({
     }
   };
 
-  // Check if HLS version is available for video
+  // Check if HLS version is available for video via edge function
   const checkHLSAvailability = async (storagePath: string) => {
     try {
-      // Extract userId and fileName from storage path
-      const pathParts = storagePath.split('/');
-      const fileName = pathParts.pop() || '';
-      const userId = pathParts[0];
-      const baseName = fileName.replace(/\.[^/.]+$/, '');
-      
-      const vpsEndpoint = getVPSEndpoint();
-      const vpsApiKey = getVPSApiKey();
-      
-      // Check HLS status
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) return;
+
+      // Use edge function to check HLS availability (avoids mixed content issues)
       const response = await fetch(
-        `${vpsEndpoint}/hls-status/${userId}/${fileName}`,
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sign-hls-url?storagePath=${encodeURIComponent(storagePath)}`,
         {
           headers: {
-            Authorization: `Bearer ${vpsApiKey}`,
+            Authorization: `Bearer ${sessionData.session.access_token}`,
           },
         }
       );
       
       if (response.ok) {
         const data = await response.json();
-        if (data.hasHLS && data.playlistUrl) {
-          // Construct full HLS URL
-          const hlsFullUrl = `${vpsEndpoint}${data.playlistUrl}`;
-          console.log('HLS available:', hlsFullUrl);
-          setHlsUrl(hlsFullUrl);
+        if (data.signedUrl) {
+          console.log('HLS available:', data.signedUrl);
+          setHlsUrl(data.signedUrl);
         }
       }
     } catch (error) {
@@ -263,22 +234,13 @@ export function FilePreviewModal({
       let downloadUrl: string;
       let fetchOptions: RequestInit = {};
       
-      // Use direct VPS URL if online, otherwise fall back to edge function
-      if (vpsOnline) {
-        downloadUrl = getDirectVPSUrl(file.storage_path);
-        fetchOptions = {
-          headers: {
-            Authorization: `Bearer ${getVPSApiKey()}`,
-          },
-        };
-      } else {
-        downloadUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`;
-        fetchOptions = {
-          headers: {
-            Authorization: `Bearer ${sessionData.session.access_token}`,
-          },
-        };
-      }
+      // Always use edge function as proxy for secure downloads
+      downloadUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`;
+      fetchOptions = {
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
+      };
       
       const response = await fetch(downloadUrl, fetchOptions);
       
