@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { formatFileSize } from "@/lib/fileService";
 import { 
   Download, X, FileText, File, Loader2, ZoomIn, ZoomOut, RotateCw,
-  Play, Pause, Volume2, VolumeX, Maximize, SkipBack, SkipForward
+  Play, Pause, Volume2, VolumeX, Maximize, Minimize, SkipBack, SkipForward
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -54,6 +54,9 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
   // Double-tap seek state
   const lastTapRef = useRef<{ time: number; x: number } | null>(null);
   const [seekIndicator, setSeekIndicator] = useState<{ side: 'left' | 'right'; visible: boolean }>({ side: 'left', visible: false });
+  
+  // Fullscreen state
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
   
@@ -80,7 +83,15 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
       setPlaybackSpeed(1);
       setShowSpeedMenu(false);
       setMediaError(null);
+      setIsFullscreen(false);
+      // Restore body scroll when modal closes
+      document.body.style.overflow = '';
     }
+    
+    return () => {
+      // Ensure body scroll is restored on unmount
+      document.body.style.overflow = '';
+    };
   }, [open, file]);
 
   // Keyboard shortcuts for video/audio player
@@ -136,12 +147,18 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
           e.preventDefault();
           if (fileType === 'video') toggleFullscreen();
           break;
+        case 'Escape':
+          if (isFullscreen) {
+            e.preventDefault();
+            toggleFullscreen();
+          }
+          break;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, file, volume, isPlaying, duration]);
+  }, [open, file, volume, isPlaying, duration, isFullscreen]);
 
   const loadFileUrl = async () => {
     if (!file || !guestId) return;
@@ -340,12 +357,14 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
   };
 
   const toggleFullscreen = () => {
-    if (videoRef.current) {
-      if (document.fullscreenElement) {
-        document.exitFullscreen();
-      } else {
-        videoRef.current.requestFullscreen();
-      }
+    // Use our own fullscreen state for better mobile control with visible controls
+    setIsFullscreen(prev => !prev);
+    
+    // Lock/unlock body scroll
+    if (!isFullscreen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
     }
   };
 
@@ -506,14 +525,14 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                 </div>
               )}
 
-              {/* Glass Controls Overlay - YouTube/Netflix style */}
+              {/* Glass Controls Overlay - YouTube/Netflix style - ALWAYS visible in fullscreen */}
               <div 
                 className={`absolute inset-x-0 bottom-0 transition-all duration-200 ease-out ${
                   showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'
-                }`}
+                } ${isFullscreen ? 'z-[10000]' : ''}`}
               >
                 {/* Glass background */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent backdrop-blur-sm" />
+                <div className={`absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent ${isFullscreen ? '' : 'backdrop-blur-sm'}`} />
                 
                 <div className="relative p-3 sm:p-4">
                   {/* Progress bar with larger touch target */}
@@ -647,13 +666,32 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                         onClick={toggleFullscreen}
                         className="text-white hover:bg-white/20 h-11 w-11 sm:h-10 sm:w-10 rounded-full touch-manipulation active:scale-90 transition-transform"
                       >
-                        <Maximize className="w-5 h-5" />
+                        {isFullscreen ? (
+                          <Minimize className="w-5 h-5" />
+                        ) : (
+                          <Maximize className="w-5 h-5" />
+                        )}
                       </Button>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
+            
+            {/* Fullscreen close button - top right corner */}
+            {isFullscreen && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFullscreen();
+                }}
+                className={`absolute top-4 right-4 z-[10001] w-12 h-12 rounded-full bg-black/60 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/80 transition-all ${
+                  showControls ? 'opacity-100' : 'opacity-0'
+                }`}
+              >
+                <Minimize className="w-6 h-6" />
+              </button>
+            )}
           </div>
         );
 
