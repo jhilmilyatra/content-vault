@@ -207,7 +207,7 @@ const upload = multer({
 });
 
 // ============================================
-// Health Check Endpoint
+// Health Check Endpoint (Basic)
 // ============================================
 app.get('/health', (req, res) => {
   const stats = getStorageStats();
@@ -216,6 +216,80 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     storage: stats,
     version: '2.0.0'
+  });
+});
+
+// ============================================
+// Comprehensive Health Check with Endpoint Verification
+// ============================================
+app.get('/health/full', (req, res) => {
+  const stats = getStorageStats();
+  
+  // Define all required endpoints and their methods
+  const requiredEndpoints = [
+    { path: '/health', method: 'GET', description: 'Basic health check' },
+    { path: '/health/full', method: 'GET', description: 'Full health check with endpoint verification' },
+    { path: '/stats', method: 'GET', description: 'Storage statistics' },
+    { path: '/stats/user/:userId', method: 'GET', description: 'Per-user storage stats' },
+    { path: '/stats/all-users', method: 'GET', description: 'All users storage overview' },
+    { path: '/upload', method: 'POST', description: 'Multipart file upload' },
+    { path: '/upload-base64', method: 'POST', description: 'Base64 JSON file upload' },
+    { path: '/files/:userId/:fileName', method: 'GET', description: 'File download/serve with range support' },
+    { path: '/files/:userId/:fileName', method: 'DELETE', description: 'File deletion' },
+    { path: '/chunk-append', method: 'POST', description: 'Direct chunk append to file' },
+    { path: '/chunk-upload', method: 'POST', description: 'Temporary chunk upload' },
+    { path: '/finalize-upload', method: 'POST', description: 'Assemble chunks into final file' },
+    { path: '/verify-file', method: 'POST', description: 'Verify file existence and size' },
+    { path: '/cleanup-chunks', method: 'POST', description: 'Cleanup temporary chunk files' },
+  ];
+  
+  // Get registered routes from Express
+  const registeredRoutes = [];
+  app._router.stack.forEach((middleware) => {
+    if (middleware.route) {
+      const methods = Object.keys(middleware.route.methods).map(m => m.toUpperCase());
+      registeredRoutes.push({
+        path: middleware.route.path,
+        methods: methods
+      });
+    }
+  });
+  
+  // Check each required endpoint
+  const endpointStatus = requiredEndpoints.map(endpoint => {
+    const found = registeredRoutes.find(r => 
+      r.path === endpoint.path && r.methods.includes(endpoint.method)
+    );
+    return {
+      ...endpoint,
+      available: !!found,
+      status: found ? 'ok' : 'missing'
+    };
+  });
+  
+  const availableCount = endpointStatus.filter(e => e.available).length;
+  const missingEndpoints = endpointStatus.filter(e => !e.available);
+  const allEndpointsAvailable = missingEndpoints.length === 0;
+  
+  res.json({
+    status: allEndpointsAvailable ? 'healthy' : 'degraded',
+    timestamp: new Date().toISOString(),
+    version: '2.0.0',
+    storage: stats,
+    endpoints: {
+      total: requiredEndpoints.length,
+      available: availableCount,
+      missing: missingEndpoints.length,
+      allAvailable: allEndpointsAvailable,
+      details: endpointStatus,
+      missingList: missingEndpoints.map(e => `${e.method} ${e.path}`)
+    },
+    environment: {
+      nodeVersion: process.version,
+      platform: process.platform,
+      uptime: process.uptime(),
+      memoryUsage: process.memoryUsage()
+    }
   });
 });
 
