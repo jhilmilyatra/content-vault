@@ -1,12 +1,13 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
-import { lightHaptic } from "@/lib/haptics";
+import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
   SkipBack, SkipForward, X, Sparkles
 } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface VideoPlayerProps {
   src: string;
@@ -16,9 +17,14 @@ interface VideoPlayerProps {
   crossOrigin?: boolean;
 }
 
+// Optimized easing curves per design guidelines
+const EASE_SMOOTH: [number, number, number, number] = [0.2, 0.8, 0.2, 1];
+const EASE_SPRING = { type: "spring" as const, stiffness: 400, damping: 30 };
+
 export function VideoPlayer({ src, onError, className = "", crossOrigin = true }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
   
   // Playback state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -35,10 +41,11 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
   const [showControls, setShowControls] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPortraitVideo, setIsPortraitVideo] = useState(false);
+  const [fullscreenIndicator, setFullscreenIndicator] = useState(false);
   
   // Double-tap seek
   const lastTapRef = useRef<{ time: number; x: number } | null>(null);
-  const [seekIndicator, setSeekIndicator] = useState<{ side: 'left' | 'right'; visible: boolean }>({ side: 'left', visible: false });
+  const [seekIndicator, setSeekIndicator] = useState<{ side: 'left' | 'right' | 'center'; visible: boolean }>({ side: 'left', visible: false });
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Gesture controls (volume on right, brightness on left)
@@ -49,16 +56,24 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
 
   const playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
-  // Auto-hide controls after 3 seconds
+  // Detect reduced motion preference
+  const prefersReducedMotion = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }, []);
+
+  // Auto-hide controls - adjusted timing for mobile
   const resetControlsTimeout = useCallback(() => {
     if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current);
     }
     setShowControls(true);
     controlsTimeoutRef.current = setTimeout(() => {
-      setShowControls(false);
-    }, 3000);
-  }, []);
+      if (isPlaying) {
+        setShowControls(false);
+      }
+    }, isMobile ? 4000 : 3000);
+  }, [isMobile, isPlaying]);
 
   useEffect(() => {
     return () => {
@@ -129,7 +144,7 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [volume, isPlaying, isFullscreen]);
 
-  const togglePlay = () => {
+  const togglePlay = useCallback(() => {
     const video = videoRef.current;
     if (video) {
       lightHaptic();
@@ -144,18 +159,18 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
       setIsPlaying(!isPlaying);
       resetControlsTimeout();
     }
-  };
+  }, [isPlaying, resetControlsTimeout]);
 
-  const toggleMute = () => {
+  const toggleMute = useCallback(() => {
     const video = videoRef.current;
     if (video) {
       lightHaptic();
       video.muted = !isMuted;
       setIsMuted(!isMuted);
     }
-  };
+  }, [isMuted]);
 
-  const handleVolumeChange = (value: number[]) => {
+  const handleVolumeChange = useCallback((value: number[]) => {
     const video = videoRef.current;
     if (video) {
       const newVolume = value[0];
@@ -163,17 +178,17 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
       setVolume(newVolume);
       setIsMuted(newVolume === 0);
     }
-  };
+  }, []);
 
-  const handleSeek = (value: number[]) => {
+  const handleSeek = useCallback((value: number[]) => {
     const video = videoRef.current;
     if (video) {
       video.currentTime = value[0];
       setCurrentTime(value[0]);
     }
-  };
+  }, []);
 
-  const handleTimeUpdate = () => {
+  const handleTimeUpdate = useCallback(() => {
     const video = videoRef.current;
     if (video) {
       setCurrentTime(video.currentTime);
@@ -181,9 +196,9 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
         setBuffered(video.buffered.end(video.buffered.length - 1));
       }
     }
-  };
+  }, []);
 
-  const handleLoadedMetadata = () => {
+  const handleLoadedMetadata = useCallback(() => {
     const video = videoRef.current;
     if (video) {
       setDuration(video.duration);
@@ -192,44 +207,48 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
         setIsPortraitVideo(videoHeight > videoWidth);
       }
     }
-  };
+  }, []);
 
-  const handleMediaEnded = () => {
+  const handleMediaEnded = useCallback(() => {
     setIsPlaying(false);
     setShowControls(true);
-  };
+  }, []);
 
-  const handleMediaError = () => {
+  const handleMediaError = useCallback(() => {
     setMediaError('Unable to play this file. The format may not be supported by your browser.');
     onError?.();
-  };
+  }, [onError]);
 
-  const skipForward = () => {
+  const skipForward = useCallback(() => {
     const video = videoRef.current;
     if (video) {
       lightHaptic();
       video.currentTime = Math.min(video.currentTime + 10, duration);
     }
-  };
+  }, [duration]);
 
-  const skipBackward = () => {
+  const skipBackward = useCallback(() => {
     const video = videoRef.current;
     if (video) {
       lightHaptic();
       video.currentTime = Math.max(video.currentTime - 10, 0);
     }
-  };
+  }, []);
 
-  const toggleFullscreen = () => {
+  const toggleFullscreen = useCallback(() => {
+    mediumHaptic();
     setIsFullscreen(prev => !prev);
+    setFullscreenIndicator(true);
+    setTimeout(() => setFullscreenIndicator(false), 600);
+    
     if (!isFullscreen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
     }
-  };
+  }, [isFullscreen]);
 
-  const changePlaybackSpeed = (speed: number) => {
+  const changePlaybackSpeed = useCallback((speed: number) => {
     const video = videoRef.current;
     if (video) {
       lightHaptic();
@@ -237,16 +256,16 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
       setPlaybackSpeed(speed);
       setShowSpeedMenu(false);
     }
-  };
+  }, []);
 
-  const formatTime = (time: number) => {
+  const formatTime = useCallback((time: number) => {
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-  };
+  }, []);
 
   // Handle double-tap seek / fullscreen
-  const handleVideoTap = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+  const handleVideoTap = useCallback((e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     const now = Date.now();
     const container = containerRef.current;
     const video = videoRef.current;
@@ -269,14 +288,15 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
         if (zone === 'left') {
           video.currentTime = Math.max(video.currentTime - 10, 0);
           setSeekIndicator({ side: 'left', visible: true });
-          setTimeout(() => setSeekIndicator(prev => ({ ...prev, visible: false })), 500);
+          setTimeout(() => setSeekIndicator(prev => ({ ...prev, visible: false })), 400);
         } else if (zone === 'right') {
           video.currentTime = Math.min(video.currentTime + 10, duration);
           setSeekIndicator({ side: 'right', visible: true });
-          setTimeout(() => setSeekIndicator(prev => ({ ...prev, visible: false })), 500);
+          setTimeout(() => setSeekIndicator(prev => ({ ...prev, visible: false })), 400);
         } else {
           // Center double-tap = toggle fullscreen
-          lightHaptic();
+          setSeekIndicator({ side: 'center', visible: true });
+          setTimeout(() => setSeekIndicator(prev => ({ ...prev, visible: false })), 400);
           toggleFullscreen();
         }
         lastTapRef.current = null;
@@ -291,11 +311,11 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
         togglePlay();
         lastTapRef.current = null;
       }
-    }, 300);
-  };
+    }, 280);
+  }, [duration, toggleFullscreen, togglePlay]);
 
   // Gesture handlers
-  const handleGestureStart = (e: React.TouchEvent<HTMLDivElement>) => {
+  const handleGestureStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
     const touch = e.touches[0];
     const container = containerRef.current;
     if (!container) return;
@@ -313,9 +333,9 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
         startBrightness: brightness,
       };
     }
-  };
+  }, [volume, brightness]);
 
-  const handleGestureMove = (e: React.TouchEvent<HTMLDivElement>) => {
+  const handleGestureMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
     if (!gestureStartRef.current) return;
     
     const touch = e.touches[0];
@@ -355,13 +375,16 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
       setBrightness(newBrightness);
       setGestureIndicator({ type: 'brightness', value: newBrightness, visible: true });
     }
-  };
+  }, [gestureActive]);
 
-  const handleGestureEnd = () => {
+  const handleGestureEnd = useCallback(() => {
     gestureStartRef.current = null;
     setGestureActive(false);
-    setTimeout(() => setGestureIndicator(prev => ({ ...prev, visible: false })), 800);
-  };
+    setTimeout(() => setGestureIndicator(prev => ({ ...prev, visible: false })), 600);
+  }, []);
+
+  // Animation durations based on design guidelines
+  const animationDuration = prefersReducedMotion ? 0 : 0.18;
 
   if (mediaError) {
     return (
@@ -378,7 +401,8 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
       ref={containerRef}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className={`relative w-full bg-black overflow-hidden ${
+      transition={{ duration: animationDuration }}
+      className={`relative w-full bg-black overflow-hidden will-change-transform ${
         isFullscreen 
           ? 'fixed inset-0 z-[9999] rounded-none flex items-center justify-center' 
           : isPortraitVideo 
@@ -394,19 +418,20 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
       onTouchMove={handleGestureMove}
       onTouchEnd={handleGestureEnd}
     >
-      {/* Brightness overlay */}
+      {/* Brightness overlay - GPU optimized */}
       <div 
-        className="absolute inset-0 bg-black pointer-events-none z-[1] transition-opacity duration-150"
+        className="absolute inset-0 bg-black pointer-events-none z-[1] will-change-opacity"
         style={{ opacity: 1 - brightness }}
       />
       
       {/* Gesture indicator */}
-      <AnimatePresence>
+      <AnimatePresence mode="wait">
         {gestureIndicator.visible && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
+            initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ duration: animationDuration, ease: EASE_SMOOTH }}
             className={`absolute top-1/2 -translate-y-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none ${
               gestureIndicator.type === 'volume' ? 'right-8' : 'left-8'
             }`}
@@ -420,13 +445,14 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
             </div>
             <div className="w-1.5 h-24 bg-white/20 rounded-full overflow-hidden relative">
               <motion.div 
-                className="absolute bottom-0 left-0 right-0 bg-white rounded-full"
+                className="absolute bottom-0 left-0 right-0 bg-white rounded-full will-change-transform"
                 initial={false}
                 animate={{ 
                   height: `${gestureIndicator.type === 'volume' 
                     ? gestureIndicator.value * 100 
                     : ((gestureIndicator.value - 0.2) / 1.3) * 100}%` 
                 }}
+                transition={{ duration: 0.1 }}
               />
             </div>
             <span className="text-white text-xs font-semibold">
@@ -438,7 +464,7 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
       
       {/* Video element */}
       <div 
-        className={`relative cursor-pointer z-[2] ${
+        className={`relative cursor-pointer z-[2] touch-manipulation ${
           isFullscreen 
             ? isPortraitVideo 
               ? 'h-full max-w-[56.25vh] mx-auto flex items-center justify-center' 
@@ -451,7 +477,7 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
         <video
           ref={videoRef}
           src={src}
-          className={`object-contain ${
+          className={`object-contain will-change-transform ${
             isFullscreen && isPortraitVideo ? 'h-full w-auto max-h-screen' : 'w-full h-full'
           }`}
           style={{ filter: `brightness(${brightness})` }}
@@ -468,12 +494,13 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
         />
         
         {/* Double-tap seek indicators */}
-        <AnimatePresence>
-          {seekIndicator.visible && (
+        <AnimatePresence mode="wait">
+          {seekIndicator.visible && seekIndicator.side !== 'center' && (
             <motion.div
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.15, ease: EASE_SMOOTH }}
               className={`absolute top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 pointer-events-none ${
                 seekIndicator.side === 'left' ? 'left-[15%]' : 'right-[15%]'
               }`}
@@ -491,18 +518,41 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
             </motion.div>
           )}
         </AnimatePresence>
-        
-        {/* Center play button */}
-        <AnimatePresence>
-          {!isPlaying && !seekIndicator.visible && (
+
+        {/* Fullscreen indicator */}
+        <AnimatePresence mode="wait">
+          {fullscreenIndicator && (
             <motion.div
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.15, ease: EASE_SMOOTH }}
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-50"
+            >
+              <div className="w-16 h-16 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center">
+                {isFullscreen ? (
+                  <Maximize className="w-8 h-8 text-white" />
+                ) : (
+                  <Minimize className="w-8 h-8 text-white" />
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        
+        {/* Center play button */}
+        <AnimatePresence mode="wait">
+          {!isPlaying && !seekIndicator.visible && !fullscreenIndicator && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ duration: animationDuration, ease: EASE_SMOOTH }}
               className="absolute inset-0 flex items-center justify-center bg-gradient-to-t from-black/60 via-transparent to-black/30 pointer-events-none"
             >
               <motion.div 
-                whileHover={{ scale: 1.1 }}
+                whileHover={{ scale: 1.05 }}
+                transition={EASE_SPRING}
                 className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white/95 backdrop-blur-sm flex items-center justify-center shadow-2xl"
               >
                 <Play className="w-8 h-8 sm:w-10 sm:h-10 text-black ml-1" />
@@ -513,23 +563,23 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
 
         {/* Controls overlay */}
         <motion.div 
-          initial={{ opacity: 0, y: 10 }}
+          initial={{ opacity: 0, y: 8 }}
           animate={{ 
             opacity: showControls ? 1 : 0, 
-            y: showControls ? 0 : 10,
-            pointerEvents: showControls ? 'auto' : 'none'
+            y: showControls ? 0 : 8,
           }}
-          transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
+          transition={{ duration: 0.2, ease: EASE_SMOOTH }}
+          style={{ pointerEvents: showControls ? 'auto' : 'none' }}
           className={`absolute inset-x-0 bottom-0 ${isFullscreen ? 'z-[10000]' : ''}`}
         >
           <div className={`absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent ${isFullscreen ? '' : 'backdrop-blur-sm'}`} />
           
-          <div className="relative p-3 sm:p-4">
+          <div className="relative p-3 sm:p-4 safe-area-bottom">
             {/* Progress bar */}
             <div className="mb-3 relative">
               <div className="absolute inset-0 h-1.5 rounded-full bg-white/10" />
               <div 
-                className="absolute h-1.5 rounded-full bg-white/20"
+                className="absolute h-1.5 rounded-full bg-white/20 will-change-transform"
                 style={{ width: `${(buffered / duration) * 100}%` }}
               />
               <Slider
@@ -550,28 +600,28 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1 sm:gap-2">
                 <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
+                  whileTap={{ scale: 0.92 }}
+                  transition={{ duration: 0.12 }}
                   onClick={skipBackward}
-                  className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation"
+                  className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 active:bg-white/25 transition-colors touch-manipulation"
                 >
                   <SkipBack className="w-5 h-5" />
                 </motion.button>
                 
                 <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
+                  whileTap={{ scale: 0.92 }}
+                  transition={{ duration: 0.12 }}
                   onClick={togglePlay}
-                  className="w-12 h-12 sm:w-11 sm:h-11 rounded-full bg-white/20 flex items-center justify-center text-white hover:bg-white/30 transition-all touch-manipulation"
+                  className="w-12 h-12 sm:w-11 sm:h-11 rounded-full bg-white/20 flex items-center justify-center text-white hover:bg-white/30 active:bg-white/35 transition-colors touch-manipulation"
                 >
                   {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
                 </motion.button>
                 
                 <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
+                  whileTap={{ scale: 0.92 }}
+                  transition={{ duration: 0.12 }}
                   onClick={skipForward}
-                  className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation"
+                  className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 active:bg-white/25 transition-colors touch-manipulation"
                 >
                   <SkipForward className="w-5 h-5" />
                 </motion.button>
@@ -585,28 +635,36 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
                 {/* Playback speed */}
                 <div className="relative">
                   <motion.button
-                    whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
+                    transition={{ duration: 0.12 }}
                     onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                    className="h-10 px-3 rounded-lg bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-all touch-manipulation"
+                    className="h-10 px-3 rounded-lg bg-white/10 text-white text-sm font-medium hover:bg-white/20 active:bg-white/25 transition-colors touch-manipulation"
                   >
                     {playbackSpeed}x
                   </motion.button>
-                  {showSpeedMenu && (
-                    <div className="absolute bottom-full mb-2 right-0 bg-black/80 backdrop-blur-xl rounded-xl border border-white/10 overflow-hidden min-w-[80px] z-50 shadow-xl">
-                      {playbackSpeeds.map((speed) => (
-                        <button
-                          key={speed}
-                          onClick={() => changePlaybackSpeed(speed)}
-                          className={`w-full px-4 py-3 text-sm text-left hover:bg-white/20 transition-colors touch-manipulation ${
-                            playbackSpeed === speed ? 'text-primary bg-white/10' : 'text-white'
-                          }`}
-                        >
-                          {speed}x
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <AnimatePresence>
+                    {showSpeedMenu && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 4, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 4, scale: 0.95 }}
+                        transition={{ duration: 0.15, ease: EASE_SMOOTH }}
+                        className="absolute bottom-full mb-2 right-0 bg-black/80 backdrop-blur-xl rounded-xl border border-white/10 overflow-hidden min-w-[80px] z-50 shadow-xl"
+                      >
+                        {playbackSpeeds.map((speed) => (
+                          <button
+                            key={speed}
+                            onClick={() => changePlaybackSpeed(speed)}
+                            className={`w-full px-4 py-3 text-sm text-left hover:bg-white/20 active:bg-white/25 transition-colors touch-manipulation ${
+                              playbackSpeed === speed ? 'text-primary bg-white/10' : 'text-white'
+                            }`}
+                          >
+                            {speed}x
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
 
                 {/* Volume (desktop) */}
@@ -619,7 +677,7 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
                   >
                     {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
                   </Button>
-                  <div className="w-20 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="w-20 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                     <Slider
                       value={[isMuted ? 0 : volume]}
                       min={0}
@@ -635,17 +693,17 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
                   variant="ghost"
                   size="icon"
                   onClick={toggleMute}
-                  className="sm:hidden text-white hover:bg-white/20 h-11 w-11 rounded-full touch-manipulation"
+                  className="sm:hidden text-white hover:bg-white/20 active:bg-white/25 h-11 w-11 rounded-full touch-manipulation"
                 >
                   {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
                 </Button>
 
                 {/* Fullscreen */}
                 <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
+                  whileTap={{ scale: 0.92 }}
+                  transition={{ duration: 0.12 }}
                   onClick={toggleFullscreen}
-                  className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation"
+                  className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 active:bg-white/25 transition-colors touch-manipulation"
                 >
                   {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
                 </motion.button>
@@ -656,23 +714,25 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
       </div>
       
       {/* Fullscreen close button */}
-      {isFullscreen && (
-        <motion.button
-          initial={{ opacity: 0 }}
-          animate={{ opacity: showControls ? 1 : 0 }}
-          transition={{ duration: 0.2 }}
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.9 }}
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleFullscreen();
-          }}
-          style={{ pointerEvents: showControls ? 'auto' : 'none' }}
-          className="absolute top-4 right-4 z-[10001] w-12 h-12 sm:w-11 sm:h-11 rounded-full bg-black/70 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/90 transition-all touch-manipulation active:scale-90 shadow-lg"
-        >
-          <X className="w-6 h-6 sm:w-5 sm:h-5" />
-        </motion.button>
-      )}
+      <AnimatePresence>
+        {isFullscreen && (
+          <motion.button
+            initial={{ opacity: 0 }}
+            animate={{ opacity: showControls ? 1 : 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            whileTap={{ scale: 0.92 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFullscreen();
+            }}
+            style={{ pointerEvents: showControls ? 'auto' : 'none' }}
+            className="absolute top-4 right-4 z-[10001] w-12 h-12 sm:w-11 sm:h-11 rounded-full bg-black/70 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/90 active:bg-black transition-colors touch-manipulation safe-area-inset shadow-lg"
+          >
+            <X className="w-6 h-6 sm:w-5 sm:h-5" />
+          </motion.button>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

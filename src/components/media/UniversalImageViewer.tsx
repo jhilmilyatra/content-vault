@@ -1,7 +1,8 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from "framer-motion";
 import { ZoomIn, ZoomOut, RotateCw, Maximize, Minimize, X } from "lucide-react";
-import { lightHaptic } from "@/lib/haptics";
+import { lightHaptic, mediumHaptic } from "@/lib/haptics";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface UniversalImageViewerProps {
   src: string;
@@ -13,6 +14,10 @@ interface UniversalImageViewerProps {
   hasPrev?: boolean;
   hasNext?: boolean;
 }
+
+// Optimized easing curves per design guidelines
+const EASE_SMOOTH: [number, number, number, number] = [0.2, 0.8, 0.2, 1];
+const EASE_SPRING = { type: "spring" as const, stiffness: 400, damping: 30 };
 
 export function UniversalImageViewer({
   src,
@@ -26,12 +31,14 @@ export function UniversalImageViewer({
 }: UniversalImageViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+  const isMobile = useIsMobile();
   
   // Zoom and pan state
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
+  const [showZoomIndicator, setShowZoomIndicator] = useState(false);
   
   // Motion values for smooth pan
   const panX = useMotionValue(0);
@@ -45,17 +52,29 @@ export function UniversalImageViewer({
   // Double-tap zoom state
   const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(null);
   
+  // Swipe navigation
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const swipeStartRef = useRef<{ x: number; time: number } | null>(null);
+  
   const MIN_ZOOM = 0.5;
   const MAX_ZOOM = 5;
   const DOUBLE_TAP_ZOOM = 2.5;
 
+  // Detect reduced motion preference
+  const prefersReducedMotion = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }, []);
+
+  const animationDuration = prefersReducedMotion ? 0 : 0.25;
+
   // Reset pan when zoom returns to 1
   useEffect(() => {
     if (zoom <= 1) {
-      animate(panX, 0, { duration: 0.3 });
-      animate(panY, 0, { duration: 0.3 });
+      animate(panX, 0, { duration: animationDuration, ease: EASE_SMOOTH });
+      animate(panY, 0, { duration: animationDuration, ease: EASE_SMOOTH });
     }
-  }, [zoom, panX, panY]);
+  }, [zoom, panX, panY, animationDuration]);
 
   // Reset on image change
   useEffect(() => {
@@ -63,7 +82,17 @@ export function UniversalImageViewer({
     setRotation(0);
     panX.set(0);
     panY.set(0);
+    setSwipeOffset(0);
   }, [src, panX, panY]);
+
+  // Show/hide zoom indicator
+  useEffect(() => {
+    if (zoom !== 1) {
+      setShowZoomIndicator(true);
+      const timer = setTimeout(() => setShowZoomIndicator(false), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [zoom]);
 
   // Constrain pan to image bounds
   const constrainPan = useCallback((newPanX: number, newPanY: number, currentZoom: number) => {
@@ -87,12 +116,12 @@ export function UniversalImageViewer({
   // Handle wheel zoom
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    const delta = e.deltaY > 0 ? -0.15 : 0.15;
     setZoom(prev => {
       const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prev + delta));
       if (newZoom <= 1) {
-        animate(panX, 0, { duration: 0.2 });
-        animate(panY, 0, { duration: 0.2 });
+        animate(panX, 0, { duration: 0.2, ease: EASE_SMOOTH });
+        animate(panY, 0, { duration: 0.2, ease: EASE_SMOOTH });
       }
       return newZoom;
     });
@@ -105,8 +134,8 @@ export function UniversalImageViewer({
     if (zoom > 1) {
       // Zoom out to fit
       setZoom(1);
-      animate(panX, 0, { duration: 0.3, ease: [0.32, 0.72, 0, 1] });
-      animate(panY, 0, { duration: 0.3, ease: [0.32, 0.72, 0, 1] });
+      animate(panX, 0, { duration: animationDuration, ease: EASE_SMOOTH });
+      animate(panY, 0, { duration: animationDuration, ease: EASE_SMOOTH });
     } else {
       // Zoom in to tap point
       const container = containerRef.current;
@@ -124,11 +153,11 @@ export function UniversalImageViewer({
         const constrained = constrainPan(newPanX, newPanY, DOUBLE_TAP_ZOOM);
         
         setZoom(DOUBLE_TAP_ZOOM);
-        animate(panX, constrained.x, { duration: 0.3, ease: [0.32, 0.72, 0, 1] });
-        animate(panY, constrained.y, { duration: 0.3, ease: [0.32, 0.72, 0, 1] });
+        animate(panX, constrained.x, { duration: animationDuration, ease: EASE_SMOOTH });
+        animate(panY, constrained.y, { duration: animationDuration, ease: EASE_SMOOTH });
       }
     }
-  }, [zoom, panX, panY, constrainPan]);
+  }, [zoom, panX, panY, constrainPan, animationDuration]);
 
   // Touch handlers
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -139,6 +168,7 @@ export function UniversalImageViewer({
       const distance = Math.sqrt(dx * dx + dy * dy);
       pinchStartRef.current = { distance, zoom };
       panStartRef.current = null;
+      swipeStartRef.current = null;
     } else if (e.touches.length === 1) {
       const touch = e.touches[0];
       const now = Date.now();
@@ -149,7 +179,7 @@ export function UniversalImageViewer({
         const distX = Math.abs(touch.clientX - lastTapRef.current.x);
         const distY = Math.abs(touch.clientY - lastTapRef.current.y);
         
-        if (timeDiff < 300 && distX < 30 && distY < 30) {
+        if (timeDiff < 280 && distX < 30 && distY < 30) {
           handleDoubleTap(touch.clientX, touch.clientY);
           lastTapRef.current = null;
           return;
@@ -158,8 +188,8 @@ export function UniversalImageViewer({
       
       lastTapRef.current = { time: now, x: touch.clientX, y: touch.clientY };
       
-      // Pan start (only when zoomed in)
       if (zoom > 1) {
+        // Pan start (only when zoomed in)
         panStartRef.current = {
           x: touch.clientX,
           y: touch.clientY,
@@ -167,11 +197,14 @@ export function UniversalImageViewer({
           panY: panY.get(),
         };
         setIsPanning(true);
+      } else if (hasPrev || hasNext) {
+        // Swipe navigation start
+        swipeStartRef.current = { x: touch.clientX, time: now };
       }
       
       lastTouchRef.current = { x: touch.clientX, y: touch.clientY, time: now };
     }
-  }, [zoom, panX, panY, handleDoubleTap]);
+  }, [zoom, panX, panY, handleDoubleTap, hasPrev, hasNext]);
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 2 && pinchStartRef.current) {
@@ -199,35 +232,46 @@ export function UniversalImageViewer({
       const constrained = constrainPan(newPanX, newPanY, zoom);
       panX.set(constrained.x);
       panY.set(constrained.y);
-    } else if (e.touches.length === 1 && lastTouchRef.current && zoom <= 1) {
-      // Swipe navigation (only when not zoomed)
+    } else if (e.touches.length === 1 && swipeStartRef.current && zoom <= 1) {
+      // Swipe navigation preview
       const touch = e.touches[0];
-      const deltaX = touch.clientX - lastTouchRef.current.x;
+      const deltaX = touch.clientX - swipeStartRef.current.x;
       
-      if (Math.abs(deltaX) > 50) {
-        if (deltaX > 0 && hasPrev && onNavigatePrev) {
-          onNavigatePrev();
-          lastTouchRef.current = null;
-        } else if (deltaX < 0 && hasNext && onNavigateNext) {
-          onNavigateNext();
-          lastTouchRef.current = null;
-        }
+      // Add resistance at edges
+      let offset = deltaX;
+      if ((deltaX > 0 && !hasPrev) || (deltaX < 0 && !hasNext)) {
+        offset = deltaX * 0.3; // Rubber band effect
       }
+      setSwipeOffset(offset);
     }
-  }, [zoom, panX, panY, constrainPan, hasPrev, hasNext, onNavigatePrev, onNavigateNext]);
+  }, [zoom, panX, panY, constrainPan, hasPrev, hasNext]);
 
   const handleTouchEnd = useCallback(() => {
     pinchStartRef.current = null;
     panStartRef.current = null;
     setIsPanning(false);
     
+    // Handle swipe navigation
+    if (swipeStartRef.current && zoom <= 1) {
+      const threshold = 80;
+      if (swipeOffset > threshold && hasPrev && onNavigatePrev) {
+        lightHaptic();
+        onNavigatePrev();
+      } else if (swipeOffset < -threshold && hasNext && onNavigateNext) {
+        lightHaptic();
+        onNavigateNext();
+      }
+    }
+    setSwipeOffset(0);
+    swipeStartRef.current = null;
+    
     // Snap back if zoomed out too much
     if (zoom < 1) {
       setZoom(1);
-      animate(panX, 0, { duration: 0.3 });
-      animate(panY, 0, { duration: 0.3 });
+      animate(panX, 0, { duration: animationDuration, ease: EASE_SMOOTH });
+      animate(panY, 0, { duration: animationDuration, ease: EASE_SMOOTH });
     }
-  }, [zoom, panX, panY]);
+  }, [zoom, panX, panY, swipeOffset, hasPrev, hasNext, onNavigatePrev, onNavigateNext, animationDuration]);
 
   // Mouse handlers for desktop
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -265,35 +309,35 @@ export function UniversalImageViewer({
     handleDoubleTap(e.clientX, e.clientY);
   }, [handleDoubleTap]);
 
-  const handleZoomIn = () => {
+  const handleZoomIn = useCallback(() => {
     lightHaptic();
     setZoom(prev => Math.min(MAX_ZOOM, prev + 0.5));
-  };
+  }, []);
 
-  const handleZoomOut = () => {
+  const handleZoomOut = useCallback(() => {
     lightHaptic();
     const newZoom = Math.max(MIN_ZOOM, zoom - 0.5);
     setZoom(newZoom);
     if (newZoom <= 1) {
-      animate(panX, 0, { duration: 0.2 });
-      animate(panY, 0, { duration: 0.2 });
+      animate(panX, 0, { duration: 0.2, ease: EASE_SMOOTH });
+      animate(panY, 0, { duration: 0.2, ease: EASE_SMOOTH });
     }
-  };
+  }, [zoom, panX, panY]);
 
-  const handleRotate = () => {
+  const handleRotate = useCallback(() => {
     lightHaptic();
     setRotation(prev => (prev + 90) % 360);
-  };
+  }, []);
 
-  const toggleFullscreen = () => {
-    lightHaptic();
+  const toggleFullscreen = useCallback(() => {
+    mediumHaptic();
     setIsFullscreen(prev => !prev);
     if (!isFullscreen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
     }
-  };
+  }, [isFullscreen]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -316,17 +360,23 @@ export function UniversalImageViewer({
           handleRotate();
           break;
         case 'ArrowLeft':
-          if (hasPrev && onNavigatePrev) onNavigatePrev();
+          if (hasPrev && onNavigatePrev) {
+            lightHaptic();
+            onNavigatePrev();
+          }
           break;
         case 'ArrowRight':
-          if (hasNext && onNavigateNext) onNavigateNext();
+          if (hasNext && onNavigateNext) {
+            lightHaptic();
+            onNavigateNext();
+          }
           break;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullscreen, hasPrev, hasNext, onNavigatePrev, onNavigateNext]);
+  }, [isFullscreen, hasPrev, hasNext, onNavigatePrev, onNavigateNext, handleZoomIn, handleZoomOut, handleRotate, toggleFullscreen]);
 
   // Cleanup
   useEffect(() => {
@@ -344,9 +394,14 @@ export function UniversalImageViewer({
     <>
       <motion.div 
         ref={containerRef}
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className={`relative flex items-center justify-center overflow-hidden select-none ${
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ 
+          opacity: 1, 
+          scale: 1,
+          x: swipeOffset * 0.5 
+        }}
+        transition={{ duration: animationDuration, ease: EASE_SMOOTH }}
+        className={`relative flex items-center justify-center overflow-hidden select-none will-change-transform ${
           isFullscreen 
             ? 'fixed inset-0 z-[9999] bg-black' 
             : 'flex-1 rounded-xl'
@@ -366,7 +421,7 @@ export function UniversalImageViewer({
           ref={imageRef}
           src={src}
           alt={alt}
-          className={`max-w-full max-h-[75vh] object-contain transition-none ${
+          className={`max-w-full max-h-[75vh] object-contain will-change-transform ${
             isFullscreen ? 'max-h-screen' : ''
           }`}
           style={{ transform }}
@@ -375,11 +430,12 @@ export function UniversalImageViewer({
         
         {/* Zoom level indicator */}
         <AnimatePresence>
-          {zoom !== 1 && (
+          {showZoomIndicator && zoom !== 1 && (
             <motion.div
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.15, ease: EASE_SMOOTH }}
               className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white text-sm font-medium"
             >
               {Math.round(zoom * 100)}%
@@ -390,44 +446,45 @@ export function UniversalImageViewer({
         {/* Floating controls */}
         {showControls && (
           <motion.div
-            initial={{ opacity: 0, y: -10 }}
+            initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`absolute top-4 right-4 flex items-center gap-2 ${isFullscreen ? 'z-[10001]' : ''}`}
+            transition={{ duration: animationDuration, ease: EASE_SMOOTH }}
+            className={`absolute top-4 right-4 flex items-center gap-2 ${isFullscreen ? 'z-[10001] safe-area-inset' : ''}`}
           >
             <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ duration: 0.12 }}
               onClick={handleZoomOut}
               disabled={zoom <= MIN_ZOOM}
-              className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black/70 transition-all disabled:opacity-30 touch-manipulation"
+              className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black/70 active:bg-black/80 transition-colors disabled:opacity-30 touch-manipulation"
             >
               <ZoomOut className="w-5 h-5" />
             </motion.button>
             
             <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ duration: 0.12 }}
               onClick={handleZoomIn}
               disabled={zoom >= MAX_ZOOM}
-              className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black/70 transition-all disabled:opacity-30 touch-manipulation"
+              className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black/70 active:bg-black/80 transition-colors disabled:opacity-30 touch-manipulation"
             >
               <ZoomIn className="w-5 h-5" />
             </motion.button>
             
             <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ duration: 0.12 }}
               onClick={handleRotate}
-              className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black/70 transition-all touch-manipulation"
+              className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black/70 active:bg-black/80 transition-colors touch-manipulation"
             >
               <RotateCw className="w-5 h-5" />
             </motion.button>
             
             <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ duration: 0.12 }}
               onClick={toggleFullscreen}
-              className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black/70 transition-all touch-manipulation"
+              className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black/70 active:bg-black/80 transition-colors touch-manipulation"
             >
               {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
             </motion.button>
@@ -435,27 +492,62 @@ export function UniversalImageViewer({
         )}
 
         {/* Fullscreen close button */}
-        {isFullscreen && (
-          <motion.button
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={toggleFullscreen}
-            className="absolute top-4 left-4 z-[10001] w-12 h-12 rounded-full bg-black/70 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/90 transition-all touch-manipulation"
-          >
-            <X className="w-6 h-6" />
-          </motion.button>
-        )}
+        <AnimatePresence>
+          {isFullscreen && (
+            <motion.button
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ duration: 0.15 }}
+              onClick={toggleFullscreen}
+              className="absolute top-4 left-4 z-[10001] w-12 h-12 rounded-full bg-black/70 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/90 active:bg-black transition-colors touch-manipulation safe-area-inset"
+            >
+              <X className="w-6 h-6" />
+            </motion.button>
+          )}
+        </AnimatePresence>
 
         {/* Navigation hints */}
-        {(hasPrev || hasNext) && zoom <= 1 && (
-          <div className="absolute inset-x-0 bottom-16 flex justify-center gap-2 pointer-events-none">
-            <span className="px-3 py-1 rounded-full bg-black/40 backdrop-blur-sm text-white/60 text-xs">
-              Swipe to navigate
-            </span>
-          </div>
-        )}
+        <AnimatePresence>
+          {(hasPrev || hasNext) && zoom <= 1 && !isMobile && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="absolute inset-x-0 bottom-16 flex justify-center gap-2 pointer-events-none"
+            >
+              <span className="px-3 py-1 rounded-full bg-black/40 backdrop-blur-sm text-white/60 text-xs">
+                Swipe to navigate
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Swipe progress indicator for mobile */}
+        <AnimatePresence>
+          {swipeOffset !== 0 && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: Math.min(1, Math.abs(swipeOffset) / 80) }}
+              exit={{ opacity: 0 }}
+              className={`absolute top-1/2 -translate-y-1/2 ${swipeOffset > 0 ? 'left-4' : 'right-4'} pointer-events-none`}
+            >
+              <div className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center">
+                {swipeOffset > 0 ? (
+                  <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </>
   );
