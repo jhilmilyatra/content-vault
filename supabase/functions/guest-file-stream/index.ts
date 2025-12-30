@@ -5,6 +5,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Performance tracking
+const SLOW_THRESHOLD_MS = 200;
+
 // Primary VPS storage - hardcoded same as fileService
 const VPS_CONFIG = {
   endpoint: "http://46.38.232.46:4000",
@@ -15,6 +18,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const startTime = performance.now();
 
   try {
     const { guestId, storagePath, action } = await req.json();
@@ -34,7 +39,7 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Verify guest exists and is not banned
+    // Verify guest exists and is not banned (quick check)
     const { data: guestData, error: guestError } = await supabaseAdmin
       .from("guest_users")
       .select("id, is_banned")
@@ -56,30 +61,40 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get file info from storage path
-    const { data: fileData, error: fileError } = await supabaseAdmin
-      .from("files")
-      .select("id, folder_id, user_id, name, original_name, mime_type, size_bytes")
-      .eq("storage_path", storagePath)
-      .eq("is_deleted", false)
-      .single();
+    // ✅ OPTIMIZED: Single RPC call for file access check + file info
+    const { data: accessData, error: accessError } = await supabaseAdmin
+      .rpc('check_guest_file_access', {
+        p_guest_id: guestId,
+        p_storage_path: storagePath
+      });
 
-    if (fileError || !fileData) {
-      console.error("File not found in DB:", fileError);
+    const dbTime = performance.now() - startTime;
+
+    if (accessError) {
+      console.error("Access check error:", accessError);
       return new Response(
-        JSON.stringify({ error: "File not found" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Failed to verify access" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Verify guest has access to this file's folder
-    const hasAccess = await verifyGuestFileAccess(supabaseAdmin, guestId, fileData.folder_id);
-    if (!hasAccess) {
+    const accessResult = accessData?.[0];
+    
+    if (!accessResult || !accessResult.has_access) {
       return new Response(
-        JSON.stringify({ error: "Access denied" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: accessResult?.file_id ? "Access denied" : "File not found" }),
+        { status: accessResult?.file_id ? 403 : 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    const fileData = {
+      id: accessResult.file_id,
+      folder_id: accessResult.folder_id,
+      name: accessResult.file_name,
+      original_name: accessResult.file_original_name,
+      mime_type: accessResult.file_mime_type,
+      size_bytes: accessResult.file_size,
+    };
 
     // Size limits for preview - large files should use download instead
     const MAX_PREVIEW_SIZE = 100 * 1024 * 1024; // 100MB max for preview
@@ -102,6 +117,7 @@ Deno.serve(async (req) => {
     }
 
     // Try to get file from VPS first
+    const vpsStartTime = performance.now();
     console.log(`Fetching file from VPS: ${VPS_CONFIG.endpoint}/files/${storagePath}`);
     
     try {
@@ -111,11 +127,18 @@ Deno.serve(async (req) => {
         headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` },
       });
       
+      const vpsTime = performance.now() - vpsStartTime;
+      
       if (vpsCheckResponse.ok) {
         // VPS has the file - create a proxy URL through this edge function
         const proxyUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/guest-file-proxy?guestId=${encodeURIComponent(guestId)}&path=${encodeURIComponent(storagePath)}`;
         
-        console.log(`VPS file found, returning proxy URL`);
+        const totalTime = performance.now() - startTime;
+        if (totalTime > SLOW_THRESHOLD_MS) {
+          console.warn(`⚠️ SLOW_EDGE [guest-file-stream] ${Math.round(totalTime)}ms (db: ${Math.round(dbTime)}ms, vps: ${Math.round(vpsTime)}ms)`);
+        }
+        
+        console.log(`VPS file found, returning proxy URL in ${Math.round(totalTime)}ms`);
         return new Response(
           JSON.stringify({ 
             url: proxyUrl,
@@ -124,7 +147,15 @@ Deno.serve(async (req) => {
             size: fileData.size_bytes,
             source: "vps"
           }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { 
+            status: 200, 
+            headers: { 
+              ...corsHeaders, 
+              "Content-Type": "application/json",
+              // ✅ CACHE: Cache file URL for 2 minutes
+              "Cache-Control": "public, max-age=120, stale-while-revalidate=300"
+            } 
+          }
         );
       } else {
         console.log(`VPS returned ${vpsCheckResponse.status}, trying Supabase storage`);
@@ -148,6 +179,11 @@ Deno.serve(async (req) => {
       );
     }
 
+    const totalTime = performance.now() - startTime;
+    if (totalTime > SLOW_THRESHOLD_MS) {
+      console.warn(`⚠️ SLOW_EDGE [guest-file-stream] ${Math.round(totalTime)}ms (supabase fallback)`);
+    }
+
     return new Response(
       JSON.stringify({ 
         url: signedUrlData.signedUrl,
@@ -156,7 +192,15 @@ Deno.serve(async (req) => {
         size: fileData.size_bytes,
         source: "supabase"
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { 
+        status: 200, 
+        headers: { 
+          ...corsHeaders, 
+          "Content-Type": "application/json",
+          // ✅ CACHE: Cache signed URLs (they expire in 1 hour anyway)
+          "Cache-Control": "public, max-age=120, stale-while-revalidate=300"
+        } 
+      }
     );
   } catch (error) {
     console.error("Guest file stream error:", error);
@@ -166,70 +210,3 @@ Deno.serve(async (req) => {
     );
   }
 });
-
-async function verifyGuestFileAccess(
-  supabase: any,
-  guestId: string,
-  folderId: string | null
-): Promise<boolean> {
-  if (!folderId) return false;
-
-  // Get all shared folder IDs the guest has access to
-  const { data: accessData } = await supabase
-    .from("guest_folder_access")
-    .select("folder_share_id")
-    .eq("guest_id", guestId)
-    .eq("is_restricted", false);
-
-  if (!accessData || accessData.length === 0) {
-    return false;
-  }
-
-  const folderShareIds = accessData.map((a: any) => a.folder_share_id);
-
-  // Get folder_ids from folder_shares
-  const { data: sharesData } = await supabase
-    .from("folder_shares")
-    .select("folder_id")
-    .in("id", folderShareIds)
-    .eq("is_active", true);
-
-  const sharedFolderIds = (sharesData || []).map((s: any) => s.folder_id);
-
-  if (sharedFolderIds.length === 0) {
-    return false;
-  }
-
-  // Check if file's folder is one of the shared folders
-  if (sharedFolderIds.includes(folderId)) {
-    return true;
-  }
-
-  // Check if file's folder is a subfolder of any shared folder
-  let currentId = folderId;
-  const visited = new Set<string>();
-
-  while (currentId && !visited.has(currentId)) {
-    visited.add(currentId);
-
-    const { data: currentFolder } = await supabase
-      .from("folders")
-      .select("id, parent_id")
-      .eq("id", currentId)
-      .single();
-
-    if (!currentFolder) break;
-
-    if (sharedFolderIds.includes(currentFolder.id)) {
-      return true;
-    }
-
-    if (currentFolder.parent_id && sharedFolderIds.includes(currentFolder.parent_id)) {
-      return true;
-    }
-
-    currentId = currentFolder.parent_id;
-  }
-
-  return false;
-}

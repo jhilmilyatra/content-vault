@@ -945,6 +945,18 @@ export type Database = {
         Returns: boolean
       }
       check_expired_subscriptions: { Args: never; Returns: undefined }
+      check_guest_file_access: {
+        Args: { p_guest_id: string; p_storage_path: string }
+        Returns: {
+          file_id: string
+          file_mime_type: string
+          file_name: string
+          file_original_name: string
+          file_size: number
+          folder_id: string
+          has_access: boolean
+        }[]
+      }
       create_api_token: {
         Args: {
           p_expires_at?: string
@@ -953,6 +965,46 @@ export type Database = {
           p_token_prefix: string
         }
         Returns: string
+      }
+      get_folder_breadcrumbs: {
+        Args: { p_folder_id: string; p_max_depth?: number }
+        Returns: {
+          depth: number
+          folder_id: string
+          folder_name: string
+          parent_id: string
+        }[]
+      }
+      get_folder_contents: {
+        Args: {
+          p_folder_id?: string
+          p_limit?: number
+          p_offset?: number
+          p_user_id: string
+        }
+        Returns: {
+          created_at: string
+          folder_id: string
+          id: string
+          mime_type: string
+          name: string
+          original_name: string
+          size_bytes: number
+          storage_path: string
+        }[]
+      }
+      get_guest_folders_fast: {
+        Args: { p_guest_id: string; p_limit?: number; p_offset?: number }
+        Returns: {
+          access_id: string
+          added_at: string
+          folder_description: string
+          folder_id: string
+          folder_name: string
+          folder_share_id: string
+          member_id: string
+          member_name: string
+        }[]
       }
       get_owner_user_id: { Args: never; Returns: string }
       get_upload_progress: {
@@ -975,6 +1027,15 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      increment_usage_metrics: {
+        Args: {
+          p_bandwidth?: number
+          p_downloads?: number
+          p_user_id: string
+          p_views?: number
+        }
+        Returns: undefined
       }
       record_chunk_upload: {
         Args: { p_chunk_index: number; p_upload_id: string }
@@ -1005,6 +1066,25 @@ export type Database = {
           token_id: string
           token_is_active: boolean
           token_user_id: string
+        }[]
+      }
+      verify_share_link_fast: {
+        Args: { p_short_code: string }
+        Returns: {
+          download_count: number
+          expires_at: string
+          file_id: string
+          file_mime_type: string
+          file_name: string
+          file_original_name: string
+          file_size: number
+          file_storage_path: string
+          is_valid: boolean
+          link_id: string
+          max_downloads: number
+          password_hash: string
+          requires_password: boolean
+          user_id: string
         }[]
       }
     }
