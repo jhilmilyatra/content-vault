@@ -83,3 +83,6 @@ verify_jwt = false
 
 [functions.sign-hls-url]
 verify_jwt = false
+
+[functions.update-thumbnail]
+verify_jwt = false
