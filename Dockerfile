@@ -129,8 +129,8 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
-# Install FFmpeg for HLS video transcoding
-RUN apk add --no-cache ffmpeg
+# Install FFmpeg for HLS video transcoding and serve for static files
+RUN apk add --no-cache ffmpeg && npm install -g serve
 
 # Create storage directory with proper structure
 RUN mkdir -p /app/storage /app/data
@@ -143,7 +143,7 @@ COPY vps-storage-server ./vps-storage-server
 
 # Install VPS server dependencies
 WORKDIR /app/vps-storage-server
-RUN npm install --production
+RUN npm install --omit=dev
 WORKDIR /app
 
 # ============================================
