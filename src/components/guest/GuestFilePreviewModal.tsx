@@ -271,7 +271,7 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
           <UniversalImageViewer
             src={fileUrl}
             alt={file.name}
-            showControls={false}
+            showControls={true}
           />
         );
 
