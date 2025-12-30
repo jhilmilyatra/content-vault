@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { FileItem, getFileUrl, formatFileSize } from "@/lib/fileService";
+import { FileItem, formatFileSize } from "@/lib/fileService";
 import { supabase } from "@/integrations/supabase/client";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { 
@@ -13,6 +13,8 @@ import {
   FileVideo, Sparkles
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { VideoPlayer } from "@/components/media/VideoPlayer";
+import { UniversalImageViewer } from "@/components/media/UniversalImageViewer";
 
 interface FilePreviewModalProps {
   file: FileItem | null;
@@ -639,59 +641,16 @@ export function FilePreviewModal({
     switch (fileType) {
       case "image":
         return (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            className="relative flex-1 flex items-center justify-center overflow-hidden"
-            onTouchStart={mediaFiles.length > 1 ? handleTouchStart : undefined}
-            onTouchEnd={mediaFiles.length > 1 ? handleTouchEnd : undefined}
-          >
-            <motion.img
-              key={file.id}
-              initial={{ opacity: 0, x: 50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -50 }}
-              transition={{ duration: 0.3 }}
-              src={fileUrl}
-              alt={file.name}
-              className="max-w-full max-h-[75vh] object-contain select-none"
-              style={{
-                transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                transition: 'transform 0.2s ease-out',
-              }}
-              draggable={false}
-            />
-            
-            {/* Gallery navigation arrows */}
-            {mediaFiles.length > 1 && (
-              <>
-                <motion.button
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: currentIndex > 0 ? 1 : 0.3, x: 0 }}
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => navigateGallery(-1)}
-                  disabled={currentIndex === 0}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/50 backdrop-blur-xl border border-white/10 flex items-center justify-center text-white hover:bg-black/70 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  <ChevronLeft className="w-6 h-6" />
-                </motion.button>
-                <motion.button
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: currentIndex < mediaFiles.length - 1 ? 1 : 0.3, x: 0 }}
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => navigateGallery(1)}
-                  disabled={currentIndex === mediaFiles.length - 1}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/50 backdrop-blur-xl border border-white/10 flex items-center justify-center text-white hover:bg-black/70 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  <ChevronRight className="w-6 h-6" />
-                </motion.button>
-              </>
-            )}
-          </motion.div>
+          <UniversalImageViewer
+            key={file.id}
+            src={fileUrl}
+            alt={file.name}
+            showControls={false}
+            onNavigatePrev={currentIndex > 0 ? () => navigateGallery(-1) : undefined}
+            onNavigateNext={currentIndex < mediaFiles.length - 1 ? () => navigateGallery(1) : undefined}
+            hasPrev={currentIndex > 0}
+            hasNext={currentIndex < mediaFiles.length - 1}
+          />
         );
 
       case "video":
