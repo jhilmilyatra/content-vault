@@ -5,10 +5,11 @@ import {
   Layers, Zap, FileUp, Sparkles, CloudUpload, BarChart3, Gauge, Clock, HardDrive, Grid3X3
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatFileSize, formatSpeed, formatTime, type UploadProgress, type SpeedDataPoint } from "@/lib/fileService";
+import { formatFileSize, formatSpeed, formatTime, type UploadProgress, type SpeedDataPoint, type FinalizationProgress as FinalizationProgressType } from "@/lib/fileService";
 import { lightHaptic } from "@/lib/haptics";
 import UploadSpeedGraph from "./UploadSpeedGraph";
 import ChunkStatusGrid from "./ChunkStatusGrid";
+import FinalizationProgress from "./FinalizationProgress";
 
 interface UploadProgressBarProps {
   uploads: UploadProgress[];
@@ -37,9 +38,11 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
   
   // Get adaptive settings from the first active chunked upload
   const activeChunkedUpload = uploads.find(u => u.chunked && u.status === 'uploading');
+  const processingUpload = uploads.find(u => u.chunked && u.status === 'processing');
   const adaptiveChunkSize = activeChunkedUpload?.adaptiveChunkSize;
   const adaptiveParallelChunks = activeChunkedUpload?.adaptiveParallelChunks;
   const speedHistory = activeChunkedUpload?.speedHistory || [];
+  const finalizationProgress = processingUpload?.finalizationProgress;
 
   // Track peak speed and timing
   useEffect(() => {
@@ -361,6 +364,21 @@ const UploadProgressBar = ({ uploads, onCancel }: UploadProgressBarProps) => {
               uploadedChunks={activeChunkedUpload.uploadedChunks || []}
               currentChunk={activeChunkedUpload.currentChunk}
             />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Finalization Progress */}
+      <AnimatePresence>
+        {finalizationProgress && !isComplete && !hasError && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="px-4 pb-3 border-t border-white/[0.05] pt-3"
+          >
+            <FinalizationProgress progress={finalizationProgress} />
           </motion.div>
         )}
       </AnimatePresence>
