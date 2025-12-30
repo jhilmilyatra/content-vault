@@ -152,7 +152,17 @@ Deno.serve(async (req) => {
     if (updates.validUntil !== undefined) subUpdates.valid_until = updates.validUntil;
     if (updates.isActive !== undefined) subUpdates.is_active = updates.isActive;
 
+    // Check if this is a plan upgrade (free -> premium/lifetime)
+    const isUpgrade = updates.plan && 
+      currentSub?.plan === 'free' && 
+      (updates.plan === 'premium' || updates.plan === 'lifetime');
+
     if (Object.keys(subUpdates).length > 0) {
+      // Ensure subscription is active when upgrading
+      if (isUpgrade) {
+        subUpdates.is_active = true;
+      }
+
       const { error: subUpdateError } = await supabaseAdmin
         .from("subscriptions")
         .update(subUpdates)
@@ -164,6 +174,37 @@ Deno.serve(async (req) => {
           JSON.stringify({ error: "Failed to update subscription" }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
+      }
+
+      // Auto-unsuspend when upgrading from free plan
+      if (isUpgrade) {
+        const { data: profileData } = await supabaseAdmin
+          .from("profiles")
+          .select("is_suspended")
+          .eq("user_id", targetUserId)
+          .single();
+
+        if (profileData?.is_suspended) {
+          await supabaseAdmin
+            .from("profiles")
+            .update({
+              is_suspended: false,
+              suspended_at: null,
+              suspended_by: null,
+              suspension_reason: null,
+            })
+            .eq("user_id", targetUserId);
+
+          await supabaseAdmin.from("audit_logs").insert({
+            actor_id: user.id,
+            target_user_id: targetUserId,
+            action: "auto_unsuspend_on_upgrade",
+            entity_type: "profiles",
+            details: { new_plan: updates.plan, reason: "Automatically unsuspended due to plan upgrade" },
+          });
+
+          console.log("User auto-unsuspended due to plan upgrade:", targetUserId);
+        }
       }
 
       // Log manual override
