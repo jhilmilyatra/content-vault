@@ -51,6 +51,13 @@
 # TRANSCODE_DELAY_MS     Delay between transcodes to avoid CPU overload
 #                        Default: 30000 (30 seconds)
 #
+# VPS_CALLBACK_KEY       Secret key for VPS to update database thumbnails
+#                        Default: vps-thumbnail-callback-secret
+#                        ⚠️ MUST match the secret in your Supabase edge function!
+#
+# ENABLE_THUMBNAIL_CALLBACK  Enable automatic thumbnail URL updates in database
+#                        Default: true
+#
 # DATA_PATH              Path for application data
 #                        Default: /app/data
 #
