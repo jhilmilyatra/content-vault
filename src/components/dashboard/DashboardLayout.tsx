@@ -446,6 +446,17 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
               
               <NotificationDropdown />
               
+              {/* Logout button */}
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={handleSignOut}
+                title="Sign Out"
+                className="h-9 w-9 text-white/50 hover:text-white hover:bg-white/[0.06] active:scale-95"
+              >
+                <LogOut className="w-5 h-5" />
+              </Button>
+              
               {/* Avatar */}
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#007AFF] to-[#5856D6] flex items-center justify-center text-white font-semibold text-[13px] shadow-lg shadow-[#007AFF]/20 ml-1">
                 {getInitials()}
