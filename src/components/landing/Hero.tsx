@@ -29,7 +29,7 @@ const Hero = ({ onWarpTrigger }: HeroProps) => {
           </div>
 
           <h1 className="text-5xl md:text-[90px] font-semibold tracking-tighter leading-[0.95] mb-8">
-            <span className="gradient-text">CloudVault.</span><br />
+            <span className="gradient-text-apple">CloudVault.</span><br />
             <span className="text-white/40">Content at scale.</span>
           </h1>
 
