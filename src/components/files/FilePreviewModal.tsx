@@ -66,6 +66,13 @@ export function FilePreviewModal({
   const lastTapRef = useRef<{ time: number; x: number } | null>(null);
   const [seekIndicator, setSeekIndicator] = useState<{ side: 'left' | 'right'; visible: boolean }>({ side: 'left', visible: false });
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Gesture controls state (volume on right, brightness on left)
+  const [gestureActive, setGestureActive] = useState(false);
+  const [gestureType, setGestureType] = useState<'volume' | 'brightness' | null>(null);
+  const [brightness, setBrightness] = useState(1); // 0.2 to 1.5
+  const [gestureIndicator, setGestureIndicator] = useState<{ type: 'volume' | 'brightness'; value: number; visible: boolean }>({ type: 'volume', value: 1, visible: false });
+  const gestureStartRef = useRef<{ x: number; y: number; startVolume: number; startBrightness: number } | null>(null);
 
   const playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -547,6 +554,84 @@ export function FilePreviewModal({
     }, 300);
   };
 
+  // Gesture handlers for volume/brightness swipe control
+  const handleGestureStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    const touch = e.touches[0];
+    const container = videoContainerRef.current;
+    if (!container) return;
+    
+    const rect = container.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const isRightSide = x > rect.width * 0.6;
+    const isLeftSide = x < rect.width * 0.4;
+    
+    if (isRightSide || isLeftSide) {
+      gestureStartRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        startVolume: volume,
+        startBrightness: brightness,
+      };
+    }
+  };
+
+  const handleGestureMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!gestureStartRef.current) return;
+    
+    const touch = e.touches[0];
+    const container = videoContainerRef.current;
+    if (!container) return;
+    
+    const rect = container.getBoundingClientRect();
+    const startX = gestureStartRef.current.x - rect.left;
+    const deltaY = gestureStartRef.current.y - touch.clientY; // Positive = swipe up
+    
+    // Need at least 15px vertical movement to activate gesture
+    if (Math.abs(deltaY) < 15 && !gestureActive) return;
+    
+    const isRightSide = startX > rect.width * 0.6;
+    const isLeftSide = startX < rect.width * 0.4;
+    
+    if (!isRightSide && !isLeftSide) {
+      gestureStartRef.current = null;
+      return;
+    }
+    
+    setGestureActive(true);
+    
+    // Calculate change based on vertical swipe (200px = full range)
+    const sensitivity = 200;
+    const change = deltaY / sensitivity;
+    
+    if (isRightSide) {
+      // Volume control
+      setGestureType('volume');
+      const newVolume = Math.max(0, Math.min(1, gestureStartRef.current.startVolume + change));
+      setVolume(newVolume);
+      if (videoRef.current) {
+        videoRef.current.volume = newVolume;
+        setIsMuted(newVolume === 0);
+      }
+      setGestureIndicator({ type: 'volume', value: newVolume, visible: true });
+    } else {
+      // Brightness control
+      setGestureType('brightness');
+      const newBrightness = Math.max(0.2, Math.min(1.5, gestureStartRef.current.startBrightness + change));
+      setBrightness(newBrightness);
+      setGestureIndicator({ type: 'brightness', value: newBrightness, visible: true });
+    }
+    
+    e.preventDefault(); // Prevent scrolling while adjusting
+  };
+
+  const handleGestureEnd = () => {
+    gestureStartRef.current = null;
+    setGestureActive(false);
+    setGestureType(null);
+    // Hide indicator after a delay
+    setTimeout(() => setGestureIndicator(prev => ({ ...prev, visible: false })), 800);
+  };
+
   const renderPreview = () => {
     if (!file || !fileUrl) return null;
 
@@ -632,11 +717,65 @@ export function FilePreviewModal({
                 : 'rounded-xl sm:rounded-2xl'
             }`}
             onMouseMove={resetControlsTimeout}
-            onTouchStart={resetControlsTimeout}
+            onTouchStart={(e) => {
+              resetControlsTimeout();
+              handleGestureStart(e);
+            }}
+            onTouchMove={handleGestureMove}
+            onTouchEnd={handleGestureEnd}
           >
+            {/* Brightness overlay - covers the video */}
+            <div 
+              className="absolute inset-0 bg-black pointer-events-none z-[1] transition-opacity duration-150"
+              style={{ opacity: 1 - brightness }}
+            />
+            
+            {/* Gesture indicator - Volume/Brightness */}
+            <AnimatePresence>
+              {gestureIndicator.visible && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  className={`absolute top-1/2 -translate-y-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none ${
+                    gestureIndicator.type === 'volume' ? 'right-8' : 'left-8'
+                  }`}
+                >
+                  <div className="w-14 h-14 rounded-full bg-black/60 backdrop-blur-md flex items-center justify-center">
+                    {gestureIndicator.type === 'volume' ? (
+                      gestureIndicator.value === 0 ? (
+                        <VolumeX className="w-7 h-7 text-white" />
+                      ) : (
+                        <Volume2 className="w-7 h-7 text-white" />
+                      )
+                    ) : (
+                      <Sparkles className="w-7 h-7 text-white" />
+                    )}
+                  </div>
+                  {/* Vertical progress bar */}
+                  <div className="w-1.5 h-24 bg-white/20 rounded-full overflow-hidden relative">
+                    <motion.div 
+                      className="absolute bottom-0 left-0 right-0 bg-white rounded-full"
+                      initial={false}
+                      animate={{ 
+                        height: `${gestureIndicator.type === 'volume' 
+                          ? gestureIndicator.value * 100 
+                          : ((gestureIndicator.value - 0.2) / 1.3) * 100}%` 
+                      }}
+                    />
+                  </div>
+                  <span className="text-white text-xs font-semibold">
+                    {gestureIndicator.type === 'volume' 
+                      ? `${Math.round(gestureIndicator.value * 100)}%`
+                      : `${Math.round(gestureIndicator.value * 100)}%`}
+                  </span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            
             {/* Video Wrapper - Maintains aspect ratio */}
             <div 
-              className={`relative bg-black cursor-pointer ${
+              className={`relative bg-black cursor-pointer z-[2] ${
                 isFullscreen 
                   ? 'w-full h-full flex items-center justify-center' 
                   : isPortraitVideo 
@@ -647,8 +786,8 @@ export function FilePreviewModal({
                 // padding-top creates the aspect ratio box when not fullscreen
                 paddingTop: `${aspectPadding}%`,
               } : undefined}
-              onClick={handleVideoTap}
-              onTouchEnd={handleVideoTap}
+              onClick={!gestureActive ? handleVideoTap : undefined}
+              onTouchEnd={!gestureActive ? handleVideoTap : undefined}
             >
               <video
                 ref={videoRef}
@@ -658,6 +797,7 @@ export function FilePreviewModal({
                     ? 'max-w-full max-h-full w-auto h-auto object-contain' 
                     : 'absolute inset-0 w-full h-full object-contain'
                 }`}
+                style={{ filter: `brightness(${brightness})` }}
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
                 onEnded={handleMediaEnded}
@@ -883,20 +1023,20 @@ export function FilePreviewModal({
               </motion.div>
             </div>
             
-            {/* Fullscreen close button - top right corner */}
+            {/* Fullscreen close button - top right corner - ALWAYS visible on mobile */}
             {isFullscreen && (
               <motion.button
                 initial={{ opacity: 0 }}
-                animate={{ opacity: showControls ? 1 : 0 }}
+                animate={{ opacity: 1 }}
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleFullscreen();
                 }}
-                className="absolute top-4 right-4 z-[10001] w-12 h-12 rounded-full bg-black/60 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/80 transition-all"
+                className="absolute top-4 right-4 z-[10001] w-12 h-12 sm:w-11 sm:h-11 rounded-full bg-black/70 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/90 transition-all touch-manipulation active:scale-90 shadow-lg"
               >
-                <Minimize className="w-6 h-6" />
+                <X className="w-6 h-6 sm:w-5 sm:h-5" />
               </motion.button>
             )}
           </motion.div>

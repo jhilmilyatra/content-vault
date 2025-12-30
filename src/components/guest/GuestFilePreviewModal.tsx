@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { formatFileSize } from "@/lib/fileService";
 import { 
   Download, X, FileText, File, Loader2, ZoomIn, ZoomOut, RotateCw,
-  Play, Pause, Volume2, VolumeX, Maximize, Minimize, SkipBack, SkipForward
+  Play, Pause, Volume2, VolumeX, Maximize, Minimize, SkipBack, SkipForward, Sparkles
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -57,6 +57,13 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
   
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  // Gesture controls state (volume on right, brightness on left)
+  const [gestureActive, setGestureActive] = useState(false);
+  const [gestureType, setGestureType] = useState<'volume' | 'brightness' | null>(null);
+  const [brightness, setBrightness] = useState(1); // 0.2 to 1.5
+  const [gestureIndicator, setGestureIndicator] = useState<{ type: 'volume' | 'brightness'; value: number; visible: boolean }>({ type: 'volume', value: 1, visible: false });
+  const gestureStartRef = useRef<{ x: number; y: number; startVolume: number; startBrightness: number } | null>(null);
 
   const playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
   
@@ -424,6 +431,84 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
     }, 300);
   };
 
+  // Gesture handlers for volume/brightness swipe control
+  const handleGestureStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    const touch = e.touches[0];
+    const container = videoContainerRef.current;
+    if (!container) return;
+    
+    const rect = container.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const isRightSide = x > rect.width * 0.6;
+    const isLeftSide = x < rect.width * 0.4;
+    
+    if (isRightSide || isLeftSide) {
+      gestureStartRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        startVolume: volume,
+        startBrightness: brightness,
+      };
+    }
+  };
+
+  const handleGestureMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!gestureStartRef.current) return;
+    
+    const touch = e.touches[0];
+    const container = videoContainerRef.current;
+    if (!container) return;
+    
+    const rect = container.getBoundingClientRect();
+    const startX = gestureStartRef.current.x - rect.left;
+    const deltaY = gestureStartRef.current.y - touch.clientY; // Positive = swipe up
+    
+    // Need at least 15px vertical movement to activate gesture
+    if (Math.abs(deltaY) < 15 && !gestureActive) return;
+    
+    const isRightSide = startX > rect.width * 0.6;
+    const isLeftSide = startX < rect.width * 0.4;
+    
+    if (!isRightSide && !isLeftSide) {
+      gestureStartRef.current = null;
+      return;
+    }
+    
+    setGestureActive(true);
+    
+    // Calculate change based on vertical swipe (200px = full range)
+    const sensitivity = 200;
+    const change = deltaY / sensitivity;
+    
+    if (isRightSide) {
+      // Volume control
+      setGestureType('volume');
+      const newVolume = Math.max(0, Math.min(1, gestureStartRef.current.startVolume + change));
+      setVolume(newVolume);
+      if (videoRef.current) {
+        videoRef.current.volume = newVolume;
+        setIsMuted(newVolume === 0);
+      }
+      setGestureIndicator({ type: 'volume', value: newVolume, visible: true });
+    } else {
+      // Brightness control
+      setGestureType('brightness');
+      const newBrightness = Math.max(0.2, Math.min(1.5, gestureStartRef.current.startBrightness + change));
+      setBrightness(newBrightness);
+      setGestureIndicator({ type: 'brightness', value: newBrightness, visible: true });
+    }
+    
+    e.preventDefault(); // Prevent scrolling while adjusting
+  };
+
+  const handleGestureEnd = () => {
+    gestureStartRef.current = null;
+    setGestureActive(false);
+    setGestureType(null);
+    // Hide indicator after a delay
+    setTimeout(() => setGestureIndicator(prev => ({ ...prev, visible: false })), 800);
+  };
+
   const renderPreview = () => {
     if (!file || !fileUrl) return null;
 
@@ -452,38 +537,91 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
           : (1 / videoAspectRatio) * 100;
         
         return (
-          // CRITICAL: Use block-level container, NOT flex. Flex breaks mobile video sizing.
+          // CRITICAL: Use block-level container with gesture support
           <div 
-            className="w-full bg-black rounded-xl sm:rounded-2xl overflow-hidden"
+            ref={videoContainerRef}
+            className={`relative w-full bg-black overflow-hidden ${
+              isFullscreen 
+                ? 'fixed inset-0 z-[9999] rounded-none flex items-center justify-center' 
+                : 'rounded-xl sm:rounded-2xl'
+            }`}
             onMouseEnter={() => setShowControls(true)}
             onMouseLeave={() => setShowControls(isPlaying ? false : true)}
-            onTouchStart={() => {
+            onTouchStart={(e) => {
               setShowControls(true);
-              // Auto-hide after 3s on mobile
+              handleGestureStart(e);
               if (isPlaying) {
                 setTimeout(() => setShowControls(false), 3000);
               }
             }}
+            onTouchMove={handleGestureMove}
+            onTouchEnd={handleGestureEnd}
           >
-            {/* Video Container - Fixed aspect ratio frame (YouTube/Netflix pattern) */}
-            {/* Using padding-top hack: the container has 0 height, padding creates the space */}
+            {/* Brightness overlay - covers the video */}
             <div 
-              ref={videoContainerRef}
-              className={`relative w-full bg-black ${
-                isPortraitVideo ? 'mx-auto max-w-[70%] sm:max-w-[50%]' : ''
+              className="absolute inset-0 bg-black pointer-events-none z-[1] transition-opacity duration-150"
+              style={{ opacity: 1 - brightness }}
+            />
+            
+            {/* Gesture indicator - Volume/Brightness */}
+            {gestureIndicator.visible && (
+              <div
+                className={`absolute top-1/2 -translate-y-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none transition-opacity ${
+                  gestureIndicator.type === 'volume' ? 'right-8' : 'left-8'
+                }`}
+              >
+                <div className="w-14 h-14 rounded-full bg-black/60 backdrop-blur-md flex items-center justify-center">
+                  {gestureIndicator.type === 'volume' ? (
+                    gestureIndicator.value === 0 ? (
+                      <VolumeX className="w-7 h-7 text-white" />
+                    ) : (
+                      <Volume2 className="w-7 h-7 text-white" />
+                    )
+                  ) : (
+                    <Sparkles className="w-7 h-7 text-white" />
+                  )}
+                </div>
+                {/* Vertical progress bar */}
+                <div className="w-1.5 h-24 bg-white/20 rounded-full overflow-hidden relative">
+                  <div 
+                    className="absolute bottom-0 left-0 right-0 bg-white rounded-full transition-all"
+                    style={{ 
+                      height: `${gestureIndicator.type === 'volume' 
+                        ? gestureIndicator.value * 100 
+                        : ((gestureIndicator.value - 0.2) / 1.3) * 100}%` 
+                    }}
+                  />
+                </div>
+                <span className="text-white text-xs font-semibold">
+                  {Math.round(gestureIndicator.value * 100)}%
+                </span>
+              </div>
+            )}
+            
+            {/* Video Container - Fixed aspect ratio frame */}
+            <div 
+              className={`relative bg-black cursor-pointer z-[2] ${
+                isFullscreen 
+                  ? 'w-full h-full flex items-center justify-center' 
+                  : isPortraitVideo 
+                    ? 'mx-auto max-w-[70%] sm:max-w-[50%] w-full' 
+                    : 'w-full'
               }`}
-              style={{ 
-                // CRITICAL: padding-top creates the aspect ratio box
-                // Height is implicitly 0, padding creates the visual height
+              style={!isFullscreen ? { 
                 paddingTop: `${aspectPadding}%`,
-              }}
-              onClick={handleVideoTap}
-              onTouchEnd={handleVideoTap}
+              } : undefined}
+              onClick={!gestureActive ? handleVideoTap : undefined}
+              onTouchEnd={!gestureActive ? handleVideoTap : undefined}
             >
               <video
                 ref={videoRef}
                 src={fileUrl}
-                className="absolute inset-0 w-full h-full object-contain"
+                className={`${
+                  isFullscreen 
+                    ? 'max-w-full max-h-full w-auto h-auto object-contain' 
+                    : 'absolute inset-0 w-full h-full object-contain'
+                }`}
+                style={{ filter: `brightness(${brightness})` }}
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
                 onEnded={handleMediaEnded}
@@ -678,18 +816,16 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
               </div>
             </div>
             
-            {/* Fullscreen close button - top right corner */}
+            {/* Fullscreen close button - top right corner - ALWAYS visible on mobile */}
             {isFullscreen && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleFullscreen();
                 }}
-                className={`absolute top-4 right-4 z-[10001] w-12 h-12 rounded-full bg-black/60 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/80 transition-all ${
-                  showControls ? 'opacity-100' : 'opacity-0'
-                }`}
+                className="absolute top-4 right-4 z-[10001] w-12 h-12 sm:w-11 sm:h-11 rounded-full bg-black/70 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/90 transition-all touch-manipulation active:scale-90 shadow-lg"
               >
-                <Minimize className="w-6 h-6" />
+                <X className="w-6 h-6 sm:w-5 sm:h-5" />
               </button>
             )}
           </div>
