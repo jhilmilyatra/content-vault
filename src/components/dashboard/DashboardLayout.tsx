@@ -27,9 +27,19 @@ import {
   Activity,
   ArrowLeft,
   Plus,
+  User,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -446,21 +456,76 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
               
               <NotificationDropdown />
               
-              {/* Logout button */}
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={handleSignOut}
-                title="Sign Out"
-                className="h-9 w-9 text-white/50 hover:text-white hover:bg-white/[0.06] active:scale-95"
-              >
-                <LogOut className="w-5 h-5" />
-              </Button>
-              
-              {/* Avatar */}
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#007AFF] to-[#5856D6] flex items-center justify-center text-white font-semibold text-[13px] shadow-lg shadow-[#007AFF]/20 ml-1">
-                {getInitials()}
-              </div>
+              {/* User Dropdown Menu */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    className="h-9 px-2 gap-2 text-white/70 hover:text-white hover:bg-white/[0.06] active:scale-95"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#007AFF] to-[#5856D6] flex items-center justify-center text-white font-semibold text-[13px] shadow-lg shadow-[#007AFF]/20">
+                      {getInitials()}
+                    </div>
+                    <ChevronDown className="w-4 h-4 text-white/50" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent 
+                  align="end" 
+                  className="w-56 bg-black/95 backdrop-blur-xl border-white/10"
+                >
+                  <DropdownMenuLabel className="font-normal">
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm font-medium text-white">
+                        {profile?.full_name || "User"}
+                      </p>
+                      <p className="text-xs text-white/50 truncate">
+                        {profile?.email}
+                      </p>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator className="bg-white/10" />
+                  <DropdownMenuItem 
+                    onClick={() => {
+                      lightHaptic();
+                      navigate("/dashboard/settings");
+                    }}
+                    className="text-white/70 hover:text-white hover:bg-white/[0.06] cursor-pointer"
+                  >
+                    <User className="mr-2 h-4 w-4" />
+                    <span>Profile Settings</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => {
+                      lightHaptic();
+                      navigate("/dashboard/settings");
+                    }}
+                    className="text-white/70 hover:text-white hover:bg-white/[0.06] cursor-pointer"
+                  >
+                    <Settings className="mr-2 h-4 w-4" />
+                    <span>Account Settings</span>
+                  </DropdownMenuItem>
+                  {role === "member" && (
+                    <DropdownMenuItem 
+                      onClick={() => {
+                        lightHaptic();
+                        navigate("/dashboard/plans");
+                      }}
+                      className="text-white/70 hover:text-white hover:bg-white/[0.06] cursor-pointer"
+                    >
+                      <CreditCard className="mr-2 h-4 w-4" />
+                      <span>Subscription</span>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator className="bg-white/10" />
+                  <DropdownMenuItem 
+                    onClick={handleSignOut}
+                    className="text-red-400 hover:text-red-300 hover:bg-red-500/10 cursor-pointer"
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Sign Out</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
