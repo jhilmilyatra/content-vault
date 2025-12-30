@@ -5,10 +5,12 @@ import { Slider } from "@/components/ui/slider";
 import { supabase } from "@/integrations/supabase/client";
 import { formatFileSize } from "@/lib/fileService";
 import { 
-  Download, X, FileText, File, Loader2, ZoomIn, ZoomOut, RotateCw,
-  Play, Pause, Volume2, VolumeX, Maximize, Minimize, SkipBack, SkipForward, Sparkles
+  Download, X, FileText, File, Loader2,
+  Play, Pause, Volume2, VolumeX, SkipBack, SkipForward
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { VideoPlayer } from "@/components/media/VideoPlayer";
+import { UniversalImageViewer } from "@/components/media/UniversalImageViewer";
 
 interface GuestFileItem {
   id: string;
@@ -30,60 +32,19 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [zoom, setZoom] = useState(1);
-  const [rotation, setRotation] = useState(0);
+  const [mediaError, setMediaError] = useState<string | null>(null);
 
-  // Video/Audio player state
-  const videoRef = useRef<HTMLVideoElement>(null);
+  // Audio player state
   const audioRef = useRef<HTMLAudioElement>(null);
-  const videoContainerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
-  const [showControls, setShowControls] = useState(true);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
-  const [mediaError, setMediaError] = useState<string | null>(null);
-  
-  // Video aspect ratio detection
-  const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9); // Default 16:9
-  const [isPortraitVideo, setIsPortraitVideo] = useState(false);
-  
-  // Double-tap seek state
-  const lastTapRef = useRef<{ time: number; x: number } | null>(null);
-  const [seekIndicator, setSeekIndicator] = useState<{ side: 'left' | 'right'; visible: boolean }>({ side: 'left', visible: false });
-  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Fullscreen state
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  
-  // Gesture controls state (volume on right, brightness on left)
-  const [gestureActive, setGestureActive] = useState(false);
-  const [gestureType, setGestureType] = useState<'volume' | 'brightness' | null>(null);
-  const [brightness, setBrightness] = useState(1); // 0.2 to 1.5
-  const [gestureIndicator, setGestureIndicator] = useState<{ type: 'volume' | 'brightness'; value: number; visible: boolean }>({ type: 'volume', value: 1, visible: false });
-  const gestureStartRef = useRef<{ x: number; y: number; startVolume: number; startBrightness: number } | null>(null);
-  
-  // Handle controls auto-hide (3 seconds timeout)
-  const resetControlsTimeout = () => {
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-    }
-    setShowControls(true);
-    controlsTimeoutRef.current = setTimeout(() => {
-      setShowControls(false);
-    }, 3000);
-  };
 
   const playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
-  
-  // Get current media ref (video or audio)
-  const getMediaRef = () => {
-    const fileType = file ? getFileType(file.mime_type) : "other";
-    return fileType === 'audio' ? audioRef.current : videoRef.current;
-  };
 
   useEffect(() => {
     if (open && file) {
@@ -94,99 +55,19 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
         URL.revokeObjectURL(fileUrl);
       }
       setFileUrl(null);
-      setZoom(1);
-      setRotation(0);
       setIsPlaying(false);
       setCurrentTime(0);
       setDuration(0);
       setPlaybackSpeed(1);
       setShowSpeedMenu(false);
       setMediaError(null);
-      setIsFullscreen(false);
-      // Restore body scroll when modal closes
-      document.body.style.overflow = '';
     }
-    
-    return () => {
-      // Ensure body scroll is restored on unmount
-      document.body.style.overflow = '';
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-      }
-    };
   }, [open, file]);
-
-  // Keyboard shortcuts for video/audio player
-  useEffect(() => {
-    if (!open || !file) return;
-    
-    const fileType = getFileType(file.mime_type);
-    if (fileType !== 'video' && fileType !== 'audio') return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is typing in an input
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      
-      const media = getMediaRef();
-      if (!media) return;
-      
-      switch (e.code) {
-        case 'Space':
-          e.preventDefault();
-          togglePlay();
-          break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          skipBackward();
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          skipForward();
-          break;
-        case 'ArrowUp':
-          e.preventDefault();
-          {
-            const newVol = Math.min(volume + 0.1, 1);
-            media.volume = newVol;
-            setVolume(newVol);
-            setIsMuted(false);
-          }
-          break;
-        case 'ArrowDown':
-          e.preventDefault();
-          {
-            const newVol = Math.max(volume - 0.1, 0);
-            media.volume = newVol;
-            setVolume(newVol);
-            if (newVol === 0) setIsMuted(true);
-          }
-          break;
-        case 'KeyM':
-          e.preventDefault();
-          toggleMute();
-          break;
-        case 'KeyF':
-          e.preventDefault();
-          if (fileType === 'video') toggleFullscreen();
-          break;
-        case 'Escape':
-          if (isFullscreen) {
-            e.preventDefault();
-            toggleFullscreen();
-          }
-          break;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, file, volume, isPlaying, duration, isFullscreen]);
 
   const loadFileUrl = async () => {
     if (!file || !guestId) return;
     setLoading(true);
     try {
-      // Use guest file streaming edge function
       const response = await supabase.functions.invoke('guest-file-stream', {
         body: {
           guestId,
@@ -199,7 +80,6 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
         throw new Error(response.error.message || 'Failed to get file URL');
       }
 
-      // Handle large file case
       if (response.data?.suggestDownload) {
         toast({
           title: "File too large for preview",
@@ -214,7 +94,6 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
       if (response.data?.url) {
         setFileUrl(response.data.url);
       } else if (response.data?.blob) {
-        // If we get blob data directly
         const blob = new Blob([response.data.blob], { type: file.mime_type });
         const blobUrl = URL.createObjectURL(blob);
         setFileUrl(blobUrl);
@@ -248,7 +127,6 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
         throw new Error(response.error.message || 'Failed to download file');
       }
 
-      // Create download link
       if (response.data?.url) {
         const a = document.createElement("a");
         a.href = response.data.url;
@@ -279,7 +157,6 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
     if (mimeType.startsWith("video/")) return "video";
     if (mimeType.startsWith("audio/")) return "audio";
     if (mimeType === "application/pdf") return "pdf";
-    // Handle common video formats that might have wrong mime types
     const videoExtensions = ['.mp4', '.webm', '.ogg', '.ogv', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v'];
     const audioExtensions = ['.mp3', '.wav', '.ogg', '.oga', '.flac', '.aac', '.m4a', '.wma'];
     if (file) {
@@ -290,14 +167,14 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
     return "other";
   };
 
-  // Media player controls - work for both video and audio
+  // Audio player controls
   const togglePlay = () => {
-    const media = getMediaRef();
-    if (media) {
+    const audio = audioRef.current;
+    if (audio) {
       if (isPlaying) {
-        media.pause();
+        audio.pause();
       } else {
-        media.play().catch(err => {
+        audio.play().catch(err => {
           console.error('Playback error:', err);
           setMediaError('Unable to play this file. The format may not be supported.');
         });
@@ -307,52 +184,42 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
   };
 
   const toggleMute = () => {
-    const media = getMediaRef();
-    if (media) {
-      media.muted = !isMuted;
+    const audio = audioRef.current;
+    if (audio) {
+      audio.muted = !isMuted;
       setIsMuted(!isMuted);
     }
   };
 
   const handleVolumeChange = (value: number[]) => {
-    const media = getMediaRef();
-    if (media) {
+    const audio = audioRef.current;
+    if (audio) {
       const newVolume = value[0];
-      media.volume = newVolume;
+      audio.volume = newVolume;
       setVolume(newVolume);
       setIsMuted(newVolume === 0);
     }
   };
 
   const handleSeek = (value: number[]) => {
-    const media = getMediaRef();
-    if (media) {
-      media.currentTime = value[0];
+    const audio = audioRef.current;
+    if (audio) {
+      audio.currentTime = value[0];
       setCurrentTime(value[0]);
     }
   };
 
   const handleTimeUpdate = () => {
-    const media = getMediaRef();
-    if (media) {
-      setCurrentTime(media.currentTime);
+    const audio = audioRef.current;
+    if (audio) {
+      setCurrentTime(audio.currentTime);
     }
   };
 
   const handleLoadedMetadata = () => {
-    const media = getMediaRef();
-    if (media) {
-      setDuration(media.duration);
-      
-      // Detect video aspect ratio
-      if (media instanceof HTMLVideoElement) {
-        const { videoWidth, videoHeight } = media;
-        if (videoWidth && videoHeight) {
-          const ratio = videoWidth / videoHeight;
-          setVideoAspectRatio(ratio);
-          setIsPortraitVideo(ratio < 1); // Portrait if width < height
-        }
-      }
+    const audio = audioRef.current;
+    if (audio) {
+      setDuration(audio.duration);
     }
   };
 
@@ -365,35 +232,23 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
   };
 
   const skipForward = () => {
-    const media = getMediaRef();
-    if (media) {
-      media.currentTime = Math.min(media.currentTime + 10, duration);
+    const audio = audioRef.current;
+    if (audio) {
+      audio.currentTime = Math.min(audio.currentTime + 10, duration);
     }
   };
 
   const skipBackward = () => {
-    const media = getMediaRef();
-    if (media) {
-      media.currentTime = Math.max(media.currentTime - 10, 0);
-    }
-  };
-
-  const toggleFullscreen = () => {
-    // Use our own fullscreen state for better mobile control with visible controls
-    setIsFullscreen(prev => !prev);
-    
-    // Lock/unlock body scroll
-    if (!isFullscreen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
+    const audio = audioRef.current;
+    if (audio) {
+      audio.currentTime = Math.max(audio.currentTime - 10, 0);
     }
   };
 
   const changePlaybackSpeed = (speed: number) => {
-    const media = getMediaRef();
-    if (media) {
-      media.playbackRate = speed;
+    const audio = audioRef.current;
+    if (audio) {
+      audio.playbackRate = speed;
       setPlaybackSpeed(speed);
       setShowSpeedMenu(false);
     }
@@ -405,125 +260,6 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
 
-  // Handle double-tap seek
-  const handleVideoTap = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
-    const now = Date.now();
-    const container = videoContainerRef.current;
-    if (!container || !videoRef.current) return;
-
-    const rect = container.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.changedTouches[0].clientX : e.clientX;
-    const x = clientX - rect.left;
-    const isLeftSide = x < rect.width / 2;
-
-    // Check for double-tap (within 300ms and same side)
-    if (lastTapRef.current && now - lastTapRef.current.time < 300) {
-      const wasLeftSide = lastTapRef.current.x < rect.width / 2;
-      if (isLeftSide === wasLeftSide) {
-        // Double-tap detected
-        if (isLeftSide) {
-          videoRef.current.currentTime = Math.max(videoRef.current.currentTime - 10, 0);
-          setSeekIndicator({ side: 'left', visible: true });
-        } else {
-          videoRef.current.currentTime = Math.min(videoRef.current.currentTime + 10, duration);
-          setSeekIndicator({ side: 'right', visible: true });
-        }
-        // Hide indicator after animation
-        setTimeout(() => setSeekIndicator(prev => ({ ...prev, visible: false })), 500);
-        lastTapRef.current = null;
-        return;
-      }
-    }
-
-    lastTapRef.current = { time: now, x };
-    
-    // Single tap toggles play/pause after a delay (if not double-tap)
-    setTimeout(() => {
-      if (lastTapRef.current && now === lastTapRef.current.time) {
-        togglePlay();
-        lastTapRef.current = null;
-      }
-    }, 300);
-  };
-
-  // Gesture handlers for volume/brightness swipe control
-  const handleGestureStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    const touch = e.touches[0];
-    const container = videoContainerRef.current;
-    if (!container) return;
-    
-    const rect = container.getBoundingClientRect();
-    const x = touch.clientX - rect.left;
-    const isRightSide = x > rect.width * 0.6;
-    const isLeftSide = x < rect.width * 0.4;
-    
-    if (isRightSide || isLeftSide) {
-      gestureStartRef.current = {
-        x: touch.clientX,
-        y: touch.clientY,
-        startVolume: volume,
-        startBrightness: brightness,
-      };
-    }
-  };
-
-  const handleGestureMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (!gestureStartRef.current) return;
-    
-    const touch = e.touches[0];
-    const container = videoContainerRef.current;
-    if (!container) return;
-    
-    const rect = container.getBoundingClientRect();
-    const startX = gestureStartRef.current.x - rect.left;
-    const deltaY = gestureStartRef.current.y - touch.clientY; // Positive = swipe up
-    
-    // Need at least 15px vertical movement to activate gesture
-    if (Math.abs(deltaY) < 15 && !gestureActive) return;
-    
-    const isRightSide = startX > rect.width * 0.6;
-    const isLeftSide = startX < rect.width * 0.4;
-    
-    if (!isRightSide && !isLeftSide) {
-      gestureStartRef.current = null;
-      return;
-    }
-    
-    setGestureActive(true);
-    
-    // Calculate change based on vertical swipe (200px = full range)
-    const sensitivity = 200;
-    const change = deltaY / sensitivity;
-    
-    if (isRightSide) {
-      // Volume control
-      setGestureType('volume');
-      const newVolume = Math.max(0, Math.min(1, gestureStartRef.current.startVolume + change));
-      setVolume(newVolume);
-      if (videoRef.current) {
-        videoRef.current.volume = newVolume;
-        setIsMuted(newVolume === 0);
-      }
-      setGestureIndicator({ type: 'volume', value: newVolume, visible: true });
-    } else {
-      // Brightness control
-      setGestureType('brightness');
-      const newBrightness = Math.max(0.2, Math.min(1.5, gestureStartRef.current.startBrightness + change));
-      setBrightness(newBrightness);
-      setGestureIndicator({ type: 'brightness', value: newBrightness, visible: true });
-    }
-    
-    e.preventDefault(); // Prevent scrolling while adjusting
-  };
-
-  const handleGestureEnd = () => {
-    gestureStartRef.current = null;
-    setGestureActive(false);
-    setGestureType(null);
-    // Hide indicator after a delay
-    setTimeout(() => setGestureIndicator(prev => ({ ...prev, visible: false })), 800);
-  };
-
   const renderPreview = () => {
     if (!file || !fileUrl) return null;
 
@@ -532,309 +268,19 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
     switch (fileType) {
       case "image":
         return (
-          <div className="flex-1 flex items-center justify-center overflow-hidden bg-black/20 rounded-lg">
-            <img
-              src={fileUrl}
-              alt={file.name}
-              className="max-w-full max-h-[70vh] object-contain transition-transform duration-200"
-              style={{
-                transform: `scale(${zoom}) rotate(${rotation}deg)`,
-              }}
-            />
-          </div>
+          <UniversalImageViewer
+            src={fileUrl}
+            alt={file.name}
+            showControls={false}
+          />
         );
 
       case "video":
-        // Calculate aspect ratio for the video
-        // For portrait videos on mobile, cap the height to avoid too tall containers
-        // YouTube/Netflix-style: Portrait videos get max-height constraint, landscape get aspect-video
-        // This prevents layout jumps and half-screen bugs on mobile
-        
         return (
-          // CRITICAL: Use block-level container with gesture support
-          <div 
-            ref={videoContainerRef}
-            className={`relative w-full bg-black overflow-hidden ${
-              isFullscreen 
-                ? 'fixed inset-0 z-[9999] rounded-none flex items-center justify-center' 
-                : isPortraitVideo 
-                  ? 'aspect-[9/16] max-h-[70vh] mx-auto' // Portrait: constrained height like YouTube
-                  : 'aspect-video' // Landscape: standard 16:9 container
-            } rounded-xl sm:rounded-2xl`}
-            onMouseEnter={resetControlsTimeout}
-            onClick={resetControlsTimeout}
-            onTouchStart={(e) => {
-              resetControlsTimeout();
-              handleGestureStart(e);
-            }}
-            onTouchMove={handleGestureMove}
-            onTouchEnd={handleGestureEnd}
-          >
-            {/* Brightness overlay - covers the video */}
-            <div 
-              className="absolute inset-0 bg-black pointer-events-none z-[1] transition-opacity duration-150"
-              style={{ opacity: 1 - brightness }}
-            />
-            
-            {/* Gesture indicator - Volume/Brightness */}
-            {gestureIndicator.visible && (
-              <div
-                className={`absolute top-1/2 -translate-y-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none transition-opacity ${
-                  gestureIndicator.type === 'volume' ? 'right-8' : 'left-8'
-                }`}
-              >
-                <div className="w-14 h-14 rounded-full bg-black/60 backdrop-blur-md flex items-center justify-center">
-                  {gestureIndicator.type === 'volume' ? (
-                    gestureIndicator.value === 0 ? (
-                      <VolumeX className="w-7 h-7 text-white" />
-                    ) : (
-                      <Volume2 className="w-7 h-7 text-white" />
-                    )
-                  ) : (
-                    <Sparkles className="w-7 h-7 text-white" />
-                  )}
-                </div>
-                {/* Vertical progress bar */}
-                <div className="w-1.5 h-24 bg-white/20 rounded-full overflow-hidden relative">
-                  <div 
-                    className="absolute bottom-0 left-0 right-0 bg-white rounded-full transition-all"
-                    style={{ 
-                      height: `${gestureIndicator.type === 'volume' 
-                        ? gestureIndicator.value * 100 
-                        : ((gestureIndicator.value - 0.2) / 1.3) * 100}%` 
-                    }}
-                  />
-                </div>
-                <span className="text-white text-xs font-semibold">
-                  {Math.round(gestureIndicator.value * 100)}%
-                </span>
-              </div>
-            )}
-            
-            {/* Video Element - object-contain for proper scaling */}
-            <div 
-              className={`relative cursor-pointer z-[2] ${
-                isFullscreen 
-                  ? 'w-full h-full flex items-center justify-center' 
-                  : 'w-full h-full'
-              }`}
-              onClick={!gestureActive ? handleVideoTap : undefined}
-              onTouchEnd={!gestureActive ? handleVideoTap : undefined}
-            >
-              <video
-                ref={videoRef}
-                src={fileUrl}
-                className="w-full h-full object-contain"
-                style={{ filter: `brightness(${brightness})` }}
-                onTimeUpdate={handleTimeUpdate}
-                onLoadedMetadata={handleLoadedMetadata}
-                onEnded={handleMediaEnded}
-                onError={handleMediaError}
-                onPlay={() => setIsPlaying(true)}
-                onPause={() => setIsPlaying(false)}
-                playsInline
-                crossOrigin="anonymous"
-                preload="metadata"
-                controlsList="nodownload"
-              />
-              
-              {/* Double-tap seek indicators - YouTube style */}
-              {seekIndicator.visible && (
-                <div 
-                  className={`absolute top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 animate-fade-in pointer-events-none ${
-                    seekIndicator.side === 'left' ? 'left-[15%]' : 'right-[15%]'
-                  }`}
-                >
-                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center">
-                    {seekIndicator.side === 'left' ? (
-                      <SkipBack className="w-7 h-7 sm:w-8 sm:h-8 text-white" />
-                    ) : (
-                      <SkipForward className="w-7 h-7 sm:w-8 sm:h-8 text-white" />
-                    )}
-                  </div>
-                  <span className="text-white text-sm font-semibold drop-shadow-lg">
-                    {seekIndicator.side === 'left' ? '-10s' : '+10s'}
-                  </span>
-                </div>
-              )}
-              
-              {/* Center play button - Netflix style */}
-              {!isPlaying && !seekIndicator.visible && (
-                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-t from-black/60 via-transparent to-black/30 transition-opacity duration-200 pointer-events-none">
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white/95 backdrop-blur-sm flex items-center justify-center shadow-2xl">
-                    <Play className="w-8 h-8 sm:w-10 sm:h-10 text-black ml-1" />
-                  </div>
-                </div>
-              )}
-
-              {/* Glass Controls Overlay - YouTube/Netflix style - ALWAYS visible in fullscreen */}
-              <div 
-                className={`absolute inset-x-0 bottom-0 transition-all duration-200 ease-out ${
-                  showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'
-                } ${isFullscreen ? 'z-[10000]' : ''}`}
-              >
-                {/* Glass background */}
-                <div className={`absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent ${isFullscreen ? '' : 'backdrop-blur-sm'}`} />
-                
-                <div className="relative p-3 sm:p-4">
-                  {/* Progress bar with larger touch target */}
-                  <div className="mb-3">
-                    <Slider
-                      value={[currentTime]}
-                      min={0}
-                      max={duration || 100}
-                      step={0.1}
-                      onValueChange={handleSeek}
-                      className="cursor-pointer touch-manipulation [&_[role=slider]]:h-5 [&_[role=slider]]:w-5 sm:[&_[role=slider]]:h-4 sm:[&_[role=slider]]:w-4 [&_[role=slider]]:border-2 [&_[role=slider]]:border-white [&_[role=slider]]:bg-white"
-                    />
-                    {/* Mobile time display */}
-                    <div className="flex justify-between text-xs text-white/80 mt-2 sm:hidden font-medium tabular-nums">
-                      <span>{formatTime(currentTime)}</span>
-                      <span>{formatTime(duration)}</span>
-                    </div>
-                  </div>
-
-                  {/* Control buttons - Glass style */}
-                  <div className="flex items-center justify-between">
-                    {/* Left controls */}
-                    <div className="flex items-center gap-1 sm:gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={skipBackward}
-                        className="text-white hover:bg-white/20 h-11 w-11 sm:h-10 sm:w-10 rounded-full touch-manipulation active:scale-90 transition-transform"
-                      >
-                        <SkipBack className="w-5 h-5" />
-                      </Button>
-                      
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={togglePlay}
-                        className="text-white bg-white/10 hover:bg-white/20 h-12 w-12 sm:h-11 sm:w-11 rounded-full touch-manipulation active:scale-90 transition-transform"
-                      >
-                        {isPlaying ? (
-                          <Pause className="w-6 h-6" />
-                        ) : (
-                          <Play className="w-6 h-6 ml-0.5" />
-                        )}
-                      </Button>
-                      
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={skipForward}
-                        className="text-white hover:bg-white/20 h-11 w-11 sm:h-10 sm:w-10 rounded-full touch-manipulation active:scale-90 transition-transform"
-                      >
-                        <SkipForward className="w-5 h-5" />
-                      </Button>
-
-                      {/* Desktop time display */}
-                      <span className="hidden sm:inline text-white/80 text-sm ml-3 font-medium tabular-nums">
-                        {formatTime(currentTime)} / {formatTime(duration)}
-                      </span>
-                    </div>
-
-                    {/* Right controls */}
-                    <div className="flex items-center gap-1 sm:gap-2">
-                      {/* Playback speed - glass button */}
-                      <div className="relative">
-                        <Button
-                          variant="ghost"
-                          onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                          className="text-white hover:bg-white/20 h-10 px-3 rounded-lg text-sm font-medium touch-manipulation"
-                        >
-                          {playbackSpeed}x
-                        </Button>
-                        {showSpeedMenu && (
-                          <div className="absolute bottom-full mb-2 right-0 bg-black/80 backdrop-blur-xl rounded-xl border border-white/10 overflow-hidden min-w-[80px] z-50 shadow-xl">
-                            {playbackSpeeds.map((speed) => (
-                              <button
-                                key={speed}
-                                onClick={() => changePlaybackSpeed(speed)}
-                                className={`w-full px-4 py-3 text-sm text-left hover:bg-white/20 transition-colors touch-manipulation ${
-                                  playbackSpeed === speed ? 'text-primary bg-white/10' : 'text-white'
-                                }`}
-                              >
-                                {speed}x
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Volume - hidden on mobile */}
-                      <div className="hidden sm:flex items-center gap-2 group">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={toggleMute}
-                          className="text-white hover:bg-white/20 h-10 w-10 rounded-full"
-                        >
-                          {isMuted || volume === 0 ? (
-                            <VolumeX className="w-5 h-5" />
-                          ) : (
-                            <Volume2 className="w-5 h-5" />
-                          )}
-                        </Button>
-                        <div className="w-20 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Slider
-                            value={[isMuted ? 0 : volume]}
-                            min={0}
-                            max={1}
-                            step={0.1}
-                            onValueChange={handleVolumeChange}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Mobile mute */}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={toggleMute}
-                        className="sm:hidden text-white hover:bg-white/20 h-11 w-11 rounded-full touch-manipulation active:scale-90 transition-transform"
-                      >
-                        {isMuted || volume === 0 ? (
-                          <VolumeX className="w-5 h-5" />
-                        ) : (
-                          <Volume2 className="w-5 h-5" />
-                        )}
-                      </Button>
-
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={toggleFullscreen}
-                        className="text-white hover:bg-white/20 h-11 w-11 sm:h-10 sm:w-10 rounded-full touch-manipulation active:scale-90 transition-transform"
-                      >
-                        {isFullscreen ? (
-                          <Minimize className="w-5 h-5" />
-                        ) : (
-                          <Maximize className="w-5 h-5" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            {/* Fullscreen close button - top right corner - shows/hides with controls */}
-            {isFullscreen && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleFullscreen();
-                }}
-                className={`absolute top-4 right-4 z-[10001] w-12 h-12 sm:w-11 sm:h-11 rounded-full bg-black/70 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/90 transition-all touch-manipulation active:scale-90 shadow-lg ${
-                  showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
-                }`}
-              >
-                <X className="w-6 h-6 sm:w-5 sm:h-5" />
-              </button>
-            )}
-          </div>
+          <VideoPlayer 
+            src={fileUrl} 
+            onError={() => setMediaError('Unable to play this file.')}
+          />
         );
 
       case "audio":
@@ -869,7 +315,6 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
               className="hidden"
             />
             
-            {/* Error message */}
             {mediaError && (
               <div className="text-destructive text-sm text-center px-4">
                 {mediaError}
@@ -878,7 +323,6 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
             
             {/* Audio controls */}
             <div className="w-full max-w-md space-y-3">
-              {/* Progress bar */}
               <div className="space-y-1">
                 <Slider
                   value={[currentTime]}
@@ -894,13 +338,12 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                 </div>
               </div>
               
-              {/* Control buttons */}
               <div className="flex items-center justify-center gap-2 sm:gap-4">
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={skipBackward}
-                  className="h-10 w-10 touch-manipulation active:scale-95"
+                  className="h-10 w-10 rounded-full touch-manipulation"
                 >
                   <SkipBack className="w-5 h-5" />
                 </Button>
@@ -909,12 +352,12 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                   variant="ghost"
                   size="icon"
                   onClick={togglePlay}
-                  className="h-12 w-12 touch-manipulation active:scale-95"
+                  className="h-12 w-12 rounded-full bg-primary/10 touch-manipulation"
                 >
                   {isPlaying ? (
                     <Pause className="w-6 h-6" />
                   ) : (
-                    <Play className="w-6 h-6" />
+                    <Play className="w-6 h-6 ml-0.5" />
                   )}
                 </Button>
                 
@@ -922,26 +365,23 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                   variant="ghost"
                   size="icon"
                   onClick={skipForward}
-                  className="h-10 w-10 touch-manipulation active:scale-95"
+                  className="h-10 w-10 rounded-full touch-manipulation"
                 >
                   <SkipForward className="w-5 h-5" />
                 </Button>
               </div>
               
-              {/* Speed and volume controls */}
-              <div className="flex items-center justify-between gap-4">
-                {/* Speed control */}
+              <div className="flex items-center justify-between">
                 <div className="relative">
                   <Button
-                    variant="outline"
-                    size="sm"
+                    variant="ghost"
                     onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                    className="text-xs font-medium"
+                    className="h-8 px-2 text-sm"
                   >
                     {playbackSpeed}x
                   </Button>
                   {showSpeedMenu && (
-                    <div className="absolute bottom-full mb-2 left-0 bg-popover rounded-lg border shadow-lg overflow-hidden min-w-[80px] z-10">
+                    <div className="absolute bottom-full mb-2 left-0 bg-popover border rounded-lg shadow-lg overflow-hidden min-w-[70px] z-50">
                       {playbackSpeeds.map((speed) => (
                         <button
                           key={speed}
@@ -957,7 +397,6 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                   )}
                 </div>
                 
-                {/* Volume control */}
                 <div className="flex items-center gap-2 flex-1 max-w-[150px]">
                   <Button
                     variant="ghost"
@@ -1038,42 +477,12 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
             <p className="text-xs text-muted-foreground">{file?.mime_type}</p>
           </div>
           <div className="flex items-center gap-2">
-            {fileType === "image" && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
-                  disabled={zoom <= 0.5}
-                >
-                  <ZoomOut className="w-4 h-4" />
-                </Button>
-                <span className="text-sm text-muted-foreground min-w-[3rem] text-center">
-                  {Math.round(zoom * 100)}%
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setZoom((z) => Math.min(3, z + 0.25))}
-                  disabled={zoom >= 3}
-                >
-                  <ZoomIn className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setRotation((r) => (r + 90) % 360)}
-                >
-                  <RotateCw className="w-4 h-4" />
-                </Button>
-                <div className="w-px h-6 bg-border mx-2" />
-              </>
-            )}
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={handleDownload} 
-              disabled={!fileUrl || downloading}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleDownload}
+              disabled={downloading || !fileUrl}
+              className="h-9 w-9"
             >
               {downloading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -1081,20 +490,29 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                 <Download className="w-4 h-4" />
               )}
             </Button>
-            <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onOpenChange(false)}
+              className="h-9 w-9"
+            >
               <X className="w-4 h-4" />
             </Button>
           </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 p-4 overflow-auto bg-background/50">
+        <div className="flex-1 flex flex-col min-h-0 p-4 overflow-auto">
           {loading ? (
-            <div className="flex-1 flex items-center justify-center h-[60vh]">
-              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            <div className="flex-1 flex items-center justify-center">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
             </div>
-          ) : (
+          ) : fileUrl ? (
             renderPreview()
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <p className="text-muted-foreground">Unable to load preview</p>
+            </div>
           )}
         </div>
       </DialogContent>
