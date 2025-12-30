@@ -5,17 +5,38 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Primary VPS storage - hardcoded (same as vps-file function)
-const VPS_ENDPOINT = "http://46.38.232.46:4000";
-const VPS_API_KEY = "kARTOOS007";
+// Performance tracking
+const SLOW_THRESHOLD_MS = 200;
 
 interface VerifyRequest {
   shortCode: string;
   password?: string;
 }
 
+// Declare EdgeRuntime type
+declare const EdgeRuntime: {
+  waitUntil?: (promise: Promise<unknown>) => void;
+} | undefined;
+
+// Background task helper
+function runInBackground(task: () => Promise<void>, taskName?: string): void {
+  const wrappedTask = async () => {
+    try {
+      await task();
+    } catch (error) {
+      console.error(`✗ Background [${taskName || 'task'}] failed:`, error);
+    }
+  };
+  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
+    EdgeRuntime.waitUntil(wrappedTask());
+  } else {
+    wrappedTask();
+  }
+}
+
 Deno.serve(async (req) => {
-  // Handle CORS preflight
+  const startTime = performance.now();
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -39,69 +60,60 @@ Deno.serve(async (req) => {
 
     console.log(`Verifying share link: ${shortCode}`);
 
-    // Get the shared link
-    const { data: link, error: linkError } = await supabaseAdmin
-      .from('shared_links')
-      .select(`
-        *,
-        files (
-          id,
-          name,
-          original_name,
-          mime_type,
-          size_bytes,
-          storage_path
-        )
-      `)
-      .eq('short_code', shortCode)
-      .eq('is_active', true)
-      .single();
+    // ✅ OPTIMIZED: Single RPC call instead of JOIN query
+    const { data: linkData, error: linkError } = await supabaseAdmin
+      .rpc('verify_share_link_fast', { p_short_code: shortCode });
 
-    if (linkError || !link) {
-      console.log('Link not found or inactive:', linkError?.message);
+    const dbTime = performance.now() - startTime;
+
+    if (linkError) {
+      console.error('RPC error:', linkError);
       return new Response(
-        JSON.stringify({ error: 'Link not found or expired' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Failed to verify link' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Check if file exists
-    if (!link.files) {
-      console.log('File not found for link');
-      return new Response(
-        JSON.stringify({ error: 'File not found' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    const link = linkData?.[0];
 
-    // Check expiration
-    if (link.expires_at && new Date(link.expires_at) < new Date()) {
-      console.log('Link has expired');
+    if (!link || !link.is_valid) {
+      const errorMsg = !link ? 'Link not found or expired' : 
+                       link.expires_at && new Date(link.expires_at) < new Date() ? 'This link has expired' :
+                       link.max_downloads && link.download_count >= link.max_downloads ? 'Download limit reached' :
+                       'Link not found or expired';
+      
       return new Response(
-        JSON.stringify({ error: 'This link has expired' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Check max downloads
-    if (link.max_downloads && link.download_count >= link.max_downloads) {
-      console.log('Max downloads reached');
-      return new Response(
-        JSON.stringify({ error: 'Download limit reached' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: errorMsg }),
+        { 
+          status: 200, 
+          headers: { 
+            ...corsHeaders, 
+            'Content-Type': 'application/json',
+            // ✅ CACHE: Cache "not found" for short time to reduce DB load
+            'Cache-Control': 'public, max-age=10, stale-while-revalidate=30'
+          } 
+        }
       );
     }
 
     // Check password if required
-    if (link.password_hash) {
+    if (link.requires_password) {
       if (!password) {
         return new Response(
-          JSON.stringify({ requiresPassword: true, fileName: link.files?.original_name }),
-          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({ requiresPassword: true, fileName: link.file_original_name }),
+          { 
+            status: 200, 
+            headers: { 
+              ...corsHeaders, 
+              'Content-Type': 'application/json',
+              // ✅ CACHE: Cache password requirement
+              'Cache-Control': 'public, max-age=60, stale-while-revalidate=120'
+            } 
+          }
         );
       }
 
-      // Simple password comparison
+      // Verify password
       const encoder = new TextEncoder();
       const data = encoder.encode(password);
       const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -109,7 +121,6 @@ Deno.serve(async (req) => {
       const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
       if (hashHex !== link.password_hash) {
-        console.log('Invalid password');
         return new Response(
           JSON.stringify({ error: 'Invalid password' }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -117,56 +128,45 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Increment view count in usage_metrics for the file owner
-    try {
-      const { data: existingMetrics } = await supabaseAdmin
-        .from('usage_metrics')
-        .select('id, total_views')
-        .eq('user_id', link.user_id)
-        .single();
+    // ✅ BACKGROUND: Move metrics update to background (non-blocking)
+    runInBackground(async () => {
+      await supabaseAdmin.rpc('increment_usage_metrics', {
+        p_user_id: link.user_id,
+        p_views: 1,
+        p_downloads: 0,
+        p_bandwidth: 0
+      });
+    }, 'increment_view_metrics');
 
-      if (existingMetrics) {
-        await supabaseAdmin
-          .from('usage_metrics')
-          .update({ 
-            total_views: (existingMetrics.total_views || 0) + 1,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingMetrics.id);
-      } else {
-        // Create metrics record if it doesn't exist
-        await supabaseAdmin
-          .from('usage_metrics')
-          .insert({
-            user_id: link.user_id,
-            total_views: 1,
-            storage_used_bytes: 0,
-            bandwidth_used_bytes: 0,
-            active_links_count: 1,
-            total_downloads: 0
-          });
-      }
-    } catch (metricsError) {
-      console.error('Failed to update view metrics:', metricsError);
-      // Don't fail the request if metrics update fails
-    }
-
-    // Generate download URL using the shared-download edge function
+    // Generate download URL
     const downloadUrl = `${supabaseUrl}/functions/v1/shared-download?code=${shortCode}`;
 
-    console.log('Share link verified successfully');
+    const totalTime = performance.now() - startTime;
+    if (totalTime > SLOW_THRESHOLD_MS) {
+      console.warn(`⚠️ SLOW_EDGE [verify-share-link] ${Math.round(totalTime)}ms (db: ${Math.round(dbTime)}ms)`);
+    }
+
+    console.log(`Share link verified in ${Math.round(totalTime)}ms`);
 
     return new Response(
       JSON.stringify({
         success: true,
         file: {
-          name: link.files.original_name,
-          mimeType: link.files.mime_type,
-          size: link.files.size_bytes,
+          name: link.file_original_name,
+          mimeType: link.file_mime_type,
+          size: link.file_size,
           downloadUrl: downloadUrl
         }
       }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { 
+        status: 200, 
+        headers: { 
+          ...corsHeaders, 
+          'Content-Type': 'application/json',
+          // ✅ CACHE: Cache successful validation for 30s
+          'Cache-Control': 'public, max-age=30, stale-while-revalidate=60'
+        } 
+      }
     );
 
   } catch (error: unknown) {

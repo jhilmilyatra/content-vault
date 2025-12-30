@@ -15,6 +15,9 @@ major_version = 15
 enabled = true
 port = 54323
 
+[functions.health]
+verify_jwt = false
+
 [functions.background-jobs]
 verify_jwt = false
 

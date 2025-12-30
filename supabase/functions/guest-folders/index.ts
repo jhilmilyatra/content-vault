@@ -5,8 +5,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Pagination limits
-const MAX_FOLDERS = 100;
+// Performance tracking
+const SLOW_THRESHOLD_MS = 200;
 
 // Rate limiting
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
@@ -26,21 +26,15 @@ function checkRateLimit(key: string): boolean {
   return true;
 }
 
-function getClientIP(req: Request): string {
-  return req.headers.get("cf-connecting-ip") || 
-         req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || 
-         "unknown";
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const startTime = Date.now();
+  const startTime = performance.now();
 
   try {
-    const { guestId, limit = MAX_FOLDERS, offset = 0 } = await req.json();
+    const { guestId, limit = 100, offset = 0 } = await req.json();
 
     if (!guestId) {
       return new Response(
@@ -63,7 +57,7 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Verify guest exists
+    // Quick guest validation
     const { data: guestData, error: guestError } = await supabaseAdmin
       .from("guest_users")
       .select("id, is_banned")
@@ -84,115 +78,66 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch guest folder access with LIMIT
-    const safeLimit = Math.min(Math.max(1, limit), MAX_FOLDERS);
+    const safeLimit = Math.min(Math.max(1, limit), 100);
     const safeOffset = Math.max(0, offset);
 
-    const { data: accessData, error: accessError, count } = await supabaseAdmin
-      .from("guest_folder_access")
-      .select("id, folder_share_id, member_id, added_at, is_restricted", { count: "exact" })
-      .eq("guest_id", guestId)
-      .eq("is_restricted", false)
-      .range(safeOffset, safeOffset + safeLimit - 1);
+    // ✅ OPTIMIZED: Single RPC call instead of 4+ separate queries
+    const { data: foldersData, error: foldersError } = await supabaseAdmin
+      .rpc('get_guest_folders_fast', {
+        p_guest_id: guestId,
+        p_limit: safeLimit,
+        p_offset: safeOffset
+      });
 
-    if (accessError) {
-      console.error("Error fetching guest folder access:", accessError);
+    const dbTime = performance.now() - startTime;
+
+    if (foldersError) {
+      console.error("Error fetching guest folders:", foldersError);
       return new Response(
         JSON.stringify({ error: "Failed to fetch folder access" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    if (!accessData || accessData.length === 0) {
-      return new Response(
-        JSON.stringify({ folders: [], total: 0, limit: safeLimit, offset: safeOffset }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    // Transform to expected format
+    const folders = (foldersData || []).map((row: any) => ({
+      id: row.access_id,
+      folder_share_id: row.folder_share_id,
+      member_id: row.member_id,
+      added_at: row.added_at,
+      is_restricted: false,
+      folder_share: {
+        folder_id: row.folder_id,
+        is_active: true,
+        folder: {
+          name: row.folder_name,
+          description: row.folder_description,
+        },
+      },
+      member_name: row.member_name || "Unknown",
+    }));
 
-    // Get unique folder_share_ids
-    const folderShareIds = [...new Set(accessData.map(a => a.folder_share_id))];
-
-    // Parallel fetch folder shares, folders, and profiles
-    const [sharesResult, memberIds] = await Promise.all([
-      supabaseAdmin
-        .from("folder_shares")
-        .select("id, folder_id, is_active")
-        .in("id", folderShareIds)
-        .eq("is_active", true)
-        .limit(MAX_FOLDERS),
-      Promise.resolve([...new Set(accessData.map(a => a.member_id))])
-    ]);
-
-    if (sharesResult.error || !sharesResult.data || sharesResult.data.length === 0) {
-      return new Response(
-        JSON.stringify({ folders: [], total: 0, limit: safeLimit, offset: safeOffset }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const folderIds = [...new Set(sharesResult.data.map(s => s.folder_id))];
-
-    // Parallel fetch folders and profiles
-    const [foldersResult, profilesResult] = await Promise.all([
-      supabaseAdmin
-        .from("folders")
-        .select("id, name, description")
-        .in("id", folderIds)
-        .limit(MAX_FOLDERS),
-      supabaseAdmin
-        .from("profiles")
-        .select("user_id, full_name")
-        .in("user_id", memberIds)
-        .limit(MAX_FOLDERS)
-    ]);
-
-    // Build lookup maps
-    const sharesMap = new Map(sharesResult.data.map(s => [s.id, s]));
-    const foldersMap = new Map(foldersResult.data?.map(f => [f.id, f]) || []);
-    const profilesMap = new Map(profilesResult.data?.map(p => [p.user_id, p.full_name]) || []);
-
-    // Combine data
-    const folders = accessData
-      .map(access => {
-        const share = sharesMap.get(access.folder_share_id);
-        if (!share) return null;
-
-        const folder = foldersMap.get(share.folder_id);
-        if (!folder) return null;
-
-        return {
-          id: access.id,
-          folder_share_id: access.folder_share_id,
-          member_id: access.member_id,
-          added_at: access.added_at,
-          is_restricted: access.is_restricted,
-          folder_share: {
-            folder_id: share.folder_id,
-            is_active: share.is_active,
-            folder: {
-              name: folder.name,
-              description: folder.description,
-            },
-          },
-          member_name: profilesMap.get(access.member_id) || "Unknown",
-        };
-      })
-      .filter(Boolean);
-
-    const duration = Date.now() - startTime;
-    if (duration > 200) {
-      console.warn(`⚠️ SLOW guest-folders: ${duration}ms for guest ${guestId}`);
+    const totalTime = performance.now() - startTime;
+    if (totalTime > SLOW_THRESHOLD_MS) {
+      console.warn(`⚠️ SLOW_EDGE [guest-folders] ${Math.round(totalTime)}ms (db: ${Math.round(dbTime)}ms) for guest ${guestId}`);
     }
 
     return new Response(
       JSON.stringify({ 
         folders, 
-        total: count || folders.length,
+        total: folders.length,
         limit: safeLimit,
         offset: safeOffset
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { 
+        status: 200, 
+        headers: { 
+          ...corsHeaders, 
+          "Content-Type": "application/json",
+          // ✅ CACHE: Cache folder listings for 30s
+          "Cache-Control": "public, max-age=30, stale-while-revalidate=60"
+        } 
+      }
     );
   } catch (error) {
     console.error("Guest folders error:", error);
