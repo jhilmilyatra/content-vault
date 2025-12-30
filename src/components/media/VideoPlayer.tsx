@@ -4,7 +4,7 @@ import { Slider } from "@/components/ui/slider";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
-  SkipBack, SkipForward, X
+  SkipBack, SkipForward, X, Loader2
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -36,6 +36,8 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
   const [showControls, setShowControls] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPortraitVideo, setIsPortraitVideo] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(true); // Start with buffering state
+  const [canPlayThrough, setCanPlayThrough] = useState(false);
   
   // Double-tap seek
   const lastTapRef = useRef<{ time: number; x: number } | null>(null);
@@ -201,6 +203,25 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
     onError?.();
   }, [onError]);
 
+  // Buffering handlers
+  const handleWaiting = useCallback(() => {
+    setIsBuffering(true);
+  }, []);
+
+  const handlePlaying = useCallback(() => {
+    setIsBuffering(false);
+  }, []);
+
+  const handleCanPlayThrough = useCallback(() => {
+    setCanPlayThrough(true);
+    setIsBuffering(false);
+  }, []);
+
+  const handleCanPlay = useCallback(() => {
+    // Allow playback once we can play, even if not fully buffered
+    setIsBuffering(false);
+  }, []);
+
   const skipForward = useCallback(() => {
     const video = videoRef.current;
     if (video) {
@@ -343,12 +364,32 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
             onError={handleMediaError}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
+            onWaiting={handleWaiting}
+            onPlaying={handlePlaying}
+            onCanPlay={handleCanPlay}
+            onCanPlayThrough={handleCanPlayThrough}
             playsInline
             crossOrigin={crossOrigin ? "anonymous" : undefined}
-            preload="metadata"
+            preload="auto"
             controlsList="nodownload"
           />
         </div>
+
+        {/* Buffering indicator */}
+        <AnimatePresence>
+          {isBuffering && isPlaying && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 flex items-center justify-center pointer-events-none z-30"
+            >
+              <div className="w-16 h-16 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-white animate-spin" />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Double-tap indicators */}
         <AnimatePresence>
@@ -481,12 +522,32 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
           onError={handleMediaError}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
+          onWaiting={handleWaiting}
+          onPlaying={handlePlaying}
+          onCanPlay={handleCanPlay}
+          onCanPlayThrough={handleCanPlayThrough}
           playsInline
           crossOrigin={crossOrigin ? "anonymous" : undefined}
-          preload="metadata"
+          preload="auto"
           controlsList="nodownload"
         />
       </div>
+
+      {/* Buffering indicator */}
+      <AnimatePresence>
+        {isBuffering && isPlaying && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 flex items-center justify-center pointer-events-none z-30"
+          >
+            <div className="w-14 h-14 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center">
+              <Loader2 className="w-7 h-7 text-white animate-spin" />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Double-tap indicators */}
       <AnimatePresence>
