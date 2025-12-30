@@ -16,6 +16,7 @@ import {
 import { GlassCard, GlassCardHeader, StatCard } from "@/components/ios/GlassCard";
 import { SkeletonStats } from "@/components/ios/SkeletonLoader";
 import { staggerContainer, staggerItem } from "@/lib/motion";
+import VpsHealthWidget from "@/components/owner/VpsHealthWidget";
 
 interface GlobalStats {
   totalUsers: number;
@@ -165,8 +166,12 @@ const OwnerDashboard = () => {
           </motion.div>
         )}
 
-        {/* Quick Actions & Alerts */}
-        <div className="grid grid-cols-1 gap-4">
+        {/* VPS Health & Quick Actions */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* VPS Health Widget */}
+          <VpsHealthWidget />
+
+          {/* System Alerts */}
           <GlassCard variant="elevated" className="animate-fade-up" style={{ animationDelay: "0.3s" }}>
             <GlassCardHeader
               title="System Alerts"
@@ -193,43 +198,44 @@ const OwnerDashboard = () => {
               </motion.div>
             </div>
           </GlassCard>
-
-          <GlassCard variant="elevated" className="animate-fade-up" style={{ animationDelay: "0.35s" }}>
-            <GlassCardHeader title="Recent Activity" />
-            <div className="p-4 space-y-3">
-              <motion.div 
-                className="flex items-center gap-4 p-4 rounded-2xl ios-glass-subtle"
-                whileTap={{ scale: 0.98 }}
-              >
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-primary text-sm font-semibold">
-                  JD
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground">
-                    New user registered
-                  </p>
-                  <p className="text-xs text-muted-foreground">2 minutes ago</p>
-                </div>
-                <ArrowUpRight className="w-4 h-4 text-muted-foreground" />
-              </motion.div>
-              <motion.div 
-                className="flex items-center gap-4 p-4 rounded-2xl ios-glass-subtle"
-                whileTap={{ scale: 0.98 }}
-              >
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-500/30 to-amber-500/10 flex items-center justify-center text-amber-400 text-sm font-semibold">
-                  $
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground">
-                    Premium upgrade
-                  </p>
-                  <p className="text-xs text-muted-foreground">15 minutes ago</p>
-                </div>
-                <ArrowUpRight className="w-4 h-4 text-muted-foreground" />
-              </motion.div>
-            </div>
-          </GlassCard>
         </div>
+
+        {/* Recent Activity */}
+        <GlassCard variant="elevated" className="animate-fade-up" style={{ animationDelay: "0.35s" }}>
+          <GlassCardHeader title="Recent Activity" />
+          <div className="p-4 space-y-3">
+            <motion.div 
+              className="flex items-center gap-4 p-4 rounded-2xl ios-glass-subtle"
+              whileTap={{ scale: 0.98 }}
+            >
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-primary text-sm font-semibold">
+                JD
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground">
+                  New user registered
+                </p>
+                <p className="text-xs text-muted-foreground">2 minutes ago</p>
+              </div>
+              <ArrowUpRight className="w-4 h-4 text-muted-foreground" />
+            </motion.div>
+            <motion.div 
+              className="flex items-center gap-4 p-4 rounded-2xl ios-glass-subtle"
+              whileTap={{ scale: 0.98 }}
+            >
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-500/30 to-amber-500/10 flex items-center justify-center text-amber-400 text-sm font-semibold">
+                $
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground">
+                  Premium upgrade
+                </p>
+                <p className="text-xs text-muted-foreground">15 minutes ago</p>
+              </div>
+              <ArrowUpRight className="w-4 h-4 text-muted-foreground" />
+            </motion.div>
+          </div>
+        </GlassCard>
       </motion.div>
     </DashboardLayout>
   );
