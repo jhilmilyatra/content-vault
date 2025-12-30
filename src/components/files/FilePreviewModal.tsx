@@ -594,21 +594,21 @@ export function FilePreviewModal({
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex-1 flex flex-col bg-black rounded-2xl overflow-hidden"
+            className="flex-1 flex flex-col bg-black rounded-xl sm:rounded-2xl overflow-hidden"
             onMouseMove={resetControlsTimeout}
             onTouchStart={resetControlsTimeout}
           >
-            {/* Video Element */}
+            {/* Video Container - 16:9 aspect ratio, full width, responsive */}
             <div 
               ref={videoContainerRef}
-              className="relative flex-1 flex items-center justify-center cursor-pointer"
+              className="relative w-full aspect-video bg-black cursor-pointer"
               onClick={handleVideoTap}
               onTouchEnd={handleVideoTap}
             >
               <video
                 ref={videoRef}
                 src={fileUrl}
-                className="max-w-full max-h-[65vh] object-contain pointer-events-none"
+                className="absolute inset-0 w-full h-full object-contain"
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
                 onEnded={handleMediaEnded}
@@ -617,6 +617,10 @@ export function FilePreviewModal({
                 onPause={() => setIsPlaying(false)}
                 playsInline
                 webkit-playsinline="true"
+                x-webkit-airplay="allow"
+                crossOrigin="anonymous"
+                preload="metadata"
+                controlsList="nodownload"
               />
               
               {/* Double-tap seek indicators */}
@@ -626,55 +630,55 @@ export function FilePreviewModal({
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.8 }}
-                    className={`absolute top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 ${
-                      seekIndicator.side === 'left' ? 'left-12' : 'right-12'
+                    className={`absolute top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 ${
+                      seekIndicator.side === 'left' ? 'left-8 sm:left-12' : 'right-8 sm:right-12'
                     }`}
                   >
-                    <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-xl flex items-center justify-center">
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-white/20 backdrop-blur-xl flex items-center justify-center">
                       {seekIndicator.side === 'left' ? (
-                        <SkipBack className="w-8 h-8 text-white" />
+                        <SkipBack className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                       ) : (
-                        <SkipForward className="w-8 h-8 text-white" />
+                        <SkipForward className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                       )}
                     </div>
-                    <span className="text-white text-sm font-semibold">
+                    <span className="text-white text-xs sm:text-sm font-semibold">
                       {seekIndicator.side === 'left' ? '-10s' : '+10s'}
                     </span>
                   </motion.div>
                 )}
               </AnimatePresence>
               
-              {/* Play overlay button */}
+              {/* Play overlay button - tap to play */}
               <AnimatePresence>
                 {!isPlaying && !seekIndicator.visible && (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.8 }}
-                    className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none"
+                    className="absolute inset-0 flex items-center justify-center bg-black/30"
                   >
                     <motion.div 
                       whileHover={{ scale: 1.1 }}
-                      className="w-20 h-20 rounded-full bg-gradient-to-br from-gold to-gold-dark flex items-center justify-center shadow-2xl shadow-gold/30"
+                      className="w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-white/90 flex items-center justify-center shadow-2xl"
                     >
-                      <Play className="w-10 h-10 text-black ml-1" />
+                      <Play className="w-7 h-7 sm:w-10 sm:h-10 text-black ml-0.5 sm:ml-1" />
                     </motion.div>
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
 
-            {/* Premium Video Controls */}
+            {/* Premium Video Controls - Mobile optimized */}
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: showControls ? 1 : 0, y: showControls ? 0 : 20 }}
-              className="p-4 sm:p-5 bg-gradient-to-t from-black via-black/90 to-transparent"
+              className="p-3 sm:p-5 bg-gradient-to-t from-black via-black/90 to-transparent"
             >
               {/* Progress bar with buffer */}
-              <div className="mb-4 relative">
-                <div className="absolute inset-0 h-1.5 rounded-full bg-white/10" />
+              <div className="mb-3 sm:mb-4 relative">
+                <div className="absolute inset-0 h-1 sm:h-1.5 rounded-full bg-white/10" />
                 <div 
-                  className="absolute h-1.5 rounded-full bg-white/20"
+                  className="absolute h-1 sm:h-1.5 rounded-full bg-white/20"
                   style={{ width: `${(buffered / duration) * 100}%` }}
                 />
                 <Slider
@@ -683,32 +687,37 @@ export function FilePreviewModal({
                   max={duration || 100}
                   step={0.1}
                   onValueChange={handleSeek}
-                  className="cursor-pointer touch-manipulation relative z-10"
+                  className="cursor-pointer touch-manipulation relative z-10 [&_[role=slider]]:h-4 [&_[role=slider]]:w-4 sm:[&_[role=slider]]:h-3 sm:[&_[role=slider]]:w-3 [&_[role=slider]]:border-2 [&_[role=slider]]:border-white"
                 />
+                {/* Time display below progress on mobile */}
+                <div className="flex justify-between text-[11px] text-white/70 mt-1.5 sm:hidden font-medium tabular-nums">
+                  <span>{formatTime(currentTime)}</span>
+                  <span>{formatTime(duration)}</span>
+                </div>
               </div>
 
-              {/* Control buttons */}
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
+              {/* Control buttons - Mobile first layout */}
+              <div className="flex items-center justify-between gap-2 sm:gap-3">
+                <div className="flex items-center gap-1 sm:gap-2">
                   <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                     onClick={skipBackward}
-                    className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all"
+                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation"
                   >
-                    <SkipBack className="w-5 h-5" />
+                    <SkipBack className="w-4 h-4 sm:w-5 sm:h-5" />
                   </motion.button>
                   
                   <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                     onClick={togglePlay}
-                    className="w-12 h-12 rounded-full bg-gradient-to-br from-gold to-gold-dark flex items-center justify-center shadow-lg shadow-gold/30"
+                    className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-white/90 flex items-center justify-center shadow-lg touch-manipulation"
                   >
                     {isPlaying ? (
-                      <Pause className="w-6 h-6 text-black" />
+                      <Pause className="w-5 h-5 sm:w-6 sm:h-6 text-black" />
                     ) : (
-                      <Play className="w-6 h-6 text-black ml-0.5" />
+                      <Play className="w-5 h-5 sm:w-6 sm:h-6 text-black ml-0.5" />
                     )}
                   </motion.button>
                   
@@ -716,12 +725,13 @@ export function FilePreviewModal({
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                     onClick={skipForward}
-                    className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all"
+                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation"
                   >
-                    <SkipForward className="w-5 h-5" />
+                    <SkipForward className="w-4 h-4 sm:w-5 sm:h-5" />
                   </motion.button>
 
-                  <span className="text-white/70 text-sm ml-3 font-medium tabular-nums">
+                  {/* Time display - desktop only */}
+                  <span className="hidden sm:inline text-white/70 text-sm ml-3 font-medium tabular-nums">
                     {formatTime(currentTime)} <span className="text-white/40">/</span> {formatTime(duration)}
                   </span>
                 </div>
