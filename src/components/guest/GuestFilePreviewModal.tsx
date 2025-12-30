@@ -417,12 +417,20 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
             className="flex-1 flex flex-col bg-black rounded-xl sm:rounded-2xl overflow-hidden"
             onMouseEnter={() => setShowControls(true)}
             onMouseLeave={() => setShowControls(isPlaying ? false : true)}
-            onTouchStart={() => setShowControls(true)}
+            onTouchStart={() => {
+              setShowControls(true);
+              // Auto-hide after 3s on mobile
+              if (isPlaying) {
+                setTimeout(() => setShowControls(false), 3000);
+              }
+            }}
           >
-            {/* Video Container - 16:9 aspect ratio, full width, responsive */}
+            {/* Video Container - YouTube/Netflix style fixed 16:9 frame */}
+            {/* Using padding-top fallback for legacy browser support */}
             <div 
               ref={videoContainerRef}
-              className="relative w-full aspect-video bg-black"
+              className="relative w-full bg-black flex-shrink-0"
+              style={{ paddingTop: '56.25%' }} /* 16:9 aspect ratio */
               onClick={handleVideoTap}
               onTouchEnd={handleVideoTap}
             >
@@ -444,175 +452,180 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                 controlsList="nodownload"
               />
               
-              {/* Double-tap seek indicators */}
+              {/* Double-tap seek indicators - YouTube style */}
               {seekIndicator.visible && (
                 <div 
-                  className={`absolute top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 animate-fade-in ${
-                    seekIndicator.side === 'left' ? 'left-8' : 'right-8'
+                  className={`absolute top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 animate-fade-in pointer-events-none ${
+                    seekIndicator.side === 'left' ? 'left-[15%]' : 'right-[15%]'
                   }`}
                 >
-                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center">
                     {seekIndicator.side === 'left' ? (
-                      <SkipBack className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
+                      <SkipBack className="w-7 h-7 sm:w-8 sm:h-8 text-white" />
                     ) : (
-                      <SkipForward className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
+                      <SkipForward className="w-7 h-7 sm:w-8 sm:h-8 text-white" />
                     )}
                   </div>
-                  <span className="text-white text-xs sm:text-sm font-medium">
+                  <span className="text-white text-sm font-semibold drop-shadow-lg">
                     {seekIndicator.side === 'left' ? '-10s' : '+10s'}
                   </span>
                 </div>
               )}
               
-              {/* Play overlay button - tap to play */}
+              {/* Center play button - Netflix style */}
               {!isPlaying && !seekIndicator.visible && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity">
-                  <div className="w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-white/90 flex items-center justify-center shadow-xl">
-                    <Play className="w-7 h-7 sm:w-10 sm:h-10 text-black ml-0.5 sm:ml-1" />
+                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-t from-black/60 via-transparent to-black/30 transition-opacity duration-200 pointer-events-none">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white/95 backdrop-blur-sm flex items-center justify-center shadow-2xl">
+                    <Play className="w-8 h-8 sm:w-10 sm:h-10 text-black ml-1" />
                   </div>
                 </div>
               )}
-            </div>
 
-            {/* Video Controls - Always visible on mobile, gradient overlay */}
-            <div 
-              className={`p-3 sm:p-4 bg-gradient-to-t from-black via-black/80 to-transparent transition-opacity duration-200 ${
-                showControls ? "opacity-100" : "sm:opacity-0"
-              }`}
-            >
-              {/* Progress bar with larger touch target on mobile */}
-              <div className="mb-3 sm:mb-4">
-                <Slider
-                  value={[currentTime]}
-                  min={0}
-                  max={duration || 100}
-                  step={0.1}
-                  onValueChange={handleSeek}
-                  className="cursor-pointer touch-manipulation [&_[role=slider]]:h-4 [&_[role=slider]]:w-4 sm:[&_[role=slider]]:h-3 sm:[&_[role=slider]]:w-3 [&_[role=slider]]:border-2 [&_[role=slider]]:border-white"
-                />
-                {/* Time display below progress on mobile */}
-                <div className="flex justify-between text-[11px] sm:text-xs text-white/70 mt-1.5 sm:hidden font-medium tabular-nums">
-                  <span>{formatTime(currentTime)}</span>
-                  <span>{formatTime(duration)}</span>
-                </div>
-              </div>
-
-              {/* Control buttons - Optimized mobile layout */}
-              <div className="flex items-center justify-between gap-1 sm:gap-2">
-                {/* Left controls */}
-                <div className="flex items-center gap-0.5 sm:gap-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={skipBackward}
-                    className="text-white hover:bg-white/20 h-10 w-10 sm:h-10 sm:w-10 touch-manipulation active:scale-90 transition-transform"
-                  >
-                    <SkipBack className="w-5 h-5" />
-                  </Button>
-                  
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={togglePlay}
-                    className="text-white hover:bg-white/20 h-12 w-12 sm:h-10 sm:w-10 touch-manipulation active:scale-90 transition-transform"
-                  >
-                    {isPlaying ? (
-                      <Pause className="w-6 h-6" />
-                    ) : (
-                      <Play className="w-6 h-6 ml-0.5" />
-                    )}
-                  </Button>
-                  
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={skipForward}
-                    className="text-white hover:bg-white/20 h-10 w-10 sm:h-10 sm:w-10 touch-manipulation active:scale-90 transition-transform"
-                  >
-                    <SkipForward className="w-5 h-5" />
-                  </Button>
-
-                  {/* Time display - desktop only */}
-                  <span className="hidden sm:inline text-white text-sm ml-2 whitespace-nowrap">
-                    {formatTime(currentTime)} / {formatTime(duration)}
-                  </span>
-                </div>
-
-                {/* Right controls */}
-                <div className="flex items-center gap-0.5 sm:gap-2">
-                  {/* Playback speed control */}
-                  <div className="relative">
-                    <Button
-                      variant="ghost"
-                      onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                      className="text-white hover:bg-white/20 h-10 w-10 sm:h-8 sm:w-auto sm:px-2 text-xs font-medium touch-manipulation"
-                    >
-                      <span className="text-sm">{playbackSpeed}x</span>
-                    </Button>
-                    {showSpeedMenu && (
-                      <div className="absolute bottom-full mb-2 right-0 bg-black/95 rounded-lg border border-white/20 overflow-hidden min-w-[80px] z-50">
-                        {playbackSpeeds.map((speed) => (
-                          <button
-                            key={speed}
-                            onClick={() => changePlaybackSpeed(speed)}
-                            className={`w-full px-4 py-3 sm:py-2 text-sm text-left hover:bg-white/20 transition-colors touch-manipulation ${
-                              playbackSpeed === speed ? 'text-primary bg-white/10' : 'text-white'
-                            }`}
-                          >
-                            {speed}x
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Volume control - hidden on mobile */}
-                  <div className="hidden sm:flex items-center gap-2 group">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={toggleMute}
-                      className="text-white hover:bg-white/20"
-                    >
-                      {isMuted || volume === 0 ? (
-                        <VolumeX className="w-5 h-5" />
-                      ) : (
-                        <Volume2 className="w-5 h-5" />
-                      )}
-                    </Button>
-                    <div className="w-24 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Slider
-                        value={[isMuted ? 0 : volume]}
-                        min={0}
-                        max={1}
-                        step={0.1}
-                        onValueChange={handleVolumeChange}
-                      />
+              {/* Glass Controls Overlay - YouTube/Netflix style */}
+              <div 
+                className={`absolute inset-x-0 bottom-0 transition-all duration-200 ease-out ${
+                  showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'
+                }`}
+              >
+                {/* Glass background */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent backdrop-blur-sm" />
+                
+                <div className="relative p-3 sm:p-4">
+                  {/* Progress bar with larger touch target */}
+                  <div className="mb-3">
+                    <Slider
+                      value={[currentTime]}
+                      min={0}
+                      max={duration || 100}
+                      step={0.1}
+                      onValueChange={handleSeek}
+                      className="cursor-pointer touch-manipulation [&_[role=slider]]:h-5 [&_[role=slider]]:w-5 sm:[&_[role=slider]]:h-4 sm:[&_[role=slider]]:w-4 [&_[role=slider]]:border-2 [&_[role=slider]]:border-white [&_[role=slider]]:bg-white"
+                    />
+                    {/* Mobile time display */}
+                    <div className="flex justify-between text-xs text-white/80 mt-2 sm:hidden font-medium tabular-nums">
+                      <span>{formatTime(currentTime)}</span>
+                      <span>{formatTime(duration)}</span>
                     </div>
                   </div>
 
-                  {/* Mute button for mobile */}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={toggleMute}
-                    className="sm:hidden text-white hover:bg-white/20 h-10 w-10 touch-manipulation active:scale-90 transition-transform"
-                  >
-                    {isMuted || volume === 0 ? (
-                      <VolumeX className="w-5 h-5" />
-                    ) : (
-                      <Volume2 className="w-5 h-5" />
-                    )}
-                  </Button>
+                  {/* Control buttons - Glass style */}
+                  <div className="flex items-center justify-between">
+                    {/* Left controls */}
+                    <div className="flex items-center gap-1 sm:gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={skipBackward}
+                        className="text-white hover:bg-white/20 h-11 w-11 sm:h-10 sm:w-10 rounded-full touch-manipulation active:scale-90 transition-transform"
+                      >
+                        <SkipBack className="w-5 h-5" />
+                      </Button>
+                      
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={togglePlay}
+                        className="text-white bg-white/10 hover:bg-white/20 h-12 w-12 sm:h-11 sm:w-11 rounded-full touch-manipulation active:scale-90 transition-transform"
+                      >
+                        {isPlaying ? (
+                          <Pause className="w-6 h-6" />
+                        ) : (
+                          <Play className="w-6 h-6 ml-0.5" />
+                        )}
+                      </Button>
+                      
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={skipForward}
+                        className="text-white hover:bg-white/20 h-11 w-11 sm:h-10 sm:w-10 rounded-full touch-manipulation active:scale-90 transition-transform"
+                      >
+                        <SkipForward className="w-5 h-5" />
+                      </Button>
 
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={toggleFullscreen}
-                    className="text-white hover:bg-white/20 h-10 w-10 touch-manipulation active:scale-90 transition-transform"
-                  >
-                    <Maximize className="w-5 h-5" />
-                  </Button>
+                      {/* Desktop time display */}
+                      <span className="hidden sm:inline text-white/80 text-sm ml-3 font-medium tabular-nums">
+                        {formatTime(currentTime)} / {formatTime(duration)}
+                      </span>
+                    </div>
+
+                    {/* Right controls */}
+                    <div className="flex items-center gap-1 sm:gap-2">
+                      {/* Playback speed - glass button */}
+                      <div className="relative">
+                        <Button
+                          variant="ghost"
+                          onClick={() => setShowSpeedMenu(!showSpeedMenu)}
+                          className="text-white hover:bg-white/20 h-10 px-3 rounded-lg text-sm font-medium touch-manipulation"
+                        >
+                          {playbackSpeed}x
+                        </Button>
+                        {showSpeedMenu && (
+                          <div className="absolute bottom-full mb-2 right-0 bg-black/80 backdrop-blur-xl rounded-xl border border-white/10 overflow-hidden min-w-[80px] z-50 shadow-xl">
+                            {playbackSpeeds.map((speed) => (
+                              <button
+                                key={speed}
+                                onClick={() => changePlaybackSpeed(speed)}
+                                className={`w-full px-4 py-3 text-sm text-left hover:bg-white/20 transition-colors touch-manipulation ${
+                                  playbackSpeed === speed ? 'text-primary bg-white/10' : 'text-white'
+                                }`}
+                              >
+                                {speed}x
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Volume - hidden on mobile */}
+                      <div className="hidden sm:flex items-center gap-2 group">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={toggleMute}
+                          className="text-white hover:bg-white/20 h-10 w-10 rounded-full"
+                        >
+                          {isMuted || volume === 0 ? (
+                            <VolumeX className="w-5 h-5" />
+                          ) : (
+                            <Volume2 className="w-5 h-5" />
+                          )}
+                        </Button>
+                        <div className="w-20 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Slider
+                            value={[isMuted ? 0 : volume]}
+                            min={0}
+                            max={1}
+                            step={0.1}
+                            onValueChange={handleVolumeChange}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Mobile mute */}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={toggleMute}
+                        className="sm:hidden text-white hover:bg-white/20 h-11 w-11 rounded-full touch-manipulation active:scale-90 transition-transform"
+                      >
+                        {isMuted || volume === 0 ? (
+                          <VolumeX className="w-5 h-5" />
+                        ) : (
+                          <Volume2 className="w-5 h-5" />
+                        )}
+                      </Button>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={toggleFullscreen}
+                        className="text-white hover:bg-white/20 h-11 w-11 sm:h-10 sm:w-10 rounded-full touch-manipulation active:scale-90 transition-transform"
+                      >
+                        <Maximize className="w-5 h-5" />
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
