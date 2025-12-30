@@ -545,6 +545,9 @@ app.get('/files/:userId/:fileName', (req, res) => {
       '.png': 'image/png',
       '.gif': 'image/gif',
       '.webp': 'image/webp',
+      // HLS formats
+      '.m3u8': 'application/vnd.apple.mpegurl',
+      '.ts': 'video/mp2t',
     };
     const contentType = mimeTypes[ext] || 'application/octet-stream';
 
@@ -568,7 +571,9 @@ app.get('/files/:userId/:fileName', (req, res) => {
         'Accept-Ranges': 'bytes',
         'Content-Length': chunkSize,
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=3600',
+        // HLS segments should be cached for longer, immutable
+        'Cache-Control': ext === '.ts' ? 'public, max-age=86400, immutable' : 
+                         ext === '.m3u8' ? 'public, max-age=2' : 'public, max-age=3600',
       });
       
       stream.pipe(res);
@@ -578,7 +583,9 @@ app.get('/files/:userId/:fileName', (req, res) => {
         'Content-Length': fileSize,
         'Content-Type': contentType,
         'Accept-Ranges': 'bytes',
-        'Cache-Control': 'public, max-age=3600',
+        // HLS segments should be cached for longer, immutable
+        'Cache-Control': ext === '.ts' ? 'public, max-age=86400, immutable' : 
+                         ext === '.m3u8' ? 'public, max-age=2' : 'public, max-age=3600',
       });
       
       const stream = fs.createReadStream(pathInfo.fullPath);
@@ -813,6 +820,234 @@ app.get('/owner/files', requireOwner, (req, res) => {
   } catch (error) {
     console.error('Owner list all error:', error);
     res.status(500).json({ error: 'List failed', message: error.message });
+  }
+});
+
+// ============================================
+// HLS: Serve HLS playlist and segments
+// ============================================
+app.get('/hls/:userId/:videoName/:file', (req, res) => {
+  try {
+    const { userId, videoName, file } = req.params;
+    
+    // Validate userId
+    if (!isValidUUID(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+    
+    // Validate file is HLS file (.m3u8 or .ts)
+    const ext = path.extname(file).toLowerCase();
+    if (ext !== '.m3u8' && ext !== '.ts') {
+      return res.status(400).json({ error: 'Invalid HLS file type' });
+    }
+    
+    // Construct path: storage/userId/hls/videoName/file
+    const hlsDir = path.join(STORAGE_PATH, userId, 'hls', videoName);
+    const filePath = path.join(hlsDir, file);
+    
+    // Security check
+    const resolvedPath = path.resolve(filePath);
+    const resolvedStorage = path.resolve(STORAGE_PATH);
+    if (!resolvedPath.startsWith(resolvedStorage + path.sep)) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+    
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'HLS file not found' });
+    }
+    
+    const stat = fs.statSync(filePath);
+    const contentType = ext === '.m3u8' ? 'application/vnd.apple.mpegurl' : 'video/mp2t';
+    
+    // Set appropriate cache headers for CDN
+    // Playlists: short cache (can be updated)
+    // Segments: long cache, immutable (never change)
+    const cacheControl = ext === '.ts' 
+      ? 'public, max-age=86400, immutable'
+      : 'public, max-age=2, stale-while-revalidate=5';
+    
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Content-Length': stat.size,
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': cacheControl,
+      'Access-Control-Allow-Origin': '*',
+    });
+    
+    const stream = fs.createReadStream(filePath);
+    stream.pipe(res);
+    
+  } catch (error) {
+    console.error('HLS serve error:', error);
+    res.status(500).json({ error: 'HLS serve failed', message: error.message });
+  }
+});
+
+// ============================================
+// HLS: Check if HLS version exists for a video
+// ============================================
+app.get('/hls-status/:userId/:fileName', authenticate, (req, res) => {
+  try {
+    const { userId, fileName } = req.params;
+    
+    if (!isValidUUID(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+    
+    // Get video base name (without extension)
+    const baseName = fileName.replace(/\.[^.]+$/, '');
+    const hlsDir = path.join(STORAGE_PATH, userId, 'hls', baseName);
+    const playlistPath = path.join(hlsDir, 'index.m3u8');
+    
+    // Security check
+    const resolvedPath = path.resolve(playlistPath);
+    const resolvedStorage = path.resolve(STORAGE_PATH);
+    if (!resolvedPath.startsWith(resolvedStorage + path.sep)) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+    
+    const hasHLS = fs.existsSync(playlistPath);
+    
+    if (hasHLS) {
+      // Get segment count
+      const segments = fs.readdirSync(hlsDir).filter(f => f.endsWith('.ts'));
+      
+      res.json({
+        hasHLS: true,
+        playlistUrl: `/hls/${userId}/${baseName}/index.m3u8`,
+        segmentCount: segments.length,
+        baseName,
+      });
+    } else {
+      res.json({
+        hasHLS: false,
+        baseName,
+        message: 'No HLS version available. Use POST /transcode to create one.',
+      });
+    }
+  } catch (error) {
+    console.error('HLS status error:', error);
+    res.status(500).json({ error: 'HLS status check failed', message: error.message });
+  }
+});
+
+// ============================================
+// HLS: Trigger FFmpeg transcoding (async)
+// ============================================
+app.post('/transcode', authenticate, async (req, res) => {
+  try {
+    const { userId, fileName, quality } = req.body;
+    
+    if (!userId || !fileName) {
+      return res.status(400).json({ error: 'Missing userId or fileName' });
+    }
+    
+    if (!isValidUUID(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+    
+    const pathInfo = getSafePath(userId, fileName);
+    if (!pathInfo || !fs.existsSync(pathInfo.fullPath)) {
+      return res.status(404).json({ error: 'Source video not found' });
+    }
+    
+    // Check if it's a video file
+    const ext = path.extname(fileName).toLowerCase();
+    const videoExts = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
+    if (!videoExts.includes(ext)) {
+      return res.status(400).json({ error: 'Not a video file' });
+    }
+    
+    const baseName = fileName.replace(/\.[^.]+$/, '');
+    const hlsDir = path.join(STORAGE_PATH, userId, 'hls', baseName);
+    
+    // Check if already transcoding or done
+    const lockFile = path.join(hlsDir, '.transcoding');
+    const playlistPath = path.join(hlsDir, 'index.m3u8');
+    
+    if (fs.existsSync(playlistPath)) {
+      return res.json({
+        status: 'complete',
+        message: 'HLS version already exists',
+        playlistUrl: `/hls/${userId}/${baseName}/index.m3u8`,
+      });
+    }
+    
+    if (fs.existsSync(lockFile)) {
+      return res.json({
+        status: 'in_progress',
+        message: 'Transcoding is already in progress',
+      });
+    }
+    
+    // Create HLS directory
+    if (!fs.existsSync(hlsDir)) {
+      fs.mkdirSync(hlsDir, { recursive: true });
+    }
+    
+    // Create lock file
+    fs.writeFileSync(lockFile, new Date().toISOString());
+    
+    // Respond immediately - transcoding happens in background
+    res.json({
+      status: 'started',
+      message: 'Transcoding started. Check /hls-status for progress.',
+      baseName,
+    });
+    
+    // Background transcoding with FFmpeg
+    const { exec } = require('child_process');
+    
+    // Determine quality preset
+    const qualityPreset = quality || 'medium';
+    const qualitySettings = {
+      low: { resolution: '480', bitrate: '800k', audioBitrate: '96k' },
+      medium: { resolution: '720', bitrate: '2000k', audioBitrate: '128k' },
+      high: { resolution: '1080', bitrate: '5000k', audioBitrate: '192k' },
+    };
+    const q = qualitySettings[qualityPreset] || qualitySettings.medium;
+    
+    const segmentPath = path.join(hlsDir, 'segment_%03d.ts');
+    const outputPlaylist = path.join(hlsDir, 'index.m3u8');
+    
+    // FFmpeg command for HLS generation
+    const ffmpegCmd = `ffmpeg -i "${pathInfo.fullPath}" \
+      -c:v libx264 -preset fast -crf 23 \
+      -vf "scale=-2:${q.resolution}" \
+      -c:a aac -b:a ${q.audioBitrate} \
+      -hls_time 4 \
+      -hls_playlist_type vod \
+      -hls_segment_filename "${segmentPath}" \
+      "${outputPlaylist}" 2>&1`;
+    
+    console.log(`🎬 Starting HLS transcode for ${userId}/${fileName} (${qualityPreset})`);
+    
+    exec(ffmpegCmd, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+      // Remove lock file
+      try {
+        if (fs.existsSync(lockFile)) {
+          fs.unlinkSync(lockFile);
+        }
+      } catch (e) {
+        console.error('Failed to remove lock file:', e);
+      }
+      
+      if (error) {
+        console.error(`❌ FFmpeg error for ${fileName}:`, error.message);
+        // Write error log
+        const errorLog = path.join(hlsDir, 'error.log');
+        fs.writeFileSync(errorLog, `Error: ${error.message}\n\nOutput:\n${stdout || stderr}`);
+      } else {
+        console.log(`✅ HLS transcode complete: ${userId}/${baseName}`);
+        // Write success marker
+        const successMarker = path.join(hlsDir, '.complete');
+        fs.writeFileSync(successMarker, new Date().toISOString());
+      }
+    });
+    
+  } catch (error) {
+    console.error('Transcode error:', error);
+    res.status(500).json({ error: 'Transcode failed', message: error.message });
   }
 });
 
