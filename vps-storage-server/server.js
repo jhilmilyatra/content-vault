@@ -89,6 +89,97 @@ function getVideoResolution(filePath) {
 }
 
 /**
+ * Generate video thumbnail using FFmpeg
+ * Creates thumbnails at optimal timestamp for best frame selection
+ */
+function generateVideoThumbnail(fullPath, outputDir, baseName) {
+  return new Promise((resolve) => {
+    const { exec } = require('child_process');
+    
+    const thumbnailPath = path.join(outputDir, `${baseName}_thumb.jpg`);
+    const posterPath = path.join(outputDir, `${baseName}_poster.jpg`);
+    
+    // Get video duration first
+    const durationCmd = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${fullPath}"`;
+    
+    exec(durationCmd, (durationError, durationStdout) => {
+      if (durationError) {
+        console.warn('Could not get video duration, using 1s for thumbnail');
+      }
+      
+      const duration = parseFloat(durationStdout) || 10;
+      // Take thumbnail at 10% of video duration (usually past intro/black frames)
+      const thumbnailTime = Math.min(Math.max(duration * 0.1, 1), 30);
+      
+      // Generate small thumbnail (for lists/grids) - 320px width
+      const thumbCmd = `ffmpeg -ss ${thumbnailTime} -i "${fullPath}" -vframes 1 -q:v 2 -vf "scale=320:-1" "${thumbnailPath}" -y 2>&1`;
+      
+      exec(thumbCmd, { maxBuffer: 10 * 1024 * 1024 }, (thumbError) => {
+        if (thumbError) {
+          console.warn('Thumbnail generation failed:', thumbError.message);
+        } else {
+          console.log(`🖼️ Thumbnail generated: ${thumbnailPath}`);
+        }
+        
+        // Generate larger poster (for preview modal) - 1280px width
+        const posterCmd = `ffmpeg -ss ${thumbnailTime} -i "${fullPath}" -vframes 1 -q:v 2 -vf "scale=1280:-1" "${posterPath}" -y 2>&1`;
+        
+        exec(posterCmd, { maxBuffer: 10 * 1024 * 1024 }, (posterError) => {
+          if (posterError) {
+            console.warn('Poster generation failed:', posterError.message);
+          } else {
+            console.log(`🎬 Poster generated: ${posterPath}`);
+          }
+          
+          // Return paths even if some failed
+          resolve({
+            thumbnail: fs.existsSync(thumbnailPath) ? thumbnailPath : null,
+            poster: fs.existsSync(posterPath) ? posterPath : null,
+            thumbnailUrl: fs.existsSync(thumbnailPath) ? `${baseName}_thumb.jpg` : null,
+            posterUrl: fs.existsSync(posterPath) ? `${baseName}_poster.jpg` : null,
+          });
+        });
+      });
+    });
+  });
+}
+
+/**
+ * Generate animated GIF preview (for hover previews)
+ */
+function generateAnimatedPreview(fullPath, outputDir, baseName) {
+  return new Promise((resolve) => {
+    const { exec } = require('child_process');
+    
+    const gifPath = path.join(outputDir, `${baseName}_preview.gif`);
+    
+    // Get duration
+    const durationCmd = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${fullPath}"`;
+    
+    exec(durationCmd, (durationError, durationStdout) => {
+      const duration = parseFloat(durationStdout) || 10;
+      const startTime = Math.min(Math.max(duration * 0.1, 1), 30);
+      
+      // Generate 3-second GIF preview at 10fps, 320px width
+      const gifCmd = `ffmpeg -ss ${startTime} -t 3 -i "${fullPath}" -vf "fps=10,scale=320:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" -loop 0 "${gifPath}" -y 2>&1`;
+      
+      exec(gifCmd, { maxBuffer: 50 * 1024 * 1024 }, (gifError) => {
+        if (gifError) {
+          console.warn('GIF preview generation failed:', gifError.message);
+          resolve({ gif: null, gifUrl: null });
+        } else {
+          console.log(`🎞️ Animated preview generated: ${gifPath}`);
+          resolve({
+            gif: gifPath,
+            gifUrl: `${baseName}_preview.gif`,
+          });
+        }
+      });
+    });
+  });
+}
+
+/**
  * Transcode to a specific quality
  */
 function transcodeQuality(fullPath, hlsDir, quality, sourceResolution) {
@@ -172,6 +263,25 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
       const sourceRes = await getVideoResolution(fullPath);
       console.log(`📐 Source resolution: ${sourceRes.width}x${sourceRes.height}`);
       
+      // Generate thumbnails first (fast operation)
+      console.log(`🖼️ Generating thumbnails...`);
+      fs.writeFileSync(lockFile, JSON.stringify({ 
+        started: new Date().toISOString(),
+        status: 'generating_thumbnails',
+        progress: 5
+      }));
+      
+      const thumbnailResult = await generateVideoThumbnail(fullPath, hlsDir, baseName);
+      console.log(`✅ Thumbnails generated:`, thumbnailResult.thumbnailUrl ? 'success' : 'failed');
+      
+      // Generate animated preview (optional, can be slow)
+      let animatedResult = { gif: null, gifUrl: null };
+      try {
+        animatedResult = await generateAnimatedPreview(fullPath, hlsDir, baseName);
+      } catch (e) {
+        console.warn('Animated preview generation skipped:', e.message);
+      }
+      
       // Filter qualities that don't exceed source resolution
       const applicableQualities = HLS_QUALITIES.filter(q => q.height <= sourceRes.height);
       
@@ -193,7 +303,8 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
         started: new Date().toISOString(),
         status: 'transcoding',
         qualities: applicableQualities.map(q => q.name),
-        progress: 0
+        thumbnails: thumbnailResult,
+        progress: 10
       }));
       
       // Transcode each quality sequentially (to avoid overwhelming CPU)
@@ -206,13 +317,14 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
           const result = await transcodeQuality(fullPath, hlsDir, quality, sourceRes);
           completedQualities.push(result);
           
-          // Update progress
-          const progress = Math.round(((i + 1) / applicableQualities.length) * 100);
+          // Update progress (10-100%, with 10% reserved for thumbnails)
+          const progress = 10 + Math.round(((i + 1) / applicableQualities.length) * 90);
           fs.writeFileSync(lockFile, JSON.stringify({ 
             started: new Date().toISOString(),
             status: 'transcoding',
             qualities: applicableQualities.map(q => q.name),
             completed: completedQualities.map(q => q.name),
+            thumbnails: thumbnailResult,
             progress
           }));
           
@@ -240,7 +352,12 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
       fs.writeFileSync(successMarker, JSON.stringify({
         completed: new Date().toISOString(),
         qualities: completedQualities.map(q => ({ name: q.name, resolution: `${q.width}x${q.height}` })),
-        sourceResolution: `${sourceRes.width}x${sourceRes.height}`
+        sourceResolution: `${sourceRes.width}x${sourceRes.height}`,
+        thumbnails: {
+          thumbnail: thumbnailResult.thumbnailUrl,
+          poster: thumbnailResult.posterUrl,
+          animatedPreview: animatedResult.gifUrl,
+        }
       }));
       
       console.log(`🎉 Multi-quality transcode complete: ${userId}/${baseName}`);
@@ -1180,6 +1297,81 @@ app.get('/hls/:userId/:videoName/:file', (req, res) => {
   } catch (error) {
     console.error('HLS serve error:', error);
     res.status(500).json({ error: 'HLS serve failed', message: error.message });
+  }
+});
+
+// ============================================
+// HLS: Serve video thumbnails and previews
+// ============================================
+app.get('/hls/:userId/:videoName/:asset', (req, res, next) => {
+  try {
+    const { userId, videoName, asset } = req.params;
+    
+    // Only handle thumbnail/preview assets, pass through to other routes for HLS files
+    const validAssets = ['_thumb.jpg', '_poster.jpg', '_preview.gif'];
+    const isAsset = validAssets.some(suffix => asset.endsWith(suffix));
+    
+    if (!isAsset) {
+      // Pass to next route handler (HLS files)
+      return next();
+    }
+    
+    // Validate userId
+    if (!isValidUUID(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+    
+    // Construct path: storage/userId/hls/videoName/asset
+    const assetPath = path.join(STORAGE_PATH, userId, 'hls', videoName, asset);
+    
+    // Security check
+    const resolvedPath = path.resolve(assetPath);
+    const resolvedStorage = path.resolve(STORAGE_PATH);
+    if (!resolvedPath.startsWith(resolvedStorage + path.sep)) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+    
+    if (!fs.existsSync(assetPath)) {
+      return res.status(404).json({ error: 'Thumbnail not found' });
+    }
+    
+    const stat = fs.statSync(assetPath);
+    
+    // Determine content type
+    const ext = path.extname(asset).toLowerCase();
+    const contentTypes = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+    };
+    const contentType = contentTypes[ext] || 'application/octet-stream';
+    
+    // Long cache for thumbnails (they're regenerated with new filename if changed)
+    const headers = {
+      'Content-Type': contentType,
+      'Content-Length': stat.size,
+      'Cache-Control': 'public, max-age=604800, immutable', // 7 days
+      'Access-Control-Allow-Origin': '*',
+      'ETag': `"${stat.size}-${stat.mtimeMs}"`,
+      'Last-Modified': stat.mtime.toUTCString(),
+    };
+    
+    // Handle conditional GET
+    const ifNoneMatch = req.headers['if-none-match'];
+    if (ifNoneMatch === headers['ETag']) {
+      return res.status(304).end();
+    }
+    
+    res.writeHead(200, headers);
+    
+    const stream = fs.createReadStream(assetPath);
+    stream.pipe(res);
+    
+  } catch (error) {
+    console.error('Thumbnail serve error:', error);
+    res.status(500).json({ error: 'Thumbnail serve failed', message: error.message });
   }
 });
 
