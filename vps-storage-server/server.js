@@ -35,6 +35,11 @@ const AUTO_TRANSCODE = process.env.AUTO_TRANSCODE !== 'false'; // Enable by defa
 const AUTO_RETRANSCODE_ON_STARTUP = process.env.AUTO_RETRANSCODE_ON_STARTUP === 'true'; // Scan & transcode existing videos on startup
 const TRANSCODE_DELAY_MS = parseInt(process.env.TRANSCODE_DELAY_MS) || 30000; // Delay between transcodes to avoid CPU overload
 
+// Supabase callback configuration for thumbnail updates
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const VPS_CALLBACK_KEY = process.env.VPS_CALLBACK_KEY || 'vps-thumbnail-callback-secret';
+const ENABLE_THUMBNAIL_CALLBACK = process.env.ENABLE_THUMBNAIL_CALLBACK !== 'false'; // Enable by default
+
 // Ensure storage directory exists
 if (!fs.existsSync(STORAGE_PATH)) {
   fs.mkdirSync(STORAGE_PATH, { recursive: true });
@@ -177,6 +182,51 @@ function generateAnimatedPreview(fullPath, outputDir, baseName) {
       });
     });
   });
+}
+
+/**
+ * Send thumbnail callback to Supabase to update file record
+ */
+async function sendThumbnailCallback(userId, fileName, thumbnailResult, animatedResult, qualities) {
+  if (!ENABLE_THUMBNAIL_CALLBACK || !SUPABASE_URL) {
+    console.log('📭 Thumbnail callback disabled or SUPABASE_URL not configured');
+    return;
+  }
+  
+  const storagePath = `${userId}/${fileName}`;
+  
+  const callbackUrl = `${SUPABASE_URL}/functions/v1/update-thumbnail`;
+  
+  const payload = {
+    storagePath,
+    thumbnailUrl: thumbnailResult?.thumbnailUrl || null,
+    posterUrl: thumbnailResult?.posterUrl || null,
+    animatedPreviewUrl: animatedResult?.gifUrl || null,
+    qualities: qualities || [],
+  };
+  
+  console.log(`📤 Sending thumbnail callback for ${storagePath}...`);
+  
+  try {
+    const response = await fetch(callbackUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-vps-callback-key': VPS_CALLBACK_KEY,
+      },
+      body: JSON.stringify(payload),
+    });
+    
+    if (response.ok) {
+      const result = await response.json();
+      console.log(`✅ Thumbnail callback successful: ${result.thumbnails?.poster || result.thumbnails?.thumbnail || 'updated'}`);
+    } else {
+      const errorText = await response.text();
+      console.error(`❌ Thumbnail callback failed (${response.status}): ${errorText}`);
+    }
+  } catch (error) {
+    console.error(`❌ Thumbnail callback error:`, error.message);
+  }
 }
 
 /**
@@ -349,9 +399,10 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
       }
       
       const successMarker = path.join(hlsDir, '.complete');
+      const qualitiesData = completedQualities.map(q => ({ name: q.name, resolution: `${q.width}x${q.height}` }));
       fs.writeFileSync(successMarker, JSON.stringify({
         completed: new Date().toISOString(),
-        qualities: completedQualities.map(q => ({ name: q.name, resolution: `${q.width}x${q.height}` })),
+        qualities: qualitiesData,
         sourceResolution: `${sourceRes.width}x${sourceRes.height}`,
         thumbnails: {
           thumbnail: thumbnailResult.thumbnailUrl,
@@ -361,6 +412,9 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
       }));
       
       console.log(`🎉 Multi-quality transcode complete: ${userId}/${baseName}`);
+      
+      // Send callback to update database with thumbnail URLs
+      await sendThumbnailCallback(userId, fileName, thumbnailResult, animatedResult, qualitiesData);
       
     } catch (error) {
       console.error(`❌ Multi-quality transcode failed for ${fileName}:`, error.message || error);
