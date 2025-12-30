@@ -1,6 +1,7 @@
 # 📁 SecureFiles - Complete Folder Structure
 
 > **Last Updated:** December 2024  
+> **Version:** 1.1.0  
 > **Purpose:** Comprehensive file-by-file documentation for debugging, maintenance, and feature development
 
 ---
