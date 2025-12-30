@@ -404,7 +404,7 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
       transition={{ duration: animationDuration }}
       className={`relative w-full bg-black overflow-hidden will-change-transform ${
         isFullscreen 
-          ? 'fixed inset-0 z-[9999] rounded-none flex items-center justify-center' 
+          ? 'fixed inset-0 z-[9999] rounded-none flex items-center justify-center safe-area-inset' 
           : isPortraitVideo 
             ? 'aspect-[9/16] max-h-[70vh] mx-auto'
             : 'aspect-video'
@@ -432,7 +432,7 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: animationDuration, ease: EASE_SMOOTH }}
-            className={`absolute top-1/2 -translate-y-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none ${
+            className={`absolute top-1/2 -translate-y-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none safe-area-inset ${
               gestureIndicator.type === 'volume' ? 'right-8' : 'left-8'
             }`}
           >
@@ -713,23 +713,27 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
         </motion.div>
       </div>
       
-      {/* Fullscreen close button */}
+      {/* Fullscreen close button - always visible on mobile for easy exit */}
       <AnimatePresence>
         {isFullscreen && (
           <motion.button
-            initial={{ opacity: 0 }}
-            animate={{ opacity: showControls ? 1 : 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: isMobile ? 0.9 : (showControls ? 1 : 0), scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ duration: 0.2, ease: EASE_SMOOTH }}
             whileTap={{ scale: 0.92 }}
             onClick={(e) => {
               e.stopPropagation();
               toggleFullscreen();
             }}
-            style={{ pointerEvents: showControls ? 'auto' : 'none' }}
-            className="absolute top-4 right-4 z-[10001] w-12 h-12 sm:w-11 sm:h-11 rounded-full bg-black/70 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/90 active:bg-black transition-colors touch-manipulation safe-area-inset shadow-lg"
+            style={{ 
+              pointerEvents: isMobile ? 'auto' : (showControls ? 'auto' : 'none'),
+              marginTop: 'env(safe-area-inset-top, 0px)', 
+              marginRight: 'env(safe-area-inset-right, 0px)' 
+            }}
+            className="absolute top-4 right-4 z-[10001] w-14 h-14 sm:w-11 sm:h-11 rounded-full bg-black/80 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/90 active:bg-black transition-colors touch-manipulation shadow-xl border border-white/10"
           >
-            <X className="w-6 h-6 sm:w-5 sm:h-5" />
+            <X className="w-7 h-7 sm:w-5 sm:h-5" />
           </motion.button>
         )}
       </AnimatePresence>
