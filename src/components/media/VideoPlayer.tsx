@@ -1,0 +1,659 @@
+import { useState, useRef, useCallback, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Slider } from "@/components/ui/slider";
+import { Button } from "@/components/ui/button";
+import { lightHaptic } from "@/lib/haptics";
+import {
+  Play, Pause, Volume2, VolumeX, Maximize, Minimize,
+  SkipBack, SkipForward, X, Sparkles
+} from "lucide-react";
+
+interface VideoPlayerProps {
+  src: string;
+  onError?: () => void;
+  className?: string;
+}
+
+export function VideoPlayer({ src, onError, className = "" }: VideoPlayerProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Playback state
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(1);
+  const [buffered, setBuffered] = useState(0);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
+  
+  // UI state
+  const [showControls, setShowControls] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPortraitVideo, setIsPortraitVideo] = useState(false);
+  
+  // Double-tap seek
+  const lastTapRef = useRef<{ time: number; x: number } | null>(null);
+  const [seekIndicator, setSeekIndicator] = useState<{ side: 'left' | 'right'; visible: boolean }>({ side: 'left', visible: false });
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Gesture controls (volume on right, brightness on left)
+  const [gestureActive, setGestureActive] = useState(false);
+  const [brightness, setBrightness] = useState(1);
+  const [gestureIndicator, setGestureIndicator] = useState<{ type: 'volume' | 'brightness'; value: number; visible: boolean }>({ type: 'volume', value: 1, visible: false });
+  const gestureStartRef = useRef<{ x: number; y: number; startVolume: number; startBrightness: number } | null>(null);
+
+  const playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
+  // Auto-hide controls after 3 seconds
+  const resetControlsTimeout = useCallback(() => {
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    setShowControls(true);
+    controlsTimeoutRef.current = setTimeout(() => {
+      setShowControls(false);
+    }, 3000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+      document.body.style.overflow = '';
+    };
+  }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      
+      const video = videoRef.current;
+      if (!video) return;
+      
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault();
+          togglePlay();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          skipBackward();
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          skipForward();
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          {
+            const newVol = Math.min(volume + 0.1, 1);
+            video.volume = newVol;
+            setVolume(newVol);
+            setIsMuted(false);
+          }
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          {
+            const newVol = Math.max(volume - 0.1, 0);
+            video.volume = newVol;
+            setVolume(newVol);
+            if (newVol === 0) setIsMuted(true);
+          }
+          break;
+        case 'KeyM':
+          e.preventDefault();
+          toggleMute();
+          break;
+        case 'KeyF':
+          e.preventDefault();
+          toggleFullscreen();
+          break;
+        case 'Escape':
+          if (isFullscreen) {
+            e.preventDefault();
+            toggleFullscreen();
+          }
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [volume, isPlaying, isFullscreen]);
+
+  const togglePlay = () => {
+    const video = videoRef.current;
+    if (video) {
+      lightHaptic();
+      if (isPlaying) {
+        video.pause();
+      } else {
+        video.play().catch(err => {
+          console.error('Playback error:', err);
+          setMediaError('Unable to play this file. The format may not be supported.');
+        });
+      }
+      setIsPlaying(!isPlaying);
+      resetControlsTimeout();
+    }
+  };
+
+  const toggleMute = () => {
+    const video = videoRef.current;
+    if (video) {
+      lightHaptic();
+      video.muted = !isMuted;
+      setIsMuted(!isMuted);
+    }
+  };
+
+  const handleVolumeChange = (value: number[]) => {
+    const video = videoRef.current;
+    if (video) {
+      const newVolume = value[0];
+      video.volume = newVolume;
+      setVolume(newVolume);
+      setIsMuted(newVolume === 0);
+    }
+  };
+
+  const handleSeek = (value: number[]) => {
+    const video = videoRef.current;
+    if (video) {
+      video.currentTime = value[0];
+      setCurrentTime(value[0]);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    const video = videoRef.current;
+    if (video) {
+      setCurrentTime(video.currentTime);
+      if (video.buffered.length > 0) {
+        setBuffered(video.buffered.end(video.buffered.length - 1));
+      }
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    const video = videoRef.current;
+    if (video) {
+      setDuration(video.duration);
+      const { videoWidth, videoHeight } = video;
+      if (videoWidth && videoHeight) {
+        setIsPortraitVideo(videoHeight > videoWidth);
+      }
+    }
+  };
+
+  const handleMediaEnded = () => {
+    setIsPlaying(false);
+    setShowControls(true);
+  };
+
+  const handleMediaError = () => {
+    setMediaError('Unable to play this file. The format may not be supported by your browser.');
+    onError?.();
+  };
+
+  const skipForward = () => {
+    const video = videoRef.current;
+    if (video) {
+      lightHaptic();
+      video.currentTime = Math.min(video.currentTime + 10, duration);
+    }
+  };
+
+  const skipBackward = () => {
+    const video = videoRef.current;
+    if (video) {
+      lightHaptic();
+      video.currentTime = Math.max(video.currentTime - 10, 0);
+    }
+  };
+
+  const toggleFullscreen = () => {
+    setIsFullscreen(prev => !prev);
+    if (!isFullscreen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+  };
+
+  const changePlaybackSpeed = (speed: number) => {
+    const video = videoRef.current;
+    if (video) {
+      lightHaptic();
+      video.playbackRate = speed;
+      setPlaybackSpeed(speed);
+      setShowSpeedMenu(false);
+    }
+  };
+
+  const formatTime = (time: number) => {
+    const minutes = Math.floor(time / 60);
+    const seconds = Math.floor(time % 60);
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  };
+
+  // Handle double-tap seek
+  const handleVideoTap = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    const now = Date.now();
+    const container = containerRef.current;
+    const video = videoRef.current;
+    if (!container || !video) return;
+
+    const rect = container.getBoundingClientRect();
+    const clientX = 'touches' in e ? e.changedTouches[0].clientX : e.clientX;
+    const x = clientX - rect.left;
+    const isLeftSide = x < rect.width / 2;
+
+    if (lastTapRef.current && now - lastTapRef.current.time < 300) {
+      const wasLeftSide = lastTapRef.current.x < rect.width / 2;
+      if (isLeftSide === wasLeftSide) {
+        if (isLeftSide) {
+          video.currentTime = Math.max(video.currentTime - 10, 0);
+          setSeekIndicator({ side: 'left', visible: true });
+        } else {
+          video.currentTime = Math.min(video.currentTime + 10, duration);
+          setSeekIndicator({ side: 'right', visible: true });
+        }
+        setTimeout(() => setSeekIndicator(prev => ({ ...prev, visible: false })), 500);
+        lastTapRef.current = null;
+        return;
+      }
+    }
+
+    lastTapRef.current = { time: now, x };
+    
+    setTimeout(() => {
+      if (lastTapRef.current && now === lastTapRef.current.time) {
+        togglePlay();
+        lastTapRef.current = null;
+      }
+    }, 300);
+  };
+
+  // Gesture handlers
+  const handleGestureStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    const touch = e.touches[0];
+    const container = containerRef.current;
+    if (!container) return;
+    
+    const rect = container.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const isRightSide = x > rect.width * 0.6;
+    const isLeftSide = x < rect.width * 0.4;
+    
+    if (isRightSide || isLeftSide) {
+      gestureStartRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        startVolume: volume,
+        startBrightness: brightness,
+      };
+    }
+  };
+
+  const handleGestureMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!gestureStartRef.current) return;
+    
+    const touch = e.touches[0];
+    const container = containerRef.current;
+    if (!container) return;
+    
+    const rect = container.getBoundingClientRect();
+    const startX = gestureStartRef.current.x - rect.left;
+    const deltaY = gestureStartRef.current.y - touch.clientY;
+    
+    if (Math.abs(deltaY) < 15 && !gestureActive) return;
+    
+    const isRightSide = startX > rect.width * 0.6;
+    const isLeftSide = startX < rect.width * 0.4;
+    
+    if (!isRightSide && !isLeftSide) {
+      gestureStartRef.current = null;
+      return;
+    }
+    
+    setGestureActive(true);
+    
+    const sensitivity = 200;
+    const change = deltaY / sensitivity;
+    
+    if (isRightSide) {
+      const newVolume = Math.max(0, Math.min(1, gestureStartRef.current.startVolume + change));
+      const video = videoRef.current;
+      if (video) {
+        video.volume = newVolume;
+        setVolume(newVolume);
+        setIsMuted(newVolume === 0);
+      }
+      setGestureIndicator({ type: 'volume', value: newVolume, visible: true });
+    } else {
+      const newBrightness = Math.max(0.2, Math.min(1.5, gestureStartRef.current.startBrightness + change));
+      setBrightness(newBrightness);
+      setGestureIndicator({ type: 'brightness', value: newBrightness, visible: true });
+    }
+  };
+
+  const handleGestureEnd = () => {
+    gestureStartRef.current = null;
+    setGestureActive(false);
+    setTimeout(() => setGestureIndicator(prev => ({ ...prev, visible: false })), 800);
+  };
+
+  if (mediaError) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-8">
+        <div className="text-center">
+          <p className="text-destructive">{mediaError}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <motion.div 
+      ref={containerRef}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className={`relative w-full bg-black overflow-hidden ${
+        isFullscreen 
+          ? 'fixed inset-0 z-[9999] rounded-none flex items-center justify-center' 
+          : isPortraitVideo 
+            ? 'aspect-[9/16] max-h-[70vh] mx-auto'
+            : 'aspect-video'
+      } rounded-xl sm:rounded-2xl ${className}`}
+      onMouseMove={resetControlsTimeout}
+      onClick={resetControlsTimeout}
+      onTouchStart={(e) => {
+        resetControlsTimeout();
+        handleGestureStart(e);
+      }}
+      onTouchMove={handleGestureMove}
+      onTouchEnd={handleGestureEnd}
+    >
+      {/* Brightness overlay */}
+      <div 
+        className="absolute inset-0 bg-black pointer-events-none z-[1] transition-opacity duration-150"
+        style={{ opacity: 1 - brightness }}
+      />
+      
+      {/* Gesture indicator */}
+      <AnimatePresence>
+        {gestureIndicator.visible && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            className={`absolute top-1/2 -translate-y-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none ${
+              gestureIndicator.type === 'volume' ? 'right-8' : 'left-8'
+            }`}
+          >
+            <div className="w-14 h-14 rounded-full bg-black/60 backdrop-blur-md flex items-center justify-center">
+              {gestureIndicator.type === 'volume' ? (
+                gestureIndicator.value === 0 ? <VolumeX className="w-7 h-7 text-white" /> : <Volume2 className="w-7 h-7 text-white" />
+              ) : (
+                <Sparkles className="w-7 h-7 text-white" />
+              )}
+            </div>
+            <div className="w-1.5 h-24 bg-white/20 rounded-full overflow-hidden relative">
+              <motion.div 
+                className="absolute bottom-0 left-0 right-0 bg-white rounded-full"
+                initial={false}
+                animate={{ 
+                  height: `${gestureIndicator.type === 'volume' 
+                    ? gestureIndicator.value * 100 
+                    : ((gestureIndicator.value - 0.2) / 1.3) * 100}%` 
+                }}
+              />
+            </div>
+            <span className="text-white text-xs font-semibold">
+              {Math.round(gestureIndicator.value * 100)}%
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
+      {/* Video element */}
+      <div 
+        className={`relative cursor-pointer z-[2] ${
+          isFullscreen ? 'w-full h-full flex items-center justify-center' : 'w-full h-full'
+        }`}
+        onClick={!gestureActive ? handleVideoTap : undefined}
+        onTouchEnd={!gestureActive ? handleVideoTap : undefined}
+      >
+        <video
+          ref={videoRef}
+          src={src}
+          className="w-full h-full object-contain"
+          style={{ filter: `brightness(${brightness})` }}
+          onTimeUpdate={handleTimeUpdate}
+          onLoadedMetadata={handleLoadedMetadata}
+          onEnded={handleMediaEnded}
+          onError={handleMediaError}
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+          playsInline
+          crossOrigin="anonymous"
+          preload="metadata"
+          controlsList="nodownload"
+        />
+        
+        {/* Double-tap seek indicators */}
+        <AnimatePresence>
+          {seekIndicator.visible && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              className={`absolute top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 pointer-events-none ${
+                seekIndicator.side === 'left' ? 'left-[15%]' : 'right-[15%]'
+              }`}
+            >
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center">
+                {seekIndicator.side === 'left' ? (
+                  <SkipBack className="w-7 h-7 sm:w-8 sm:h-8 text-white" />
+                ) : (
+                  <SkipForward className="w-7 h-7 sm:w-8 sm:h-8 text-white" />
+                )}
+              </div>
+              <span className="text-white text-sm font-semibold drop-shadow-lg">
+                {seekIndicator.side === 'left' ? '-10s' : '+10s'}
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        
+        {/* Center play button */}
+        <AnimatePresence>
+          {!isPlaying && !seekIndicator.visible && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              className="absolute inset-0 flex items-center justify-center bg-gradient-to-t from-black/60 via-transparent to-black/30 pointer-events-none"
+            >
+              <motion.div 
+                whileHover={{ scale: 1.1 }}
+                className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white/95 backdrop-blur-sm flex items-center justify-center shadow-2xl"
+              >
+                <Play className="w-8 h-8 sm:w-10 sm:h-10 text-black ml-1" />
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Controls overlay */}
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ 
+            opacity: showControls ? 1 : 0, 
+            y: showControls ? 0 : 10,
+            pointerEvents: showControls ? 'auto' : 'none'
+          }}
+          transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
+          className={`absolute inset-x-0 bottom-0 ${isFullscreen ? 'z-[10000]' : ''}`}
+        >
+          <div className={`absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent ${isFullscreen ? '' : 'backdrop-blur-sm'}`} />
+          
+          <div className="relative p-3 sm:p-4">
+            {/* Progress bar */}
+            <div className="mb-3 relative">
+              <div className="absolute inset-0 h-1.5 rounded-full bg-white/10" />
+              <div 
+                className="absolute h-1.5 rounded-full bg-white/20"
+                style={{ width: `${(buffered / duration) * 100}%` }}
+              />
+              <Slider
+                value={[currentTime]}
+                min={0}
+                max={duration || 100}
+                step={0.1}
+                onValueChange={handleSeek}
+                className="cursor-pointer touch-manipulation relative z-10 [&_[role=slider]]:h-5 [&_[role=slider]]:w-5 sm:[&_[role=slider]]:h-4 sm:[&_[role=slider]]:w-4 [&_[role=slider]]:border-2 [&_[role=slider]]:border-white [&_[role=slider]]:bg-white"
+              />
+              <div className="flex justify-between text-xs text-white/80 mt-2 sm:hidden font-medium tabular-nums">
+                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(duration)}</span>
+              </div>
+            </div>
+
+            {/* Control buttons */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1 sm:gap-2">
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={skipBackward}
+                  className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation"
+                >
+                  <SkipBack className="w-5 h-5" />
+                </motion.button>
+                
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={togglePlay}
+                  className="w-12 h-12 sm:w-11 sm:h-11 rounded-full bg-white/20 flex items-center justify-center text-white hover:bg-white/30 transition-all touch-manipulation"
+                >
+                  {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
+                </motion.button>
+                
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={skipForward}
+                  className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation"
+                >
+                  <SkipForward className="w-5 h-5" />
+                </motion.button>
+
+                <span className="hidden sm:inline text-white/80 text-sm ml-3 font-medium tabular-nums">
+                  {formatTime(currentTime)} / {formatTime(duration)}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1 sm:gap-2">
+                {/* Playback speed */}
+                <div className="relative">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setShowSpeedMenu(!showSpeedMenu)}
+                    className="h-10 px-3 rounded-lg bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-all touch-manipulation"
+                  >
+                    {playbackSpeed}x
+                  </motion.button>
+                  {showSpeedMenu && (
+                    <div className="absolute bottom-full mb-2 right-0 bg-black/80 backdrop-blur-xl rounded-xl border border-white/10 overflow-hidden min-w-[80px] z-50 shadow-xl">
+                      {playbackSpeeds.map((speed) => (
+                        <button
+                          key={speed}
+                          onClick={() => changePlaybackSpeed(speed)}
+                          className={`w-full px-4 py-3 text-sm text-left hover:bg-white/20 transition-colors touch-manipulation ${
+                            playbackSpeed === speed ? 'text-primary bg-white/10' : 'text-white'
+                          }`}
+                        >
+                          {speed}x
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Volume (desktop) */}
+                <div className="hidden sm:flex items-center gap-2 group">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={toggleMute}
+                    className="text-white hover:bg-white/20 h-10 w-10 rounded-full"
+                  >
+                    {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                  </Button>
+                  <div className="w-20 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Slider
+                      value={[isMuted ? 0 : volume]}
+                      min={0}
+                      max={1}
+                      step={0.1}
+                      onValueChange={handleVolumeChange}
+                    />
+                  </div>
+                </div>
+
+                {/* Mobile mute */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggleMute}
+                  className="sm:hidden text-white hover:bg-white/20 h-11 w-11 rounded-full touch-manipulation"
+                >
+                  {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                </Button>
+
+                {/* Fullscreen */}
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={toggleFullscreen}
+                  className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation"
+                >
+                  {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+                </motion.button>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+      
+      {/* Fullscreen close button */}
+      {isFullscreen && (
+        <motion.button
+          initial={{ opacity: 0 }}
+          animate={{ opacity: showControls ? 1 : 0 }}
+          transition={{ duration: 0.2 }}
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleFullscreen();
+          }}
+          style={{ pointerEvents: showControls ? 'auto' : 'none' }}
+          className="absolute top-4 right-4 z-[10001] w-12 h-12 sm:w-11 sm:h-11 rounded-full bg-black/70 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/90 transition-all touch-manipulation active:scale-90 shadow-lg"
+        >
+          <X className="w-6 h-6 sm:w-5 sm:h-5" />
+        </motion.button>
+      )}
+    </motion.div>
+  );
+}
