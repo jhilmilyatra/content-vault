@@ -277,12 +277,14 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
 
       case "video":
         return (
-          <div className="w-full flex items-center justify-center overflow-hidden">
-            <VideoPlayer 
-              src={fileUrl} 
-              onError={() => setMediaError('Unable to play this file.')}
-              crossOrigin={false}
-            />
+          <div className="w-full h-full flex items-center justify-center overflow-hidden">
+            <div className="w-full h-full max-h-[70vh]">
+              <VideoPlayer 
+                src={fileUrl} 
+                onError={() => setMediaError('Unable to play this file.')}
+                crossOrigin={false}
+              />
+            </div>
           </div>
         );
 
@@ -472,12 +474,10 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
-        className={`max-w-5xl w-[95vw] p-0 gap-0 overflow-hidden flex flex-col ${
-          isVideoOrImage ? 'max-h-[90vh] sm:max-h-[95vh]' : 'max-h-[90vh]'
-        }`}
+        className="max-w-5xl w-[95vw] h-[100dvh] max-h-[95dvh] p-0 gap-0 overflow-hidden flex flex-col"
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b bg-background shrink-0">
+        <div className="flex items-center justify-between p-4 border-b bg-background shrink-0 flex-none">
           <div className="flex-1 min-w-0">
             <h3 className="font-semibold text-foreground truncate">
               {file?.name || "File Preview"}
@@ -510,7 +510,7 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
         </div>
 
         {/* Content */}
-        <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${
+        <div className={`flex-1 min-h-0 overflow-hidden flex flex-col ${
           isVideoOrImage ? 'p-0 items-center justify-center' : 'p-4 overflow-auto'
         }`}>
           {loading ? (
