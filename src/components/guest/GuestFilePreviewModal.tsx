@@ -426,15 +426,16 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
         );
 
       case "video":
-        // Calculate aspect ratio padding (height/width * 100)
+        // Calculate aspect ratio for the video
         // For portrait videos on mobile, cap the height to avoid too tall containers
         const aspectPadding = isPortraitVideo 
           ? Math.min((1 / videoAspectRatio) * 100, 133) // Cap at 4:3 portrait max (133%)
           : (1 / videoAspectRatio) * 100;
         
         return (
+          // CRITICAL: Use block-level container, NOT flex. Flex breaks mobile video sizing.
           <div 
-            className="flex-1 flex flex-col bg-black rounded-xl sm:rounded-2xl overflow-hidden"
+            className="w-full bg-black rounded-xl sm:rounded-2xl overflow-hidden"
             onMouseEnter={() => setShowControls(true)}
             onMouseLeave={() => setShowControls(isPlaying ? false : true)}
             onTouchStart={() => {
@@ -445,13 +446,18 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
               }
             }}
           >
-            {/* Video Container - Auto aspect ratio detection */}
+            {/* Video Container - Fixed aspect ratio frame (YouTube/Netflix pattern) */}
+            {/* Using padding-top hack: the container has 0 height, padding creates the space */}
             <div 
               ref={videoContainerRef}
-              className={`relative w-full bg-black flex-shrink-0 transition-all duration-300 ${
+              className={`relative w-full bg-black ${
                 isPortraitVideo ? 'mx-auto max-w-[70%] sm:max-w-[50%]' : ''
               }`}
-              style={{ paddingTop: `${aspectPadding}%` }}
+              style={{ 
+                // CRITICAL: padding-top creates the aspect ratio box
+                // Height is implicitly 0, padding creates the visual height
+                paddingTop: `${aspectPadding}%`,
+              }}
               onClick={handleVideoTap}
               onTouchEnd={handleVideoTap}
             >
@@ -466,8 +472,6 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
                 playsInline
-                webkit-playsinline="true"
-                x-webkit-airplay="allow"
                 crossOrigin="anonymous"
                 preload="metadata"
                 controlsList="nodownload"
