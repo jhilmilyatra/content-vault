@@ -891,7 +891,7 @@ const FileManager = () => {
                             <MoreHorizontal className="w-4 h-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent className="bg-black/90 backdrop-blur-xl border-white/10">
+                        <DropdownMenuContent align="end" sideOffset={4} collisionPadding={16} className="bg-black/90 backdrop-blur-xl border-white/10 z-50">
                           <DropdownMenuItem
                             className="text-white/70 hover:text-white focus:text-white focus:bg-white/10"
                             onClick={(e) => {
@@ -1064,7 +1064,7 @@ const FileManager = () => {
                             <MoreHorizontal className="w-4 h-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent className="bg-black/90 backdrop-blur-xl border-white/10">
+                        <DropdownMenuContent align="end" sideOffset={4} collisionPadding={16} className="bg-black/90 backdrop-blur-xl border-white/10 z-50">
                           <DropdownMenuItem 
                             className="text-white/70 hover:text-white focus:text-white focus:bg-white/10"
                             onClick={(e) => {
