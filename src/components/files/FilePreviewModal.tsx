@@ -336,7 +336,7 @@ export function FilePreviewModal({
 
       case "video":
         return (
-          <div className="w-full flex items-center justify-center overflow-hidden">
+          <div className="w-full flex items-center justify-center overflow-hidden p-0">
             <VideoPlayer 
               src={fileUrl} 
               onError={() => setMediaError('Unable to play this file.')}
@@ -564,6 +564,7 @@ export function FilePreviewModal({
   };
 
   const fileType = file ? getFileType(file.mime_type) : "other";
+  const isVideoOrImage = fileType === "video" || fileType === "image";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -643,7 +644,9 @@ export function FilePreviewModal({
         </motion.div>
 
         {/* Content */}
-        <div className="flex-1 p-4 overflow-auto">
+        <div className={`flex-1 overflow-auto ${
+          isVideoOrImage ? 'p-0 flex items-center justify-center' : 'p-4'
+        }`}>
           <AnimatePresence mode="wait">
             {loading ? (
               <motion.div 
