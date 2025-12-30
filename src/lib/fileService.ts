@@ -270,6 +270,55 @@ const PRIMARY_VPS_CONFIG = {
 const STORAGE_NODES_KEY = "vps_storage_nodes";
 
 /**
+ * Get direct VPS file URL (bypasses edge function for better performance)
+ * Use this for media streaming where CDN caching is important
+ */
+export const getDirectVPSUrl = (storagePath: string): string => {
+  return `${PRIMARY_VPS_CONFIG.endpoint}/files/${storagePath}`;
+};
+
+/**
+ * Get direct VPS HLS URL for video streaming
+ */
+export const getDirectHLSUrl = (storagePath: string): string => {
+  const pathParts = storagePath.split('/');
+  const fileName = pathParts.pop() || '';
+  const userId = pathParts[0];
+  const baseName = fileName.replace(/\.[^/.]+$/, '');
+  return `${PRIMARY_VPS_CONFIG.endpoint}/hls/${userId}/${baseName}/master.m3u8`;
+};
+
+/**
+ * Check if VPS is reachable (quick health check)
+ */
+export const checkVPSHealth = async (): Promise<boolean> => {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    
+    const response = await fetch(`${PRIMARY_VPS_CONFIG.endpoint}/health`, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    return response.ok;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Get VPS API key for authenticated requests
+ */
+export const getVPSApiKey = (): string => PRIMARY_VPS_CONFIG.apiKey;
+
+/**
+ * Get VPS endpoint
+ */
+export const getVPSEndpoint = (): string => PRIMARY_VPS_CONFIG.endpoint;
+
+/**
  * Get all configured VPS storage nodes (includes hardcoded primary)
  */
 export const getStorageNodes = (): StorageNode[] => {
