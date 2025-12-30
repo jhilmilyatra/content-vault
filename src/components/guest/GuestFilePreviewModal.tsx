@@ -277,11 +277,13 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
 
       case "video":
         return (
-          <VideoPlayer 
-            src={fileUrl} 
-            onError={() => setMediaError('Unable to play this file.')}
-            crossOrigin={false}
-          />
+          <div className="w-full flex items-center justify-center overflow-hidden">
+            <VideoPlayer 
+              src={fileUrl} 
+              onError={() => setMediaError('Unable to play this file.')}
+              crossOrigin={false}
+            />
+          </div>
         );
 
       case "audio":
@@ -470,8 +472,8 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
-        className={`max-w-5xl w-[95vw] p-0 gap-0 overflow-hidden ${
-          isVideoOrImage ? 'max-h-[95vh]' : 'max-h-[90vh]'
+        className={`max-w-5xl w-[95vw] p-0 gap-0 overflow-hidden flex flex-col ${
+          isVideoOrImage ? 'max-h-[90vh] sm:max-h-[95vh]' : 'max-h-[90vh]'
         }`}
       >
         {/* Header */}
@@ -508,8 +510,8 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
         </div>
 
         {/* Content */}
-        <div className={`flex-1 flex flex-col min-h-0 ${
-          isVideoOrImage ? 'p-0' : 'p-4 overflow-auto'
+        <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${
+          isVideoOrImage ? 'p-0 items-center justify-center' : 'p-4 overflow-auto'
         }`}>
           {loading ? (
             <div className="flex-1 flex items-center justify-center p-8">
