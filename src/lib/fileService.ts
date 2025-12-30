@@ -48,6 +48,13 @@ export interface SpeedDataPoint {
   parallelChunks?: number;
 }
 
+// Finalization progress for file assembly
+export interface FinalizationProgress {
+  phase: 'verifying' | 'assembling' | 'creating-record' | 'complete';
+  progress: number; // 0-100
+  message: string;
+}
+
 export interface UploadProgress {
   loaded: number;
   total: number;
@@ -67,6 +74,8 @@ export interface UploadProgress {
   speedHistory?: SpeedDataPoint[];
   // Chunk status visualization
   uploadedChunks?: number[];
+  // Finalization progress
+  finalizationProgress?: FinalizationProgress;
 }
 
 export interface ChunkedUploadState {
@@ -791,9 +800,8 @@ const uploadChunked = async (
   const MAX_FINALIZE_RETRIES = 3;
   let finalizeAttempt = 0;
   
-  while (finalizeAttempt < MAX_FINALIZE_RETRIES) {
-    finalizeAttempt++;
-    
+  // Helper to report finalization progress
+  const reportFinalizationProgress = (phase: FinalizationProgress['phase'], progress: number, message: string) => {
     if (onProgress) {
       onProgress({
         loaded: file.size,
@@ -807,8 +815,16 @@ const uploadChunked = async (
         currentChunk: totalChunks,
         totalChunks,
         uploadId,
+        finalizationProgress: { phase, progress, message },
       });
     }
+  };
+  
+  while (finalizeAttempt < MAX_FINALIZE_RETRIES) {
+    finalizeAttempt++;
+    
+    // Report verifying phase
+    reportFinalizationProgress('verifying', 10, 'Verifying file integrity...');
 
     const finalizeResponse = await fetch(
       `${supabaseUrl}/functions/v1/vps-chunked-upload?action=finalize`,
@@ -823,11 +839,20 @@ const uploadChunked = async (
     );
 
     if (finalizeResponse.ok) {
+      // Report assembling phase
+      reportFinalizationProgress('assembling', 50, 'Assembling file on server...');
+      
       const result = await finalizeResponse.json();
+      
+      // Report creating record phase
+      reportFinalizationProgress('creating-record', 80, 'Creating database record...');
       
       // Clean up localStorage
       removeResumableUpload(uploadId!);
 
+      // Report complete
+      reportFinalizationProgress('complete', 100, 'Upload complete!');
+      
       if (onProgress) {
         onProgress({
           loaded: file.size,
@@ -841,6 +866,7 @@ const uploadChunked = async (
           currentChunk: totalChunks,
           totalChunks,
           uploadId,
+          finalizationProgress: { phase: 'complete', progress: 100, message: 'Upload complete!' },
         });
       }
 
