@@ -68,3 +68,6 @@ verify_jwt = false
 
 [functions.owner-update-user]
 verify_jwt = false
+
+[functions.track-file-view]
+verify_jwt = false
