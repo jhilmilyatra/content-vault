@@ -86,3 +86,6 @@ verify_jwt = false
 
 [functions.update-thumbnail]
 verify_jwt = false
+
+[functions.owner-delete-file]
+verify_jwt = false
