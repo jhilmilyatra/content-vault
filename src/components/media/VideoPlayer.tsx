@@ -245,7 +245,7 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
 
-  // Handle double-tap seek
+  // Handle double-tap seek / fullscreen
   const handleVideoTap = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     const now = Date.now();
     const container = containerRef.current;
@@ -255,19 +255,30 @@ export function VideoPlayer({ src, onError, className = "", crossOrigin = true }
     const rect = container.getBoundingClientRect();
     const clientX = 'touches' in e ? e.changedTouches[0].clientX : e.clientX;
     const x = clientX - rect.left;
-    const isLeftSide = x < rect.width / 2;
+    const relativeX = x / rect.width;
+    
+    // Define zones: left 30%, center 40%, right 30%
+    const zone = relativeX < 0.3 ? 'left' : relativeX > 0.7 ? 'right' : 'center';
 
     if (lastTapRef.current && now - lastTapRef.current.time < 300) {
-      const wasLeftSide = lastTapRef.current.x < rect.width / 2;
-      if (isLeftSide === wasLeftSide) {
-        if (isLeftSide) {
+      const prevRelativeX = lastTapRef.current.x / rect.width;
+      const prevZone = prevRelativeX < 0.3 ? 'left' : prevRelativeX > 0.7 ? 'right' : 'center';
+      
+      // Double-tap in same zone
+      if (zone === prevZone) {
+        if (zone === 'left') {
           video.currentTime = Math.max(video.currentTime - 10, 0);
           setSeekIndicator({ side: 'left', visible: true });
-        } else {
+          setTimeout(() => setSeekIndicator(prev => ({ ...prev, visible: false })), 500);
+        } else if (zone === 'right') {
           video.currentTime = Math.min(video.currentTime + 10, duration);
           setSeekIndicator({ side: 'right', visible: true });
+          setTimeout(() => setSeekIndicator(prev => ({ ...prev, visible: false })), 500);
+        } else {
+          // Center double-tap = toggle fullscreen
+          lightHaptic();
+          toggleFullscreen();
         }
-        setTimeout(() => setSeekIndicator(prev => ({ ...prev, visible: false })), 500);
         lastTapRef.current = null;
         return;
       }
