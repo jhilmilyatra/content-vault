@@ -34,6 +34,7 @@ const ENABLE_SIGNED_URLS = process.env.ENABLE_SIGNED_URLS === 'true'; // Enable 
 const AUTO_TRANSCODE = process.env.AUTO_TRANSCODE !== 'false'; // Enable by default
 const AUTO_RETRANSCODE_ON_STARTUP = process.env.AUTO_RETRANSCODE_ON_STARTUP === 'true'; // Scan & transcode existing videos on startup
 const TRANSCODE_DELAY_MS = parseInt(process.env.TRANSCODE_DELAY_MS) || 30000; // Delay between transcodes to avoid CPU overload
+const AUTO_THUMBNAIL_BACKFILL = process.env.AUTO_THUMBNAIL_BACKFILL === 'true'; // Scan & generate thumbnails for videos on startup
 
 // Supabase callback configuration for thumbnail updates
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
@@ -2261,12 +2262,265 @@ async function scanAndTranscodeExistingVideos() {
 }
 
 // ============================================
+// Thumbnail Backfill: Generate thumbnails for videos missing them
+// ============================================
+async function scanAndGenerateMissingThumbnails(sendCallbacks = true) {
+  console.log('\n🖼️ Scanning for videos with missing thumbnails...\n');
+  
+  const videosToProcess = [];
+  let processedCount = 0;
+  let skippedCount = 0;
+  let errorCount = 0;
+  
+  try {
+    if (!fs.existsSync(STORAGE_PATH)) {
+      return { processed: 0, skipped: 0, errors: 0 };
+    }
+    
+    const userDirs = fs.readdirSync(STORAGE_PATH)
+      .filter(entry => isValidUUID(entry) && fs.statSync(path.join(STORAGE_PATH, entry)).isDirectory());
+    
+    for (const userId of userDirs) {
+      const userDir = path.join(STORAGE_PATH, userId);
+      const files = fs.readdirSync(userDir);
+      
+      for (const file of files) {
+        const ext = path.extname(file).toLowerCase();
+        if (!videoExtensions.includes(ext)) continue;
+        
+        const baseName = file.replace(/\.[^.]+$/, '');
+        const hlsDir = path.join(STORAGE_PATH, userId, 'hls', baseName);
+        
+        // Check if thumbnail already exists
+        const thumbnailPath = path.join(hlsDir, `${baseName}_thumb.jpg`);
+        const posterPath = path.join(hlsDir, `${baseName}_poster.jpg`);
+        
+        // Skip if both thumbnail and poster exist
+        if (fs.existsSync(thumbnailPath) && fs.existsSync(posterPath)) {
+          skippedCount++;
+          continue;
+        }
+        
+        // Check if video file exists
+        const fullPath = path.join(userDir, file);
+        if (!fs.existsSync(fullPath)) {
+          continue;
+        }
+        
+        videosToProcess.push({
+          userId,
+          fileName: file,
+          baseName,
+          fullPath,
+          hlsDir
+        });
+      }
+    }
+    
+    if (videosToProcess.length === 0) {
+      console.log('✅ All videos already have thumbnails');
+      return { processed: 0, skipped: skippedCount, errors: 0 };
+    }
+    
+    console.log(`📹 Found ${videosToProcess.length} videos without thumbnails. Processing...\n`);
+    
+    // Process videos sequentially
+    for (let i = 0; i < videosToProcess.length; i++) {
+      const video = videosToProcess[i];
+      console.log(`🖼️ [${i + 1}/${videosToProcess.length}] Generating thumbnails: ${video.userId}/${video.fileName}`);
+      
+      try {
+        // Ensure HLS directory exists
+        if (!fs.existsSync(video.hlsDir)) {
+          fs.mkdirSync(video.hlsDir, { recursive: true });
+        }
+        
+        // Generate thumbnails
+        const thumbnailResult = await generateVideoThumbnail(video.fullPath, video.hlsDir, video.baseName);
+        
+        // Generate animated preview
+        let animatedResult = { gif: null, gifUrl: null };
+        try {
+          animatedResult = await generateAnimatedPreview(video.fullPath, video.hlsDir, video.baseName);
+        } catch (e) {
+          console.warn(`⚠️ Animated preview failed for ${video.fileName}: ${e.message}`);
+        }
+        
+        // Send callback to update database
+        if (sendCallbacks && (thumbnailResult.thumbnailUrl || thumbnailResult.posterUrl)) {
+          await sendThumbnailCallback(video.userId, video.fileName, thumbnailResult, animatedResult, []);
+        }
+        
+        processedCount++;
+        console.log(`✅ Thumbnails generated for ${video.fileName}`);
+        
+        // Small delay between files to avoid overwhelming system
+        if (i < videosToProcess.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      } catch (error) {
+        console.error(`❌ Failed to generate thumbnails for ${video.fileName}:`, error.message);
+        errorCount++;
+      }
+    }
+    
+    console.log(`\n📊 Thumbnail backfill complete: ${processedCount} processed, ${skippedCount} skipped, ${errorCount} errors`);
+    return { processed: processedCount, skipped: skippedCount, errors: errorCount };
+    
+  } catch (error) {
+    console.error('Error scanning for videos:', error);
+    return { processed: processedCount, skipped: skippedCount, errors: errorCount + 1, error: error.message };
+  }
+}
+
+// Endpoint to trigger thumbnail backfill (owner only)
+app.post('/backfill-thumbnails', authenticateOwner, async (req, res) => {
+  try {
+    const { sendCallbacks = true } = req.body || {};
+    
+    console.log('🖼️ Thumbnail backfill triggered via API');
+    
+    // Run async, return immediately
+    const result = await scanAndGenerateMissingThumbnails(sendCallbacks);
+    
+    res.json({
+      success: true,
+      message: 'Thumbnail backfill complete',
+      ...result
+    });
+  } catch (error) {
+    console.error('Thumbnail backfill error:', error);
+    res.status(500).json({ error: 'Thumbnail backfill failed', details: error.message });
+  }
+});
+
+// Endpoint to check thumbnail status for a specific video
+app.get('/thumbnail-status/:userId/:fileName', authenticateRequest, (req, res) => {
+  const { userId, fileName } = req.params;
+  
+  // Validate inputs
+  if (!isValidUUID(userId)) {
+    return res.status(400).json({ error: 'Invalid user ID' });
+  }
+  
+  if (!isValidFilename(fileName)) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+  
+  const baseName = fileName.replace(/\.[^.]+$/, '');
+  const hlsDir = path.join(STORAGE_PATH, userId, 'hls', baseName);
+  
+  const thumbnailPath = path.join(hlsDir, `${baseName}_thumb.jpg`);
+  const posterPath = path.join(hlsDir, `${baseName}_poster.jpg`);
+  const gifPath = path.join(hlsDir, `${baseName}_preview.gif`);
+  const completeMarker = path.join(hlsDir, '.complete');
+  
+  const hasThumbnail = fs.existsSync(thumbnailPath);
+  const hasPoster = fs.existsSync(posterPath);
+  const hasGif = fs.existsSync(gifPath);
+  const hasHls = fs.existsSync(completeMarker);
+  
+  // Get file sizes
+  const thumbnailSize = hasThumbnail ? fs.statSync(thumbnailPath).size : 0;
+  const posterSize = hasPoster ? fs.statSync(posterPath).size : 0;
+  const gifSize = hasGif ? fs.statSync(gifPath).size : 0;
+  
+  res.json({
+    fileName,
+    baseName,
+    hasHls,
+    thumbnails: {
+      thumbnail: hasThumbnail ? {
+        exists: true,
+        path: `/hls/${userId}/${baseName}/${baseName}_thumb.jpg`,
+        size: thumbnailSize
+      } : { exists: false },
+      poster: hasPoster ? {
+        exists: true,
+        path: `/hls/${userId}/${baseName}/${baseName}_poster.jpg`,
+        size: posterSize
+      } : { exists: false },
+      animatedPreview: hasGif ? {
+        exists: true,
+        path: `/hls/${userId}/${baseName}/${baseName}_preview.gif`,
+        size: gifSize
+      } : { exists: false }
+    }
+  });
+});
+
+// Endpoint to generate thumbnail for a specific video
+app.post('/generate-thumbnail/:userId/:fileName', authenticateRequest, async (req, res) => {
+  const { userId, fileName } = req.params;
+  const { sendCallback = true } = req.body || {};
+  
+  // Validate inputs
+  if (!isValidUUID(userId)) {
+    return res.status(400).json({ error: 'Invalid user ID' });
+  }
+  
+  if (!isValidFilename(fileName)) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+  
+  const ext = path.extname(fileName).toLowerCase();
+  if (!videoExtensions.includes(ext)) {
+    return res.status(400).json({ error: 'Not a video file' });
+  }
+  
+  const fullPath = path.join(STORAGE_PATH, userId, fileName);
+  if (!fs.existsSync(fullPath)) {
+    return res.status(404).json({ error: 'Video file not found' });
+  }
+  
+  const baseName = fileName.replace(/\.[^.]+$/, '');
+  const hlsDir = path.join(STORAGE_PATH, userId, 'hls', baseName);
+  
+  try {
+    // Ensure HLS directory exists
+    if (!fs.existsSync(hlsDir)) {
+      fs.mkdirSync(hlsDir, { recursive: true });
+    }
+    
+    console.log(`🖼️ Generating thumbnails for: ${userId}/${fileName}`);
+    
+    // Generate thumbnails
+    const thumbnailResult = await generateVideoThumbnail(fullPath, hlsDir, baseName);
+    
+    // Generate animated preview
+    let animatedResult = { gif: null, gifUrl: null };
+    try {
+      animatedResult = await generateAnimatedPreview(fullPath, hlsDir, baseName);
+    } catch (e) {
+      console.warn(`⚠️ Animated preview failed: ${e.message}`);
+    }
+    
+    // Send callback to update database if requested
+    if (sendCallback && (thumbnailResult.thumbnailUrl || thumbnailResult.posterUrl)) {
+      await sendThumbnailCallback(userId, fileName, thumbnailResult, animatedResult, []);
+    }
+    
+    res.json({
+      success: true,
+      thumbnails: {
+        thumbnail: thumbnailResult.thumbnailUrl ? `/hls/${userId}/${baseName}/${thumbnailResult.thumbnailUrl}` : null,
+        poster: thumbnailResult.posterUrl ? `/hls/${userId}/${baseName}/${thumbnailResult.posterUrl}` : null,
+        animatedPreview: animatedResult.gifUrl ? `/hls/${userId}/${baseName}/${animatedResult.gifUrl}` : null
+      }
+    });
+  } catch (error) {
+    console.error(`❌ Thumbnail generation failed for ${fileName}:`, error);
+    res.status(500).json({ error: 'Thumbnail generation failed', details: error.message });
+  }
+});
+
+// ============================================
 // Start Server
 // ============================================
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`
 ╔════════════════════════════════════════════╗
-║   FileCloud VPS Storage Server v2.1.0      ║
+║   FileCloud VPS Storage Server v2.2.0      ║
 ╠════════════════════════════════════════════╣
 ║   Status: Running                          ║
 ║   Port: ${PORT}                              ║
@@ -2275,6 +2529,8 @@ app.listen(PORT, '0.0.0.0', () => {
 ║   Security: Path Validation Enabled        ║
 ║   HLS Auto-Transcode: ${AUTO_TRANSCODE ? 'Enabled' : 'Disabled'}               ║
 ║   Startup Re-Transcode: ${AUTO_RETRANSCODE_ON_STARTUP ? 'Enabled' : 'Disabled'}            ║
+║   Thumbnail Backfill: ${AUTO_THUMBNAIL_BACKFILL ? 'Enabled' : 'Disabled'}              ║
+║   Thumbnail Callbacks: ${ENABLE_THUMBNAIL_CALLBACK ? 'Enabled' : 'Disabled'}             ║
 ╚════════════════════════════════════════════╝
   `);
   
@@ -2286,6 +2542,15 @@ app.listen(PORT, '0.0.0.0', () => {
   
   // Scan and transcode existing videos without HLS
   scanAndTranscodeExistingVideos();
+  
+  // Scan and generate thumbnails for videos without them
+  if (AUTO_THUMBNAIL_BACKFILL) {
+    // Run thumbnail backfill after a delay to not compete with transcoding
+    setTimeout(() => {
+      console.log('\n🖼️ Starting automatic thumbnail backfill...');
+      scanAndGenerateMissingThumbnails(ENABLE_THUMBNAIL_CALLBACK);
+    }, 10000); // 10 second delay
+  }
   
   console.log('\n🚀 Server ready to accept connections!\n');
 });
