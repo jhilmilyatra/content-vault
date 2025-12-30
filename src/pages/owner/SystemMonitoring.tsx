@@ -118,9 +118,10 @@ const SystemMonitoring = () => {
         };
         
         setLatencyHistory(prev => {
-          const updated = [...prev, newPoint];
-          // Keep last 20 data points
-          return updated.slice(-20);
+          const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+          // Prune old data points (>10 min) and add new one
+          const pruned = prev.filter(p => p.timestamp > tenMinutesAgo);
+          return [...pruned, newPoint].slice(-30);
         });
       }
     } catch (error) {
@@ -162,8 +163,9 @@ const SystemMonitoring = () => {
       };
       
       setLatencyHistory(prev => {
-        const updated = [...prev, newPoint];
-        return updated.slice(-20);
+        const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+        const pruned = prev.filter(p => p.timestamp > tenMinutesAgo);
+        return [...pruned, newPoint].slice(-30);
       });
       
       if (monitorData) {
