@@ -56,51 +56,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get user role to determine access level
-    const { data: userRole } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .single();
-
-    const role = userRole?.role || "member";
-
-    // Authorization logic:
-    // - Owner: can access all files
-    // - Admin: can access all files  
-    // - Member: can access their own files OR files that exist in folders they have access to
-    const fileOwnerId = storagePath.split("/")[0];
-    const isOwnFile = storagePath.startsWith(user.id + "/");
-    const isOwnerOrAdmin = role === "owner" || role === "admin";
-
-    let hasAccess = isOwnFile || isOwnerOrAdmin;
-
-    // If not own file and not owner/admin, check if member has access through file table
-    if (!hasAccess && role === "member") {
-      // Check if the file exists and belongs to the organization (owner uploaded it)
-      const { data: fileData } = await supabase
-        .from("files")
-        .select("id, user_id, folder_id")
-        .eq("storage_path", storagePath)
-        .eq("is_deleted", false)
-        .single();
-
-      if (fileData) {
-        // Members can view files uploaded by owner/admins (same organization)
-        const { data: fileOwnerRole } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", fileData.user_id)
-          .single();
-
-        // Allow access if file was uploaded by owner or admin
-        if (fileOwnerRole?.role === "owner" || fileOwnerRole?.role === "admin") {
-          hasAccess = true;
-        }
-      }
-    }
-
-    if (!hasAccess) {
+    // Verify user owns the file
+    if (!storagePath.startsWith(user.id + "/")) {
       return new Response(
         JSON.stringify({ error: "Unauthorized access" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -146,14 +103,6 @@ Deno.serve(async (req) => {
     }
 
     if (action === "delete") {
-      // Only allow delete if user owns the file or is owner/admin
-      if (!isOwnFile && !isOwnerOrAdmin) {
-        return new Response(
-          JSON.stringify({ error: "Cannot delete files you don't own" }),
-          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
       // Parse userId and fileName from storagePath
       const pathParts = storagePath.split("/");
       if (pathParts.length < 2) {
