@@ -53,6 +53,10 @@ export function FilePreviewModal({
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [buffered, setBuffered] = useState(0);
   
+  // Video aspect ratio detection
+  const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9); // Default 16:9
+  const [isPortraitVideo, setIsPortraitVideo] = useState(false);
+  
   // Gallery state
   const [currentIndex, setCurrentIndex] = useState(0);
   const [thumbnails, setThumbnails] = useState<Map<string, string>>(new Map());
@@ -429,6 +433,16 @@ export function FilePreviewModal({
     const media = getMediaRef();
     if (media) {
       setDuration(media.duration);
+      
+      // Detect video aspect ratio
+      if (media instanceof HTMLVideoElement) {
+        const { videoWidth, videoHeight } = media;
+        if (videoWidth && videoHeight) {
+          const ratio = videoWidth / videoHeight;
+          setVideoAspectRatio(ratio);
+          setIsPortraitVideo(ratio < 1); // Portrait if width < height
+        }
+      }
     }
   };
 
@@ -590,6 +604,12 @@ export function FilePreviewModal({
         );
 
       case "video":
+        // Calculate aspect ratio padding (height/width * 100)
+        // For portrait videos on mobile, cap the height to avoid too tall containers
+        const aspectPadding = isPortraitVideo 
+          ? Math.min((1 / videoAspectRatio) * 100, 133) // Cap at 4:3 portrait max (133%)
+          : (1 / videoAspectRatio) * 100;
+        
         return (
           <motion.div 
             initial={{ opacity: 0 }}
@@ -598,12 +618,13 @@ export function FilePreviewModal({
             onMouseMove={resetControlsTimeout}
             onTouchStart={resetControlsTimeout}
           >
-            {/* Video Container - YouTube/Netflix style fixed 16:9 frame */}
-            {/* Using padding-top fallback for legacy browser support */}
+            {/* Video Container - Auto aspect ratio detection */}
             <div 
               ref={videoContainerRef}
-              className="relative w-full bg-black cursor-pointer flex-shrink-0"
-              style={{ paddingTop: '56.25%' }} /* 16:9 aspect ratio */
+              className={`relative w-full bg-black cursor-pointer flex-shrink-0 transition-all duration-300 ${
+                isPortraitVideo ? 'mx-auto max-w-[70%] sm:max-w-[50%]' : ''
+              }`}
+              style={{ paddingTop: `${aspectPadding}%` }}
               onClick={handleVideoTap}
               onTouchEnd={handleVideoTap}
             >
