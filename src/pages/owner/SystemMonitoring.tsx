@@ -17,6 +17,7 @@ import {
   TrendingUp,
   BarChart3,
   Play,
+  Gauge,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -24,6 +25,17 @@ import { PageTransition } from "@/components/ui/PageTransition";
 import { GlassCard, GlassCardHeader, StatCard } from "@/components/ios";
 import { SkeletonStats, SkeletonCard } from "@/components/ios";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+} from "recharts";
 
 interface SystemHealth {
   status: "healthy" | "degraded" | "critical";
@@ -59,10 +71,20 @@ interface Alert {
   timestamp: string;
 }
 
+interface LatencyDataPoint {
+  time: string;
+  timestamp: number;
+  db: number | null;
+  edge: number | null;
+  vps: number | null;
+}
+
 const SystemMonitoring = () => {
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [loading, setLoading] = useState(true);
   const [runningJobs, setRunningJobs] = useState(false);
+  const [latencyHistory, setLatencyHistory] = useState<LatencyDataPoint[]>([]);
+  const [testingLatency, setTestingLatency] = useState(false);
 
   const fetchHealth = useCallback(async () => {
     try {
@@ -75,6 +97,22 @@ const SystemMonitoring = () => {
 
       if (response.data) {
         setHealth(response.data);
+        
+        // Add to latency history
+        const now = new Date();
+        const newPoint: LatencyDataPoint = {
+          time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          timestamp: now.getTime(),
+          db: response.data.checks?.database?.latency || null,
+          edge: response.data.checks?.edgeFunctions?.latency || null,
+          vps: null, // Will be populated by VPS test
+        };
+        
+        setLatencyHistory(prev => {
+          const updated = [...prev, newPoint];
+          // Keep last 20 data points
+          return updated.slice(-20);
+        });
       }
     } catch (error) {
       console.error("Error fetching health:", error);
@@ -83,11 +121,102 @@ const SystemMonitoring = () => {
     }
   }, []);
 
+  // Test VPS latency separately
+  const testVpsLatency = useCallback(async () => {
+    const startTime = performance.now();
+    try {
+      const response = await fetch("http://46.38.232.46:4000/health", {
+        method: "GET",
+        headers: { "Authorization": "Bearer kARTOOS007" },
+      });
+      
+      if (response.ok) {
+        const latency = Math.round(performance.now() - startTime);
+        
+        setLatencyHistory(prev => {
+          if (prev.length === 0) return prev;
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            ...updated[updated.length - 1],
+            vps: latency,
+          };
+          return updated;
+        });
+        
+        return latency;
+      }
+    } catch (error) {
+      console.error("VPS latency test failed:", error);
+    }
+    return null;
+  }, []);
+
+  // Run full latency test
+  const runLatencyTest = async () => {
+    setTestingLatency(true);
+    lightHaptic();
+    
+    const now = new Date();
+    const startDb = performance.now();
+    
+    try {
+      // Test DB latency
+      const { data: dbData } = await supabase
+        .from("profiles")
+        .select("id")
+        .limit(1);
+      const dbLatency = Math.round(performance.now() - startDb);
+      
+      // Test Edge latency
+      const startEdge = performance.now();
+      await supabase.functions.invoke("health", { body: {} });
+      const edgeLatency = Math.round(performance.now() - startEdge);
+      
+      // Test VPS latency
+      const startVps = performance.now();
+      let vpsLatency: number | null = null;
+      try {
+        const vpsRes = await fetch("http://46.38.232.46:4000/health", {
+          method: "GET",
+          headers: { "Authorization": "Bearer kARTOOS007" },
+        });
+        if (vpsRes.ok) {
+          vpsLatency = Math.round(performance.now() - startVps);
+        }
+      } catch (e) {
+        console.error("VPS test failed:", e);
+      }
+      
+      const newPoint: LatencyDataPoint = {
+        time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        timestamp: now.getTime(),
+        db: dbLatency,
+        edge: edgeLatency,
+        vps: vpsLatency,
+      };
+      
+      setLatencyHistory(prev => {
+        const updated = [...prev, newPoint];
+        return updated.slice(-20);
+      });
+      
+      toast.success(`Latency: DB ${dbLatency}ms | Edge ${edgeLatency}ms | VPS ${vpsLatency || 'N/A'}ms`);
+    } catch (error) {
+      toast.error("Latency test failed");
+    } finally {
+      setTestingLatency(false);
+    }
+  };
+
   useEffect(() => {
     fetchHealth();
-    const interval = setInterval(fetchHealth, 30000);
+    testVpsLatency();
+    const interval = setInterval(() => {
+      fetchHealth();
+      testVpsLatency();
+    }, 30000);
     return () => clearInterval(interval);
-  }, [fetchHealth]);
+  }, [fetchHealth, testVpsLatency]);
 
   const runBackgroundJobs = async () => {
     mediumHaptic();
@@ -145,9 +274,33 @@ const SystemMonitoring = () => {
     }
   };
 
+  const getLatencyColor = (latency: number | null) => {
+    if (latency === null) return "text-white/50";
+    if (latency < 100) return "text-emerald-400";
+    if (latency < 200) return "text-amber-400";
+    return "text-rose-400";
+  };
+
   const handleRefresh = () => {
     lightHaptic();
     fetchHealth();
+    testVpsLatency();
+  };
+
+  // Get current latency values
+  const currentLatency = latencyHistory.length > 0 ? latencyHistory[latencyHistory.length - 1] : null;
+
+  // Calculate averages
+  const avgLatency = {
+    db: latencyHistory.filter(p => p.db).length > 0 
+      ? Math.round(latencyHistory.reduce((sum, p) => sum + (p.db || 0), 0) / latencyHistory.filter(p => p.db).length)
+      : null,
+    edge: latencyHistory.filter(p => p.edge).length > 0
+      ? Math.round(latencyHistory.reduce((sum, p) => sum + (p.edge || 0), 0) / latencyHistory.filter(p => p.edge).length)
+      : null,
+    vps: latencyHistory.filter(p => p.vps).length > 0
+      ? Math.round(latencyHistory.reduce((sum, p) => sum + (p.vps || 0), 0) / latencyHistory.filter(p => p.vps).length)
+      : null,
   };
 
   return (
@@ -171,6 +324,14 @@ const SystemMonitoring = () => {
               </p>
             </div>
             <div className="flex gap-2">
+              <button 
+                onClick={runLatencyTest} 
+                disabled={testingLatency}
+                className="ios-button-secondary px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2"
+              >
+                <Gauge className={`w-4 h-4 ${testingLatency ? "animate-pulse" : ""}`} />
+                Test Latency
+              </button>
               <button 
                 onClick={handleRefresh} 
                 disabled={loading}
@@ -217,6 +378,225 @@ const SystemMonitoring = () => {
                 </motion.div>
               )}
 
+              {/* Real-time Latency Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                >
+                  <GlassCard className="ios-card-hover">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                          <Database className="w-5 h-5 text-blue-400" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-white">Database</p>
+                          <p className="text-xs text-white/50">Supabase (Frankfurt)</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-end justify-between mt-4">
+                      <div>
+                        <p className={`text-3xl font-bold ${getLatencyColor(currentLatency?.db ?? null)}`}>
+                          {currentLatency?.db ?? '—'}
+                          <span className="text-sm font-normal text-white/50 ml-1">ms</span>
+                        </p>
+                        <p className="text-xs text-white/40">
+                          Avg: {avgLatency.db ?? '—'}ms
+                        </p>
+                      </div>
+                      <Badge 
+                        variant="outline" 
+                        className={`${currentLatency?.db && currentLatency.db < 100 ? 'border-emerald-500/30 text-emerald-400' : currentLatency?.db && currentLatency.db < 200 ? 'border-amber-500/30 text-amber-400' : 'border-rose-500/30 text-rose-400'}`}
+                      >
+                        {currentLatency?.db && currentLatency.db < 100 ? 'Fast' : currentLatency?.db && currentLatency.db < 200 ? 'OK' : 'Slow'}
+                      </Badge>
+                    </div>
+                  </GlassCard>
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                >
+                  <GlassCard className="ios-card-hover">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
+                          <Zap className="w-5 h-5 text-purple-400" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-white">Edge Functions</p>
+                          <p className="text-xs text-white/50">Supabase Edge</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-end justify-between mt-4">
+                      <div>
+                        <p className={`text-3xl font-bold ${getLatencyColor(currentLatency?.edge ?? null)}`}>
+                          {currentLatency?.edge ?? '—'}
+                          <span className="text-sm font-normal text-white/50 ml-1">ms</span>
+                        </p>
+                        <p className="text-xs text-white/40">
+                          Avg: {avgLatency.edge ?? '—'}ms
+                        </p>
+                      </div>
+                      <Badge 
+                        variant="outline" 
+                        className={`${currentLatency?.edge && currentLatency.edge < 150 ? 'border-emerald-500/30 text-emerald-400' : currentLatency?.edge && currentLatency.edge < 300 ? 'border-amber-500/30 text-amber-400' : 'border-rose-500/30 text-rose-400'}`}
+                      >
+                        {currentLatency?.edge && currentLatency.edge < 150 ? 'Fast' : currentLatency?.edge && currentLatency.edge < 300 ? 'OK' : 'Slow'}
+                      </Badge>
+                    </div>
+                  </GlassCard>
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3 }}
+                >
+                  <GlassCard className="ios-card-hover">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-10 h-10 rounded-xl bg-teal-500/10 flex items-center justify-center">
+                          <Server className="w-5 h-5 text-teal-400" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-white">VPS Storage</p>
+                          <p className="text-xs text-white/50">EU (Frankfurt)</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-end justify-between mt-4">
+                      <div>
+                        <p className={`text-3xl font-bold ${getLatencyColor(currentLatency?.vps ?? null)}`}>
+                          {currentLatency?.vps ?? '—'}
+                          <span className="text-sm font-normal text-white/50 ml-1">ms</span>
+                        </p>
+                        <p className="text-xs text-white/40">
+                          Avg: {avgLatency.vps ?? '—'}ms
+                        </p>
+                      </div>
+                      <Badge 
+                        variant="outline" 
+                        className={`${currentLatency?.vps && currentLatency.vps < 100 ? 'border-emerald-500/30 text-emerald-400' : currentLatency?.vps && currentLatency.vps < 200 ? 'border-amber-500/30 text-amber-400' : 'border-rose-500/30 text-rose-400'}`}
+                      >
+                        {currentLatency?.vps ? (currentLatency.vps < 100 ? 'Fast' : currentLatency.vps < 200 ? 'OK' : 'Slow') : 'N/A'}
+                      </Badge>
+                    </div>
+                  </GlassCard>
+                </motion.div>
+              </div>
+
+              {/* Latency Chart */}
+              {latencyHistory.length > 1 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4 }}
+                >
+                  <GlassCard>
+                    <GlassCardHeader 
+                      title="Latency Timeline" 
+                      icon={<TrendingUp className="w-5 h-5 text-teal-400" />}
+                      action={
+                        <Badge variant="outline" className="border-white/10 text-white/50 text-xs">
+                          Last {latencyHistory.length} samples
+                        </Badge>
+                      }
+                    />
+                    <div className="h-64 mt-4">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={latencyHistory}>
+                          <defs>
+                            <linearGradient id="colorDb" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                            </linearGradient>
+                            <linearGradient id="colorEdge" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/>
+                              <stop offset="95%" stopColor="#a855f7" stopOpacity={0}/>
+                            </linearGradient>
+                            <linearGradient id="colorVps" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.3}/>
+                              <stop offset="95%" stopColor="#14b8a6" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                          <XAxis 
+                            dataKey="time" 
+                            stroke="rgba(255,255,255,0.3)"
+                            tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10 }}
+                          />
+                          <YAxis 
+                            stroke="rgba(255,255,255,0.3)"
+                            tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10 }}
+                            label={{ value: 'ms', angle: -90, position: 'insideLeft', fill: 'rgba(255,255,255,0.5)', fontSize: 10 }}
+                          />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: 'rgba(0,0,0,0.8)', 
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '8px',
+                              color: 'white'
+                            }}
+                            labelStyle={{ color: 'rgba(255,255,255,0.7)' }}
+                          />
+                          <Area 
+                            type="monotone" 
+                            dataKey="db" 
+                            stroke="#3b82f6" 
+                            strokeWidth={2}
+                            fillOpacity={1} 
+                            fill="url(#colorDb)" 
+                            name="Database"
+                            connectNulls
+                          />
+                          <Area 
+                            type="monotone" 
+                            dataKey="edge" 
+                            stroke="#a855f7" 
+                            strokeWidth={2}
+                            fillOpacity={1} 
+                            fill="url(#colorEdge)" 
+                            name="Edge"
+                            connectNulls
+                          />
+                          <Area 
+                            type="monotone" 
+                            dataKey="vps" 
+                            stroke="#14b8a6" 
+                            strokeWidth={2}
+                            fillOpacity={1} 
+                            fill="url(#colorVps)" 
+                            name="VPS"
+                            connectNulls
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex justify-center gap-6 mt-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-blue-500" />
+                        <span className="text-xs text-white/50">Database</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-purple-500" />
+                        <span className="text-xs text-white/50">Edge Functions</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-teal-500" />
+                        <span className="text-xs text-white/50">VPS Storage</span>
+                      </div>
+                    </div>
+                  </GlassCard>
+                </motion.div>
+              )}
+
               {/* Health Checks Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {health && Object.entries(health.checks).map(([name, check], index) => (
@@ -224,7 +604,7 @@ const SystemMonitoring = () => {
                     key={name}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.1 }}
+                    transition={{ delay: 0.5 + index * 0.1 }}
                     className="animate-fade-up"
                     style={{ animationDelay: `${index * 50}ms` }}
                   >
