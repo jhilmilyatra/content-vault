@@ -465,12 +465,17 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
   };
 
   const fileType = file ? getFileType(file.mime_type) : "other";
+  const isVideoOrImage = fileType === "video" || fileType === "image";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] p-0 gap-0 overflow-hidden">
+      <DialogContent 
+        className={`max-w-5xl w-[95vw] p-0 gap-0 overflow-hidden ${
+          isVideoOrImage ? 'max-h-[95vh]' : 'max-h-[90vh]'
+        }`}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b bg-background">
+        <div className="flex items-center justify-between p-4 border-b bg-background shrink-0">
           <div className="flex-1 min-w-0">
             <h3 className="font-semibold text-foreground truncate">
               {file?.name || "File Preview"}
@@ -503,15 +508,17 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
         </div>
 
         {/* Content */}
-        <div className="flex-1 flex flex-col min-h-0 p-4 overflow-auto">
+        <div className={`flex-1 flex flex-col min-h-0 ${
+          isVideoOrImage ? 'p-0' : 'p-4 overflow-auto'
+        }`}>
           {loading ? (
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex-1 flex items-center justify-center p-8">
               <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
             </div>
           ) : fileUrl ? (
             renderPreview()
           ) : (
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex-1 flex items-center justify-center p-8">
               <p className="text-muted-foreground">Unable to load preview</p>
             </div>
           )}
