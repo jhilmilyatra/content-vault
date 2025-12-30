@@ -598,10 +598,12 @@ export function FilePreviewModal({
             onMouseMove={resetControlsTimeout}
             onTouchStart={resetControlsTimeout}
           >
-            {/* Video Container - 16:9 aspect ratio, full width, responsive */}
+            {/* Video Container - YouTube/Netflix style fixed 16:9 frame */}
+            {/* Using padding-top fallback for legacy browser support */}
             <div 
               ref={videoContainerRef}
-              className="relative w-full aspect-video bg-black cursor-pointer"
+              className="relative w-full bg-black cursor-pointer flex-shrink-0"
+              style={{ paddingTop: '56.25%' }} /* 16:9 aspect ratio */
               onClick={handleVideoTap}
               onTouchEnd={handleVideoTap}
             >
@@ -623,208 +625,218 @@ export function FilePreviewModal({
                 controlsList="nodownload"
               />
               
-              {/* Double-tap seek indicators */}
+              {/* Double-tap seek indicators - YouTube style */}
               <AnimatePresence>
                 {seekIndicator.visible && (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.8 }}
-                    className={`absolute top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 ${
-                      seekIndicator.side === 'left' ? 'left-8 sm:left-12' : 'right-8 sm:right-12'
+                    className={`absolute top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 pointer-events-none ${
+                      seekIndicator.side === 'left' ? 'left-[15%]' : 'right-[15%]'
                     }`}
                   >
-                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-white/20 backdrop-blur-xl flex items-center justify-center">
+                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center">
                       {seekIndicator.side === 'left' ? (
-                        <SkipBack className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
+                        <SkipBack className="w-7 h-7 sm:w-8 sm:h-8 text-white" />
                       ) : (
-                        <SkipForward className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
+                        <SkipForward className="w-7 h-7 sm:w-8 sm:h-8 text-white" />
                       )}
                     </div>
-                    <span className="text-white text-xs sm:text-sm font-semibold">
+                    <span className="text-white text-sm font-semibold drop-shadow-lg">
                       {seekIndicator.side === 'left' ? '-10s' : '+10s'}
                     </span>
                   </motion.div>
                 )}
               </AnimatePresence>
               
-              {/* Play overlay button - tap to play */}
+              {/* Center play button - Netflix style */}
               <AnimatePresence>
                 {!isPlaying && !seekIndicator.visible && (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.8 }}
-                    className="absolute inset-0 flex items-center justify-center bg-black/30"
+                    className="absolute inset-0 flex items-center justify-center bg-gradient-to-t from-black/60 via-transparent to-black/30 pointer-events-none"
                   >
                     <motion.div 
                       whileHover={{ scale: 1.1 }}
-                      className="w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-white/90 flex items-center justify-center shadow-2xl"
+                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white/95 backdrop-blur-sm flex items-center justify-center shadow-2xl"
                     >
-                      <Play className="w-7 h-7 sm:w-10 sm:h-10 text-black ml-0.5 sm:ml-1" />
+                      <Play className="w-8 h-8 sm:w-10 sm:h-10 text-black ml-1" />
                     </motion.div>
                   </motion.div>
                 )}
               </AnimatePresence>
-            </div>
 
-            {/* Premium Video Controls - Mobile optimized */}
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: showControls ? 1 : 0, y: showControls ? 0 : 20 }}
-              className="p-3 sm:p-5 bg-gradient-to-t from-black via-black/90 to-transparent"
-            >
-              {/* Progress bar with buffer */}
-              <div className="mb-3 sm:mb-4 relative">
-                <div className="absolute inset-0 h-1 sm:h-1.5 rounded-full bg-white/10" />
-                <div 
-                  className="absolute h-1 sm:h-1.5 rounded-full bg-white/20"
-                  style={{ width: `${(buffered / duration) * 100}%` }}
-                />
-                <Slider
-                  value={[currentTime]}
-                  min={0}
-                  max={duration || 100}
-                  step={0.1}
-                  onValueChange={handleSeek}
-                  className="cursor-pointer touch-manipulation relative z-10 [&_[role=slider]]:h-4 [&_[role=slider]]:w-4 sm:[&_[role=slider]]:h-3 sm:[&_[role=slider]]:w-3 [&_[role=slider]]:border-2 [&_[role=slider]]:border-white"
-                />
-                {/* Time display below progress on mobile */}
-                <div className="flex justify-between text-[11px] text-white/70 mt-1.5 sm:hidden font-medium tabular-nums">
-                  <span>{formatTime(currentTime)}</span>
-                  <span>{formatTime(duration)}</span>
-                </div>
-              </div>
-
-              {/* Control buttons - Mobile first layout */}
-              <div className="flex items-center justify-between gap-2 sm:gap-3">
-                <div className="flex items-center gap-1 sm:gap-2">
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={skipBackward}
-                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation"
-                  >
-                    <SkipBack className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </motion.button>
-                  
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={togglePlay}
-                    className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-white/90 flex items-center justify-center shadow-lg touch-manipulation"
-                  >
-                    {isPlaying ? (
-                      <Pause className="w-5 h-5 sm:w-6 sm:h-6 text-black" />
-                    ) : (
-                      <Play className="w-5 h-5 sm:w-6 sm:h-6 text-black ml-0.5" />
-                    )}
-                  </motion.button>
-                  
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={skipForward}
-                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation"
-                  >
-                    <SkipForward className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </motion.button>
-
-                  {/* Time display - desktop only */}
-                  <span className="hidden sm:inline text-white/70 text-sm ml-3 font-medium tabular-nums">
-                    {formatTime(currentTime)} <span className="text-white/40">/</span> {formatTime(duration)}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {/* Playback speed */}
-                  <div className="relative">
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                      className="h-8 px-3 rounded-lg bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-all"
-                    >
-                      {playbackSpeed}x
-                    </motion.button>
-                    <AnimatePresence>
-                      {showSpeedMenu && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                          className="absolute bottom-full mb-2 right-0 bg-black/95 backdrop-blur-xl rounded-xl border border-white/10 overflow-hidden min-w-[90px] shadow-xl"
-                        >
-                          {playbackSpeeds.map((speed) => (
-                            <button
-                              key={speed}
-                              onClick={() => changePlaybackSpeed(speed)}
-                              className={`w-full px-4 py-2.5 text-sm text-left hover:bg-white/10 transition-colors ${
-                                playbackSpeed === speed ? 'text-gold bg-gold/10' : 'text-white'
-                              }`}
-                            >
-                              {speed}x
-                            </button>
-                          ))}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-
-                  {/* Volume control */}
-                  <div className="hidden sm:flex items-center gap-2 group">
-                    <motion.button
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={toggleMute}
-                      className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all"
-                    >
-                      {isMuted || volume === 0 ? (
-                        <VolumeX className="w-4 h-4" />
-                      ) : (
-                        <Volume2 className="w-4 h-4" />
-                      )}
-                    </motion.button>
-                    <div className="w-20 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Slider
-                        value={[isMuted ? 0 : volume]}
-                        min={0}
-                        max={1}
-                        step={0.1}
-                        onValueChange={handleVolumeChange}
-                      />
+              {/* Glass Controls Overlay - YouTube/Netflix style */}
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ 
+                  opacity: showControls ? 1 : 0, 
+                  y: showControls ? 0 : 10,
+                  pointerEvents: showControls ? 'auto' : 'none'
+                }}
+                transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
+                className="absolute inset-x-0 bottom-0"
+              >
+                {/* Glass background */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent backdrop-blur-sm" />
+                
+                <div className="relative p-3 sm:p-4">
+                  {/* Progress bar with buffer indicator */}
+                  <div className="mb-3 relative">
+                    <div className="absolute inset-0 h-1.5 rounded-full bg-white/10" />
+                    <div 
+                      className="absolute h-1.5 rounded-full bg-white/20"
+                      style={{ width: `${(buffered / duration) * 100}%` }}
+                    />
+                    <Slider
+                      value={[currentTime]}
+                      min={0}
+                      max={duration || 100}
+                      step={0.1}
+                      onValueChange={handleSeek}
+                      className="cursor-pointer touch-manipulation relative z-10 [&_[role=slider]]:h-5 [&_[role=slider]]:w-5 sm:[&_[role=slider]]:h-4 sm:[&_[role=slider]]:w-4 [&_[role=slider]]:border-2 [&_[role=slider]]:border-white [&_[role=slider]]:bg-white"
+                    />
+                    {/* Mobile time display */}
+                    <div className="flex justify-between text-xs text-white/80 mt-2 sm:hidden font-medium tabular-nums">
+                      <span>{formatTime(currentTime)}</span>
+                      <span>{formatTime(duration)}</span>
                     </div>
                   </div>
 
-                  {/* Mobile mute */}
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={toggleMute}
-                    className="sm:hidden w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all"
-                  >
-                    {isMuted || volume === 0 ? (
-                      <VolumeX className="w-4 h-4" />
-                    ) : (
-                      <Volume2 className="w-4 h-4" />
-                    )}
-                  </motion.button>
+                  {/* Control buttons - Glass style */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1 sm:gap-2">
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={skipBackward}
+                        className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation"
+                      >
+                        <SkipBack className="w-5 h-5" />
+                      </motion.button>
+                      
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={togglePlay}
+                        className="w-12 h-12 sm:w-11 sm:h-11 rounded-full bg-white/90 flex items-center justify-center shadow-lg touch-manipulation"
+                      >
+                        {isPlaying ? (
+                          <Pause className="w-6 h-6 text-black" />
+                        ) : (
+                          <Play className="w-6 h-6 text-black ml-0.5" />
+                        )}
+                      </motion.button>
+                      
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={skipForward}
+                        className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation"
+                      >
+                        <SkipForward className="w-5 h-5" />
+                      </motion.button>
 
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={toggleFullscreen}
-                    className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all"
-                  >
-                    {isFullscreen ? (
-                      <Minimize className="w-4 h-4" />
-                    ) : (
-                      <Maximize className="w-4 h-4" />
-                    )}
-                  </motion.button>
+                      {/* Desktop time display */}
+                      <span className="hidden sm:inline text-white/80 text-sm ml-3 font-medium tabular-nums">
+                        {formatTime(currentTime)} <span className="text-white/40">/</span> {formatTime(duration)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 sm:gap-2">
+                      {/* Playback speed - glass button */}
+                      <div className="relative">
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => setShowSpeedMenu(!showSpeedMenu)}
+                          className="h-10 px-3 rounded-lg bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-all"
+                        >
+                          {playbackSpeed}x
+                        </motion.button>
+                        <AnimatePresence>
+                          {showSpeedMenu && (
+                            <motion.div
+                              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                              className="absolute bottom-full mb-2 right-0 bg-black/80 backdrop-blur-xl rounded-xl border border-white/10 overflow-hidden min-w-[90px] shadow-xl"
+                            >
+                              {playbackSpeeds.map((speed) => (
+                                <button
+                                  key={speed}
+                                  onClick={() => changePlaybackSpeed(speed)}
+                                  className={`w-full px-4 py-3 text-sm text-left hover:bg-white/20 transition-colors touch-manipulation ${
+                                    playbackSpeed === speed ? 'text-primary bg-white/10' : 'text-white'
+                                  }`}
+                                >
+                                  {speed}x
+                                </button>
+                              ))}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+
+                      {/* Volume control - hidden on mobile */}
+                      <div className="hidden sm:flex items-center gap-2 group">
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={toggleMute}
+                          className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all"
+                        >
+                          {isMuted || volume === 0 ? (
+                            <VolumeX className="w-5 h-5" />
+                          ) : (
+                            <Volume2 className="w-5 h-5" />
+                          )}
+                        </motion.button>
+                        <div className="w-20 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Slider
+                            value={[isMuted ? 0 : volume]}
+                            min={0}
+                            max={1}
+                            step={0.1}
+                            onValueChange={handleVolumeChange}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Mobile mute */}
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={toggleMute}
+                        className="sm:hidden w-11 h-11 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation"
+                      >
+                        {isMuted || volume === 0 ? (
+                          <VolumeX className="w-5 h-5" />
+                        ) : (
+                          <Volume2 className="w-5 h-5" />
+                        )}
+                      </motion.button>
+
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={toggleFullscreen}
+                        className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation"
+                      >
+                        {isFullscreen ? (
+                          <Minimize className="w-5 h-5" />
+                        ) : (
+                          <Maximize className="w-5 h-5" />
+                        )}
+                      </motion.button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </motion.div>
+              </motion.div>
+            </div>
           </motion.div>
         );
 
