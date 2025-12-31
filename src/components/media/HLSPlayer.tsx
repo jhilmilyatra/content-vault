@@ -65,12 +65,14 @@ export function HLSPlayer({
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   
   // HLS specific state
-  const [isBuffering, setIsBuffering] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(true); // Start true until canplay
+  const [isStalled, setIsStalled] = useState(false); // Track stalled state separately
   const [qualityLevels, setQualityLevels] = useState<QualityLevel[]>([]);
   const [currentQuality, setCurrentQuality] = useState(-1); // -1 = auto
   const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [networkError, setNetworkError] = useState(false);
   const [isHLS, setIsHLS] = useState(false);
+  const [bufferHealth, setBufferHealth] = useState(0); // Buffer ahead in seconds
   
   // UI state
   const [showControls, setShowControls] = useState(true);
@@ -101,10 +103,16 @@ export function HLSPlayer({
     }, isMobile ? 4000 : 3000);
   }, [isMobile, isPlaying]);
 
-  // Initialize HLS.js
+  // Initialize HLS.js with real buffering detection
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+
+    // Reset state on source change
+    setIsBuffering(true);
+    setIsStalled(false);
+    setNetworkError(false);
+    setMediaError(null);
 
     // Cleanup previous instance
     if (hlsRef.current) {
@@ -112,11 +120,65 @@ export function HLSPlayer({
       hlsRef.current = null;
     }
 
+    // Real buffering detection via native video events
+    // These events are the most reliable for detecting actual playback issues
+    const handleWaiting = () => {
+      console.log('🎬 Video waiting (buffering)');
+      setIsBuffering(true);
+    };
+    
+    const handleStalled = () => {
+      console.log('🎬 Video stalled');
+      setIsStalled(true);
+      setIsBuffering(true);
+    };
+    
+    const handlePlaying = () => {
+      console.log('🎬 Video playing');
+      setIsBuffering(false);
+      setIsStalled(false);
+      setNetworkError(false);
+    };
+    
+    const handleCanPlay = () => {
+      console.log('🎬 Video can play');
+      setIsBuffering(false);
+    };
+    
+    const handleCanPlayThrough = () => {
+      console.log('🎬 Video can play through');
+      setIsBuffering(false);
+      setIsStalled(false);
+    };
+
+    const handleProgress = () => {
+      // Calculate buffer health (how many seconds buffered ahead)
+      if (video.buffered.length > 0) {
+        const currentTime = video.currentTime;
+        for (let i = 0; i < video.buffered.length; i++) {
+          if (video.buffered.start(i) <= currentTime && currentTime <= video.buffered.end(i)) {
+            const bufferAhead = video.buffered.end(i) - currentTime;
+            setBufferHealth(bufferAhead);
+            break;
+          }
+        }
+      }
+    };
+
+    // Attach native video event listeners
+    video.addEventListener('waiting', handleWaiting);
+    video.addEventListener('stalled', handleStalled);
+    video.addEventListener('playing', handlePlaying);
+    video.addEventListener('canplay', handleCanPlay);
+    video.addEventListener('canplaythrough', handleCanPlayThrough);
+    video.addEventListener('progress', handleProgress);
+
     if (isHLSSource && Hls.isSupported()) {
       setIsHLS(true);
       
       const hls = new Hls({
         // Performance tuning for smooth playback
+        enableWorker: true,
         lowLatencyMode: true,
         backBufferLength: 30,
         maxBufferLength: 30,
@@ -124,7 +186,7 @@ export function HLSPlayer({
         // Fast startup
         startLevel: -1, // Auto
         capLevelToPlayerSize: true,
-        // Retry configuration
+        // Retry configuration for reliability
         manifestLoadingMaxRetry: 4,
         levelLoadingMaxRetry: 4,
         fragLoadingMaxRetry: 6,
@@ -153,11 +215,6 @@ export function HLSPlayer({
         setCurrentQuality(data.level);
       });
 
-      // Buffering state
-      hls.on(Hls.Events.FRAG_LOADING, () => setIsBuffering(true));
-      hls.on(Hls.Events.FRAG_LOADED, () => setIsBuffering(false));
-      hls.on(Hls.Events.FRAG_BUFFERED, () => setIsBuffering(false));
-
       // Error handling with auto-recovery
       hls.on(Hls.Events.ERROR, (_, data) => {
         console.warn('HLS error:', data.type, data.details);
@@ -184,6 +241,12 @@ export function HLSPlayer({
       hlsRef.current = hls;
 
       return () => {
+        video.removeEventListener('waiting', handleWaiting);
+        video.removeEventListener('stalled', handleStalled);
+        video.removeEventListener('playing', handlePlaying);
+        video.removeEventListener('canplay', handleCanPlay);
+        video.removeEventListener('canplaythrough', handleCanPlayThrough);
+        video.removeEventListener('progress', handleProgress);
         hls.destroy();
       };
     } else if (isHLSSource && video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -197,6 +260,12 @@ export function HLSPlayer({
     }
 
     return () => {
+      video.removeEventListener('waiting', handleWaiting);
+      video.removeEventListener('stalled', handleStalled);
+      video.removeEventListener('playing', handlePlaying);
+      video.removeEventListener('canplay', handleCanPlay);
+      video.removeEventListener('canplaythrough', handleCanPlayThrough);
+      video.removeEventListener('progress', handleProgress);
       if (controlsTimeoutRef.current) {
         clearTimeout(controlsTimeoutRef.current);
       }
