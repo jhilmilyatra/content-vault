@@ -151,27 +151,6 @@ export function FilePreviewModal({
           return resolveStreamMode(retryCount + 1);
         }
         
-        // 503 after retries - try direct Supabase signed URL as last resort
-        if (status === 503) {
-          console.log('VPS offline, trying direct Supabase storage...');
-          try {
-            const { data: signedData, error: signedError } = await supabase.storage
-              .from('user-files')
-              .createSignedUrl(file.storage_path, 3600);
-            
-            if (signedData?.signedUrl && !signedError) {
-              console.log('✅ Got direct Supabase URL');
-              setStream({ mode: baseFileType, url: signedData.signedUrl, vpsOnline: false });
-              setLoading(false);
-              return;
-            }
-          } catch (e) {
-            console.error('Direct Supabase fallback failed:', e);
-          }
-          setMediaError("Storage server temporarily unavailable. Please try again later.");
-          return;
-        }
-        
         if (status === 401 || status === 403) {
           setMediaError("You don't have permission to view this file.");
         } else {
@@ -182,43 +161,29 @@ export function FilePreviewModal({
 
       const urlData = await fileResponse.json();
       const baseUrl = urlData.url;
-      const fallbackUrl = urlData.fallbackUrl || null; // Supabase fallback from API
+      const fallbackUrl = urlData.fallbackUrl || null;
       const vpsOnline = urlData.storage === 'vps';
 
-      // For video files, check HLS availability FIRST before deciding mode
+      // For video files - SKIP HLS for now since CDN tunnel is unreliable
+      // Use direct MP4 streaming which handles errors better
       if (baseFileType === 'mp4') {
-        try {
-          console.log('🎬 Checking HLS availability for video...');
-          const hlsResponse = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sign-hls-url?storagePath=${encodeURIComponent(file.storage_path)}`,
-            {
-              headers: {
-                Authorization: `Bearer ${sessionData.session.access_token}`,
-              },
-            }
-          );
-          
-          if (hlsResponse.ok) {
-            const hlsData = await hlsResponse.json();
-            if (hlsData.signedUrl && hlsData.available !== false) {
-              console.log('✅ HLS available - using adaptive streaming');
-              setStream({ 
-                mode: 'hls', 
-                url: hlsData.signedUrl, 
-                fallbackUrl: fallbackUrl || baseUrl,
-                vpsOnline 
-              });
-              setLoading(false);
-              return;
-            }
-          }
-        } catch (hlsError) {
-          console.debug('HLS check failed, using MP4:', hlsError);
-        }
+        console.log('📹 Using direct MP4 stream (skipping HLS due to CDN issues)');
         
-        // HLS not available, use MP4 with fallback
-        console.log('📹 Using direct MP4 stream');
-        setStream({ mode: 'mp4', url: baseUrl, fallbackUrl, vpsOnline });
+        // If VPS URL looks like a Cloudflare tunnel (trycloudflare.com), 
+        // prefer fallback or proxy approach
+        const isCloudfareTunnel = baseUrl.includes('trycloudflare.com');
+        
+        if (isCloudfareTunnel && fallbackUrl) {
+          console.log('⚠️ Cloudflare tunnel detected, using fallback URL');
+          setStream({ mode: 'mp4', url: fallbackUrl, fallbackUrl: baseUrl, vpsOnline: false });
+        } else if (isCloudfareTunnel) {
+          // Use edge function proxy as fallback
+          const proxyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`;
+          console.log('⚠️ Using edge function proxy for video');
+          setStream({ mode: 'mp4', url: proxyUrl, fallbackUrl: baseUrl, vpsOnline });
+        } else {
+          setStream({ mode: 'mp4', url: baseUrl, fallbackUrl, vpsOnline });
+        }
         setLoading(false);
         return;
       }
