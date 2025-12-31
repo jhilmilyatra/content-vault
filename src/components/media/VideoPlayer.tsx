@@ -215,41 +215,60 @@ export function VideoPlayer({ src, fallbackSrc, onError, className = "", crossOr
   const handleMediaError = useCallback(() => {
     const video = videoRef.current;
     const errorCode = video?.error?.code;
+    const errorMessage = video?.error?.message || '';
     
-    // Network errors are often transient - retry automatically
+    console.error(`Video error: code=${errorCode}, message=${errorMessage}, src=${currentSrc?.substring(0, 100)}`);
+    
+    // Network errors - retry with exponential backoff
     if (errorCode === MediaError.MEDIA_ERR_NETWORK && retryCount < MAX_RETRIES) {
-      console.log(`Network error, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+      const delay = Math.min(1000 * Math.pow(2, retryCount), 8000);
+      console.log(`Network error, retrying in ${delay}ms (${retryCount + 1}/${MAX_RETRIES})...`);
       setRetryCount(prev => prev + 1);
       setIsBuffering(true);
-      // Force video reload with cache-busting
+      
       setTimeout(() => {
         if (video) {
-          const bustUrl = currentSrc + (currentSrc.includes('?') ? '&' : '?') + `_retry=${Date.now()}`;
-          video.src = bustUrl;
+          // Reset video element and reload
           video.load();
         }
-      }, 1000 * retryCount); // Exponential backoff
+      }, delay);
       return;
     }
     
-    // Try fallback if available and not already using it
+    // Source errors (often CORS or 404) - retry once
+    if (errorCode === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED && retryCount < 1) {
+      console.log('Source error, retrying with fresh load...');
+      setRetryCount(prev => prev + 1);
+      setIsBuffering(true);
+      
+      setTimeout(() => {
+        if (video) {
+          video.load();
+        }
+      }, 1500);
+      return;
+    }
+    
+    // Try fallback if available
     if (fallbackSrc && !useFallback) {
-      console.log('Primary video source failed, trying fallback:', fallbackSrc);
+      console.log('Primary source failed, trying fallback:', fallbackSrc);
       setUseFallback(true);
       setCurrentSrc(fallbackSrc);
       setRetryCount(0);
       return;
     }
     
-    // Determine error message based on error code
-    let errorMessage = 'Unable to play this file. The format may not be supported by your browser.';
+    // Build user-friendly error message
+    let displayError = 'Unable to play this file. Please try again or download it.';
     if (errorCode === MediaError.MEDIA_ERR_NETWORK) {
-      errorMessage = 'Network error while loading video. Please check your connection.';
+      displayError = 'Connection lost. Please check your network and try again.';
     } else if (errorCode === MediaError.MEDIA_ERR_DECODE) {
-      errorMessage = 'Error decoding video. The file may be corrupted.';
+      displayError = 'This video could not be decoded. The file may be corrupted.';
+    } else if (errorCode === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
+      displayError = 'This video format is not supported by your browser.';
     }
     
-    setMediaError(errorMessage);
+    setMediaError(displayError);
     onError?.();
   }, [onError, fallbackSrc, useFallback, retryCount, currentSrc]);
 
@@ -362,12 +381,30 @@ export function VideoPlayer({ src, fallbackSrc, onError, className = "", crossOr
     }, 280);
   }, [duration, toggleFullscreen, togglePlay]);
 
+  const handleRetry = useCallback(() => {
+    setMediaError(null);
+    setRetryCount(0);
+    setIsBuffering(true);
+    setCurrentSrc(src);
+    setUseFallback(false);
+  }, [src]);
+
   if (mediaError) {
     return (
-      <div className="flex-1 flex items-center justify-center p-8">
-        <div className="text-center">
-          <p className="text-destructive">{mediaError}</p>
+      <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4">
+        <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center">
+          <X className="w-8 h-8 text-destructive" />
         </div>
+        <div className="text-center max-w-sm">
+          <p className="text-destructive font-medium mb-2">Playback Error</p>
+          <p className="text-muted-foreground text-sm">{mediaError}</p>
+        </div>
+        <button
+          onClick={handleRetry}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+        >
+          Try Again
+        </button>
       </div>
     );
   }

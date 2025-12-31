@@ -67,7 +67,24 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
   const loadFileUrl = async () => {
     if (!file || !guestId) return;
     setLoading(true);
+    setMediaError(null);
+    
     try {
+      const isVideo = file.mime_type.startsWith("video/");
+      const isAudio = file.mime_type.startsWith("audio/");
+      
+      // For video/audio files, use the streaming proxy edge function URL directly
+      // This enables proper range request support for seeking
+      if (isVideo || isAudio) {
+        // Build the proxy URL - edge function will handle streaming
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const proxyUrl = `${supabaseUrl}/functions/v1/guest-file-proxy?guestId=${encodeURIComponent(guestId)}&path=${encodeURIComponent(file.storage_path)}`;
+        setFileUrl(proxyUrl);
+        setLoading(false);
+        return;
+      }
+      
+      // For other file types, use the regular invoke method
       const response = await supabase.functions.invoke('guest-file-stream', {
         body: {
           guestId,
@@ -93,13 +110,13 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
 
       if (response.data?.url) {
         setFileUrl(response.data.url);
-      } else if (response.data?.blob) {
-        const blob = new Blob([response.data.blob], { type: file.mime_type });
-        const blobUrl = URL.createObjectURL(blob);
+      } else if (response.data instanceof Blob) {
+        const blobUrl = URL.createObjectURL(response.data);
         setFileUrl(blobUrl);
       }
     } catch (error) {
       console.error("Error loading file:", error);
+      setMediaError("Failed to load file. Please try downloading instead.");
       toast({
         title: "Error",
         description: "Failed to load file preview. Try downloading the file instead.",
