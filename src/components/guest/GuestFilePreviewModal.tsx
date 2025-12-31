@@ -279,11 +279,28 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
         return (
           <div className="w-full h-full flex items-center justify-center overflow-hidden">
             <div className="w-full h-full max-h-[70vh]">
-              <VideoPlayer 
-                src={fileUrl} 
-                onError={() => setMediaError('Unable to play this file.')}
-                crossOrigin={false}
-              />
+              {mediaError ? (
+                <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
+                  <div className="text-destructive text-center">{mediaError}</div>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      setMediaError(null);
+                      loadFileUrl();
+                    }}
+                  >
+                    Try Again
+                  </Button>
+                </div>
+              ) : (
+                <VideoPlayer 
+                  src={fileUrl} 
+                  onError={() => {
+                    setMediaError('Unable to play this file. Please try again or download it.');
+                  }}
+                  crossOrigin={false}
+                />
+              )}
             </div>
           </div>
         );

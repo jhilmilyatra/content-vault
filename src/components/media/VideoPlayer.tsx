@@ -34,6 +34,8 @@ export function VideoPlayer({ src, fallbackSrc, onError, className = "", crossOr
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [useFallback, setUseFallback] = useState(false);
   const [currentSrc, setCurrentSrc] = useState(src);
+  const [retryCount, setRetryCount] = useState(0);
+  const MAX_RETRIES = 2;
   // UI state
   const [showControls, setShowControls] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -60,6 +62,16 @@ export function VideoPlayer({ src, fallbackSrc, onError, className = "", crossOr
       }
     }, isMobile ? 4000 : 3000);
   }, [isMobile, isPlaying]);
+
+  // Reset state when source changes
+  useEffect(() => {
+    setCurrentSrc(src);
+    setUseFallback(false);
+    setMediaError(null);
+    setRetryCount(0);
+    setIsBuffering(true);
+    setCanPlayThrough(false);
+  }, [src]);
 
   useEffect(() => {
     return () => {
@@ -201,16 +213,45 @@ export function VideoPlayer({ src, fallbackSrc, onError, className = "", crossOr
   }, []);
 
   const handleMediaError = useCallback(() => {
+    const video = videoRef.current;
+    const errorCode = video?.error?.code;
+    
+    // Network errors are often transient - retry automatically
+    if (errorCode === MediaError.MEDIA_ERR_NETWORK && retryCount < MAX_RETRIES) {
+      console.log(`Network error, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+      setRetryCount(prev => prev + 1);
+      setIsBuffering(true);
+      // Force video reload with cache-busting
+      setTimeout(() => {
+        if (video) {
+          const bustUrl = currentSrc + (currentSrc.includes('?') ? '&' : '?') + `_retry=${Date.now()}`;
+          video.src = bustUrl;
+          video.load();
+        }
+      }, 1000 * retryCount); // Exponential backoff
+      return;
+    }
+    
     // Try fallback if available and not already using it
     if (fallbackSrc && !useFallback) {
       console.log('Primary video source failed, trying fallback:', fallbackSrc);
       setUseFallback(true);
       setCurrentSrc(fallbackSrc);
+      setRetryCount(0);
       return;
     }
-    setMediaError('Unable to play this file. The format may not be supported by your browser.');
+    
+    // Determine error message based on error code
+    let errorMessage = 'Unable to play this file. The format may not be supported by your browser.';
+    if (errorCode === MediaError.MEDIA_ERR_NETWORK) {
+      errorMessage = 'Network error while loading video. Please check your connection.';
+    } else if (errorCode === MediaError.MEDIA_ERR_DECODE) {
+      errorMessage = 'Error decoding video. The file may be corrupted.';
+    }
+    
+    setMediaError(errorMessage);
     onError?.();
-  }, [onError, fallbackSrc, useFallback]);
+  }, [onError, fallbackSrc, useFallback, retryCount, currentSrc]);
 
   // Buffering handlers
   const handleWaiting = useCallback(() => {
