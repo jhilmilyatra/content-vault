@@ -7,11 +7,10 @@ const corsHeaders = {
   "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges, Content-Type",
 };
 
-// Primary VPS storage
-const VPS_CONFIG = {
-  endpoint: "http://46.38.232.46:4000",
-  apiKey: "kARTOOS007",
-};
+// VPS Configuration
+// VPS_ENDPOINT = internal HTTP for server-to-server (streaming, file access)
+const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "http://46.38.232.46:4000";
+const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "kARTOOS007";
 
 // Timeouts
 const VPS_TIMEOUT = 30000; // 30 seconds for streaming
@@ -127,7 +126,7 @@ Deno.serve(async (req) => {
     const timeoutId = setTimeout(() => controller.abort(), VPS_TIMEOUT);
 
     const vpsHeaders: Record<string, string> = {
-      "Authorization": `Bearer ${VPS_CONFIG.apiKey}`,
+      "Authorization": `Bearer ${VPS_API_KEY}`,
     };
 
     // Forward range header for video seeking
@@ -137,7 +136,8 @@ Deno.serve(async (req) => {
 
     let vpsResponse: Response;
     try {
-      vpsResponse = await fetch(`${VPS_CONFIG.endpoint}/files/${storagePath}`, {
+      // Internal HTTP call to VPS (server-to-server, proxied through edge function)
+      vpsResponse = await fetch(`${VPS_ENDPOINT}/files/${storagePath}`, {
         headers: vpsHeaders,
         signal: controller.signal,
       });

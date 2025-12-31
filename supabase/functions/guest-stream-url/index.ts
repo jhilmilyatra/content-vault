@@ -7,13 +7,26 @@ const corsHeaders = {
 };
 
 // VPS Configuration
-const VPS_CONFIG = {
-  endpoint: "http://46.38.232.46:4000",
-  apiKey: "kARTOOS007",
-};
+// VPS_ENDPOINT = internal HTTP for server-to-server (health checks, etc.)
+// VPS_CDN_URL = public HTTPS URL for client-facing URLs (Cloudflare proxied)
+const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "http://46.38.232.46:4000";
+const VPS_CDN_URL = Deno.env.get("VPS_CDN_URL") || "https://media.trycloudflare.com"; // MUST be HTTPS
+const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "kARTOOS007";
 
 // Signing secret for URL tokens
 const SIGNING_SECRET = Deno.env.get("HLS_SIGNING_SECRET") || "default-signing-secret";
+
+/**
+ * Validate URL is HTTPS - critical for mixed content prevention
+ */
+function ensureHttps(url: string): string {
+  if (url.startsWith("https://")) {
+    return url;
+  }
+  // If we somehow got an HTTP URL, log error and throw
+  console.error(`❌ SECURITY: Attempted to return HTTP URL to client: ${url}`);
+  throw new Error("Insecure media URL blocked - HTTPS required");
+}
 
 /**
  * Generate HMAC signature for signed URLs
@@ -52,7 +65,9 @@ async function generateSignedUrl(
     sig: signature,
   });
   
-  return `${VPS_CONFIG.endpoint}/stream?${params.toString()}`;
+  // Always return HTTPS URL via CDN
+  const url = `${VPS_CDN_URL}/stream?${params.toString()}`;
+  return ensureHttps(url);
 }
 
 Deno.serve(async (req) => {
@@ -132,14 +147,14 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check VPS availability
+    // Check VPS availability (internal HTTP call - server-to-server)
     let vpsAvailable = false;
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
       
-      const healthCheck = await fetch(`${VPS_CONFIG.endpoint}/health`, {
-        headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` },
+      const healthCheck = await fetch(`${VPS_ENDPOINT}/health`, {
+        headers: { "Authorization": `Bearer ${VPS_API_KEY}` },
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
