@@ -7,42 +7,51 @@ const corsHeaders = {
 };
 
 // Performance tracking
-const SLOW_THRESHOLD_MS = 200;
-const VPS_TIMEOUT_MS = 5000;
-const MAX_RETRIES = 2;
+const VPS_TIMEOUT_MS = 8000; // Increased timeout for reliability
 
-// Fetch with timeout and retry
-async function fetchWithRetry(
-  url: string, 
-  options: RequestInit, 
-  retries = MAX_RETRIES
-): Promise<Response> {
-  let lastError: Error | null = null;
+// Signing secret for URL tokens
+const SIGNING_SECRET = Deno.env.get("HLS_SIGNING_SECRET") || Deno.env.get("VPS_API_KEY") || "default-signing-secret";
+
+/**
+ * Generate HMAC signature for signed URLs
+ */
+async function generateSignature(message: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(SIGNING_SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
   
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), VPS_TIMEOUT_MS);
-      
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal,
-      });
-      
-      clearTimeout(timeoutId);
-      return response;
-    } catch (error) {
-      lastError = error as Error;
-      console.log(`VPS attempt ${attempt + 1}/${retries + 1} failed: ${lastError.message}`);
-      
-      if (attempt < retries) {
-        // Exponential backoff: 100ms, 200ms, 400ms...
-        await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(2, attempt)));
-      }
-    }
-  }
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
+  const hashArray = Array.from(new Uint8Array(signature));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Generate a signed streaming URL for VPS access
+ */
+async function generateSignedVpsUrl(
+  cdnBaseUrl: string,
+  storagePath: string, 
+  userId: string,
+  expiresInSeconds: number = 3600
+): Promise<string> {
+  const expires = Math.floor(Date.now() / 1000) + expiresInSeconds;
+  const message = `${storagePath}:${userId}:${expires}`;
+  const signature = await generateSignature(message);
   
-  throw lastError || new Error("VPS fetch failed after retries");
+  const params = new URLSearchParams({
+    path: storagePath,
+    guest: userId, // Using 'guest' param as VPS expects it
+    expires: String(expires),
+    sig: signature,
+  });
+  
+  // Use /stream endpoint which supports signed URLs
+  return `${cdnBaseUrl}/stream?${params.toString()}`;
 }
 
 Deno.serve(async (req) => {
@@ -57,18 +66,15 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     
-    // VPS_ENDPOINT = internal HTTP for server-to-server
+    // VPS_ENDPOINT = internal HTTP for server-to-server health checks
     // VPS_CDN_URL = public HTTPS URL for client-facing URLs (Cloudflare proxied)
-    const envVpsEndpoint = Deno.env.get("VPS_ENDPOINT") || "http://46.38.232.46:4000";
-    const envVpsCdnUrl = Deno.env.get("VPS_CDN_URL");
-    const envVpsApiKey = Deno.env.get("VPS_API_KEY") || "kARTOOS007";
+    const envVpsEndpoint = Deno.env.get("VPS_ENDPOINT") || "";
+    const envVpsCdnUrl = Deno.env.get("VPS_CDN_URL") || "";
+    const envVpsApiKey = Deno.env.get("VPS_API_KEY") || "";
     
     // Check if CDN URL is properly configured (must be HTTPS)
     const hasCdnUrl = envVpsCdnUrl && envVpsCdnUrl.startsWith("https://");
-
-    // Custom VPS from headers
-    const headerVpsEndpoint = req.headers.get("x-vps-endpoint");
-    const headerVpsApiKey = req.headers.get("x-vps-api-key");
+    const hasVpsEndpoint = envVpsEndpoint && envVpsApiKey;
 
     const url = new URL(req.url);
     const storagePath = url.searchParams.get("path");
@@ -96,8 +102,6 @@ Deno.serve(async (req) => {
     const token = authHeader.replace("Bearer ", "");
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     
-    const authTime = performance.now() - startTime;
-    
     if (authError || !user) {
       return new Response(
         JSON.stringify({ error: "Invalid token" }),
@@ -113,98 +117,82 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Determine which VPS to use (internal endpoint for server calls)
-    const vpsEndpoint = headerVpsEndpoint || envVpsEndpoint;
-    const vpsApiKey = headerVpsApiKey || envVpsApiKey;
-
+    // === ACTION: URL ===
+    // Returns a direct URL for the client to use (for downloads, video playback, etc.)
     if (action === "url") {
-      // If CDN URL is not properly configured, always use Supabase signed URLs
-      // This avoids mixed content issues (HTTP VPS on HTTPS page)
-      if (!hasCdnUrl) {
-        console.log("CDN not configured, using Supabase signed URLs");
-        const { data, error } = await supabase.storage
-          .from("user-files")
-          .createSignedUrl(storagePath, 3600);
-        
-        if (error) throw error;
-        
-        return new Response(
-          JSON.stringify({ url: data.signedUrl, storage: "cloud" }),
-          { 
-            status: 200, 
-            headers: { 
-              ...corsHeaders, 
-              "Content-Type": "application/json",
-              "Cache-Control": "private, max-age=60, stale-while-revalidate=120"
-            } 
-          }
-        );
-      }
-      
-      // CDN is configured - check if file exists on VPS
-      if (vpsEndpoint && vpsApiKey) {
-        const vpsStartTime = performance.now();
+      // Priority 1: If CDN URL is configured, use signed VPS URLs
+      if (hasCdnUrl && hasVpsEndpoint) {
         try {
-          const checkResponse = await fetchWithRetry(`${vpsEndpoint}/files/${storagePath}`, {
-            method: "HEAD",
-            headers: { "Authorization": `Bearer ${vpsApiKey}` },
+          // Quick health check on VPS (using internal endpoint)
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 3000);
+          
+          const healthCheck = await fetch(`${envVpsEndpoint}/health`, {
+            headers: { "Authorization": `Bearer ${envVpsApiKey}` },
+            signal: controller.signal,
           });
+          clearTimeout(timeoutId);
           
-          const vpsTime = performance.now() - vpsStartTime;
-          
-          if (checkResponse.ok) {
-            const totalTime = performance.now() - startTime;
-            if (totalTime > SLOW_THRESHOLD_MS) {
-              console.warn(`⚠️ SLOW_EDGE [vps-file:url] ${Math.round(totalTime)}ms (auth: ${Math.round(authTime)}ms, vps: ${Math.round(vpsTime)}ms)`);
-            }
+          if (healthCheck.ok) {
+            // Generate signed URL using CDN domain
+            const signedUrl = await generateSignedVpsUrl(envVpsCdnUrl, storagePath, user.id, 7200);
             
-            // Return HTTPS CDN URL
-            const clientUrl = `${envVpsCdnUrl}/files/${storagePath}`;
+            console.log(`✅ Generated signed VPS URL via CDN`);
             
             return new Response(
-              JSON.stringify({ url: clientUrl, storage: "vps" }),
+              JSON.stringify({ 
+                url: signedUrl, 
+                storage: "vps",
+                signed: true
+              }),
               { 
                 status: 200, 
                 headers: { 
                   ...corsHeaders, 
                   "Content-Type": "application/json",
-                  "Cache-Control": "private, max-age=60, stale-while-revalidate=120"
+                  "Cache-Control": "private, max-age=60"
                 } 
               }
             );
           }
         } catch (e) {
-          console.log("VPS check failed after retries, trying Supabase");
+          console.warn("VPS health check failed, falling back to Supabase:", e);
         }
       }
       
-      // Fallback to Supabase signed URL
+      // Priority 2: Fallback to Supabase signed URL (always works)
+      console.log("Using Supabase signed URL fallback");
       const { data, error } = await supabase.storage
         .from("user-files")
-        .createSignedUrl(storagePath, 3600);
+        .createSignedUrl(storagePath, 7200); // 2 hour expiry
       
-      if (error) throw error;
-      
-      const totalTime = performance.now() - startTime;
-      if (totalTime > SLOW_THRESHOLD_MS) {
-        console.warn(`⚠️ SLOW_EDGE [vps-file:url-fallback] ${Math.round(totalTime)}ms`);
+      if (error) {
+        console.error("Supabase signed URL error:", error);
+        return new Response(
+          JSON.stringify({ error: "Failed to generate download URL" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
       
       return new Response(
-        JSON.stringify({ url: data.signedUrl, storage: "cloud" }),
+        JSON.stringify({ 
+          url: data.signedUrl, 
+          storage: "cloud",
+          signed: true
+        }),
         { 
           status: 200, 
           headers: { 
             ...corsHeaders, 
             "Content-Type": "application/json",
-            "Cache-Control": "private, max-age=60, stale-while-revalidate=120"
+            "Cache-Control": "private, max-age=60"
           } 
         }
       );
     }
 
+    // === ACTION: DELETE ===
     if (action === "delete") {
-      // Parse userId and fileName from storagePath
       const pathParts = storagePath.split("/");
       if (pathParts.length < 2) {
         return new Response(
@@ -215,13 +203,13 @@ Deno.serve(async (req) => {
       const userId = pathParts[0];
       const fileName = pathParts.slice(1).join("/");
 
-      // Delete from VPS
-      if (vpsEndpoint && vpsApiKey) {
+      // Delete from VPS if configured
+      if (hasVpsEndpoint) {
         try {
-          const deleteResponse = await fetch(`${vpsEndpoint}/delete`, {
+          const deleteResponse = await fetch(`${envVpsEndpoint}/delete`, {
             method: "DELETE",
             headers: {
-              "Authorization": `Bearer ${vpsApiKey}`,
+              "Authorization": `Bearer ${envVpsApiKey}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ userId, fileName }),
@@ -240,90 +228,68 @@ Deno.serve(async (req) => {
       // Also delete from Supabase storage (if it exists there)
       await supabase.storage.from("user-files").remove([storagePath]);
       
-      const totalTime = performance.now() - startTime;
-      if (totalTime > SLOW_THRESHOLD_MS) {
-        console.warn(`⚠️ SLOW_EDGE [vps-file:delete] ${Math.round(totalTime)}ms`);
-      }
-      
       return new Response(
         JSON.stringify({ success: true }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
+    // === ACTION: GET (stream through edge function) ===
+    // Note: This should be avoided for large files - use action=url instead
     if (action === "get") {
-      // Try VPS first with retries
-      if (vpsEndpoint && vpsApiKey) {
-        const vpsStartTime = performance.now();
+      // For GET action, prefer returning a redirect to signed URL
+      // This avoids edge function timeout issues with large files
+      
+      // Try VPS with CDN first
+      if (hasCdnUrl && hasVpsEndpoint) {
         try {
-          const vpsResponse = await fetchWithRetry(`${vpsEndpoint}/files/${storagePath}`, {
-            headers: { "Authorization": `Bearer ${vpsApiKey}` },
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 3000);
+          
+          const healthCheck = await fetch(`${envVpsEndpoint}/health`, {
+            headers: { "Authorization": `Bearer ${envVpsApiKey}` },
+            signal: controller.signal,
           });
+          clearTimeout(timeoutId);
           
-          const vpsTime = performance.now() - vpsStartTime;
-          
-          if (vpsResponse.ok) {
-            const contentType = vpsResponse.headers.get("Content-Type") || "application/octet-stream";
+          if (healthCheck.ok) {
+            const signedUrl = await generateSignedVpsUrl(envVpsCdnUrl, storagePath, user.id, 7200);
             
-            const totalTime = performance.now() - startTime;
-            if (totalTime > SLOW_THRESHOLD_MS) {
-              console.warn(`⚠️ SLOW_EDGE [vps-file:get] ${Math.round(totalTime)}ms (auth: ${Math.round(authTime)}ms, vps: ${Math.round(vpsTime)}ms)`);
-            }
-            
-            // Stream response directly (don't buffer with blob())
-            return new Response(vpsResponse.body, {
-              headers: { 
-                ...corsHeaders, 
-                "Content-Type": contentType,
-                // ✅ CACHE: Allow CDN to cache files
-                "Cache-Control": "private, max-age=300, stale-while-revalidate=600"
-              },
+            // Redirect to the signed URL
+            return new Response(null, {
+              status: 302,
+              headers: {
+                ...corsHeaders,
+                "Location": signedUrl,
+                "Cache-Control": "no-cache"
+              }
             });
           }
         } catch (e) {
-          console.error("VPS get error after retries:", e);
+          console.warn("VPS unavailable for GET, using Supabase:", e);
         }
       }
       
-      // Fallback to Supabase storage
-      try {
-        const { data, error } = await supabase.storage
-          .from("user-files")
-          .download(storagePath);
-        
-        if (error) {
-          console.error("Supabase storage error:", error);
-          return new Response(
-            JSON.stringify({ 
-              error: "File not available", 
-              details: "VPS storage is offline and file not found in cloud backup"
-            }),
-            { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-        
-        const totalTime = performance.now() - startTime;
-        if (totalTime > SLOW_THRESHOLD_MS) {
-          console.warn(`⚠️ SLOW_EDGE [vps-file:get-fallback] ${Math.round(totalTime)}ms`);
-        }
-        
-        return new Response(data, {
-          headers: { 
-            ...corsHeaders, 
-            "Content-Type": data.type,
-            "Cache-Control": "private, max-age=300, stale-while-revalidate=600"
-          },
-        });
-      } catch (fallbackError) {
-        console.error("Supabase fallback error:", fallbackError);
+      // Fallback: Redirect to Supabase signed URL
+      const { data, error } = await supabase.storage
+        .from("user-files")
+        .createSignedUrl(storagePath, 3600);
+      
+      if (error) {
         return new Response(
-          JSON.stringify({ 
-            error: "File unavailable", 
-            details: "Storage servers are currently unreachable. Please try again later."
-          }),
+          JSON.stringify({ error: "File not available" }),
           { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+      
+      return new Response(null, {
+        status: 302,
+        headers: {
+          ...corsHeaders,
+          "Location": data.signedUrl,
+          "Cache-Control": "no-cache"
+        }
+      });
     }
 
     return new Response(
