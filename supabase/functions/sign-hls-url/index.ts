@@ -72,16 +72,13 @@ Deno.serve(async (req) => {
   try {
     // Support both GET (query params) and POST (JSON body)
     let storagePath: string | null = null;
-    let expiresIn: number | null = null;
 
     if (req.method === 'GET') {
       const url = new URL(req.url);
       storagePath = url.searchParams.get('storagePath');
-      expiresIn = parseInt(url.searchParams.get('expiresIn') || '3600');
     } else {
       const body = await req.json().catch(() => ({}));
       storagePath = body.storagePath;
-      expiresIn = body.expiresIn || 3600;
     }
     
     if (!storagePath) {
@@ -136,8 +133,39 @@ Deno.serve(async (req) => {
     const fileName = pathParts.pop() || '';
     const baseName = fileName.replace(/\.[^.]+$/, '');
     
-    // Check if HLS exists on VPS
+    // Check if HLS exists on VPS using HEAD first for quick check
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      
+      // HEAD request first for quick existence check
+      const headResponse = await fetch(
+        `${VPS_ENDPOINT}/hls-status/${userId}/${fileName}`,
+        {
+          method: 'HEAD',
+          headers: {
+            'Authorization': `Bearer ${VPS_API_KEY}`,
+          },
+          signal: controller.signal,
+        }
+      );
+      clearTimeout(timeoutId);
+      
+      if (!headResponse.ok) {
+        // HLS not available
+        return new Response(
+          JSON.stringify({ 
+            available: false, 
+            message: 'HLS not available for this video' 
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      // GET for full status
+      const controller2 = new AbortController();
+      const timeoutId2 = setTimeout(() => controller2.abort(), 3000);
+      
       const hlsCheckResponse = await fetch(
         `${VPS_ENDPOINT}/hls-status/${userId}/${fileName}`,
         {
@@ -145,11 +173,12 @@ Deno.serve(async (req) => {
           headers: {
             'Authorization': `Bearer ${VPS_API_KEY}`,
           },
+          signal: controller2.signal,
         }
       );
+      clearTimeout(timeoutId2);
       
       if (!hlsCheckResponse.ok) {
-        // HLS not available
         return new Response(
           JSON.stringify({ 
             available: false, 
@@ -173,19 +202,18 @@ Deno.serve(async (req) => {
         );
       }
       
-      // HLS is available - generate signed URL
-      const hlsPath = `/hls/${userId}/${baseName}/master.m3u8`;
-      const expirySeconds = expiresIn || 3600;
-      const signedUrl = await signUrl(VPS_ENDPOINT, hlsPath, expirySeconds);
+      // HLS is available - generate signed URL with 12-hour TTL
+      const hlsPath = `/hls/${userId}/${baseName}/index.m3u8`;
+      const signedUrl = await signUrl(VPS_ENDPOINT, hlsPath, TWELVE_HOURS);
       
-      console.log(`HLS URL generated for: ${storagePath}`);
+      console.log(`HLS URL generated for: ${storagePath} (12h TTL)`);
       
       return new Response(
         JSON.stringify({
           available: true,
           signedUrl,
           qualities: hlsStatus.qualities || [],
-          expiresAt: new Date((Math.floor(Date.now() / 1000) + expirySeconds) * 1000).toISOString(),
+          expiresAt: new Date((Math.floor(Date.now() / 1000) + TWELVE_HOURS) * 1000).toISOString(),
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
