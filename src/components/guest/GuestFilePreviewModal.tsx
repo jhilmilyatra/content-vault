@@ -6,10 +6,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { formatFileSize } from "@/lib/fileService";
 import { 
   Download, X, FileText, File, Loader2,
-  Play, Pause, Volume2, VolumeX, SkipBack, SkipForward
+  Play, Pause, Volume2, VolumeX, SkipBack, SkipForward,
+  Wifi
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { VideoPlayer } from "@/components/media/VideoPlayer";
+import { HLSPlayer } from "@/components/media/HLSPlayer";
 import { UniversalImageViewer } from "@/components/media/UniversalImageViewer";
 
 interface GuestFileItem {
@@ -30,6 +32,8 @@ interface GuestFilePreviewModalProps {
 
 export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: GuestFilePreviewModalProps) {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [hlsUrl, setHlsUrl] = useState<string | null>(null);
+  const [hlsAvailable, setHlsAvailable] = useState(false);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
@@ -55,6 +59,8 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
         URL.revokeObjectURL(fileUrl);
       }
       setFileUrl(null);
+      setHlsUrl(null);
+      setHlsAvailable(false);
       setIsPlaying(false);
       setCurrentTime(0);
       setDuration(0);
@@ -68,13 +74,49 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
     if (!file || !guestId) return;
     setLoading(true);
     setMediaError(null);
+    setHlsUrl(null);
+    setHlsAvailable(false);
     
     try {
       const isVideo = file.mime_type.startsWith("video/");
       const isAudio = file.mime_type.startsWith("audio/");
       
-      // For video/audio files, get a signed streaming URL
-      // This enables direct VPS streaming with proper range request support for seeking
+      // For video files, try HLS first for adaptive streaming
+      if (isVideo) {
+        try {
+          const hlsResponse = await supabase.functions.invoke('guest-hls-url', {
+            body: {
+              guestId,
+              storagePath: file.storage_path,
+            },
+          });
+
+          if (!hlsResponse.error && hlsResponse.data) {
+            const { type, url, hlsAvailable: hasHls } = hlsResponse.data;
+            
+            if (type === 'hls' && hasHls) {
+              console.log('🎬 Using HLS adaptive streaming');
+              setHlsUrl(url);
+              setHlsAvailable(true);
+              setFileUrl(url); // Fallback URL
+              setLoading(false);
+              return;
+            }
+            
+            // HLS not available, use direct stream
+            if (url) {
+              console.log(`🎬 Using direct stream (HLS status: ${hlsResponse.data.hlsStatus || 'unavailable'})`);
+              setFileUrl(url);
+              setLoading(false);
+              return;
+            }
+          }
+        } catch (hlsError) {
+          console.warn('HLS URL fetch failed, falling back to direct stream:', hlsError);
+        }
+      }
+      
+      // For audio or video fallback, get a signed streaming URL
       if (isVideo || isAudio) {
         const response = await supabase.functions.invoke('guest-stream-url', {
           body: {
@@ -317,11 +359,32 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                     variant="outline" 
                     onClick={() => {
                       setMediaError(null);
+                      setHlsAvailable(false);
+                      setHlsUrl(null);
                       loadFileUrl();
                     }}
                   >
                     Try Again
                   </Button>
+                </div>
+              ) : hlsAvailable && hlsUrl ? (
+                // Use HLSPlayer for adaptive streaming when available
+                <div className="relative w-full h-full">
+                  {/* HLS indicator badge */}
+                  <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 px-2 py-1 rounded-full bg-black/60 backdrop-blur-sm text-xs text-white/90">
+                    <Wifi className="w-3 h-3 text-green-400" />
+                    <span>Adaptive</span>
+                  </div>
+                  <HLSPlayer 
+                    src={hlsUrl}
+                    fallbackSrc={fileUrl}
+                    onError={(error) => {
+                      console.error('HLS playback error:', error);
+                      // Fall back to regular video player
+                      setHlsAvailable(false);
+                      setHlsUrl(null);
+                    }}
+                  />
                 </div>
               ) : (
                 <VideoPlayer 
