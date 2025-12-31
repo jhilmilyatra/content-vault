@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { supabase } from "@/integrations/supabase/client";
@@ -62,6 +62,7 @@ import ShareDialog from "@/components/files/ShareDialog";
 import ShareFolderDialog from "@/components/files/ShareFolderDialog";
 import BulkActionsBar from "@/components/files/BulkActionsBar";
 import { FilePreviewModal } from "@/components/files/FilePreviewModal";
+import { useCacheWarming } from "@/hooks/useCacheWarming";
 import { IosActionSheet } from "@/components/ios/IosActionSheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -124,6 +125,13 @@ const FileManager = () => {
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Pre-fetch URLs for visible files (cache warming)
+  const filesForWarming = useMemo(() => 
+    files.map(f => ({ id: f.id, storage_path: f.storage_path })), 
+    [files]
+  );
+  useCacheWarming(filesForWarming, !loading && files.length > 0);
 
   // Check if user has seen onboarding
   useEffect(() => {
