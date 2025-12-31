@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { getCachedUrl, setCachedUrl } from "@/lib/urlCache";
 
 export interface FileItem {
   id: string;
@@ -1286,6 +1287,13 @@ export const restoreFile = async (fileId: string): Promise<void> => {
 };
 
 export const getFileUrl = async (storagePath: string): Promise<string> => {
+  // Check cache first
+  const cachedUrl = getCachedUrl(storagePath, 'url');
+  if (cachedUrl) {
+    console.log('📦 URL cache hit:', storagePath);
+    return cachedUrl;
+  }
+
   // Use edge function to get file URL (avoids mixed content issues)
   const { data: sessionData } = await supabase.auth.getSession();
   if (!sessionData.session) {
@@ -1307,12 +1315,19 @@ export const getFileUrl = async (storagePath: string): Promise<string> => {
 
   const result = await response.json();
   
-  // If VPS URL, proxy through edge function for HTTPS
+  // Build the final URL
+  let finalUrl: string;
   if (result.storage === "vps") {
-    return `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(storagePath)}&action=get`;
+    finalUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(storagePath)}&action=get`;
+  } else {
+    finalUrl = result.url;
   }
   
-  return result.url;
+  // Cache the URL (50 min TTL)
+  setCachedUrl(storagePath, finalUrl, 'url');
+  console.log('📥 URL cached:', storagePath);
+  
+  return finalUrl;
 };
 
 export const createFolder = async (
