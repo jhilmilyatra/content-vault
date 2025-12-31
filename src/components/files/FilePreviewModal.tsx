@@ -182,6 +182,7 @@ export function FilePreviewModal({
 
       const urlData = await fileResponse.json();
       const baseUrl = urlData.url;
+      const fallbackUrl = urlData.fallbackUrl || null; // Supabase fallback from API
       const vpsOnline = urlData.storage === 'vps';
 
       // For video files, check HLS availability FIRST before deciding mode
@@ -204,7 +205,7 @@ export function FilePreviewModal({
               setStream({ 
                 mode: 'hls', 
                 url: hlsData.signedUrl, 
-                fallbackUrl: baseUrl,
+                fallbackUrl: fallbackUrl || baseUrl,
                 vpsOnline 
               });
               setLoading(false);
@@ -215,15 +216,15 @@ export function FilePreviewModal({
           console.debug('HLS check failed, using MP4:', hlsError);
         }
         
-        // HLS not available, use MP4
+        // HLS not available, use MP4 with fallback
         console.log('📹 Using direct MP4 stream');
-        setStream({ mode: 'mp4', url: baseUrl, vpsOnline });
+        setStream({ mode: 'mp4', url: baseUrl, fallbackUrl, vpsOnline });
         setLoading(false);
         return;
       }
 
       // For other file types, use base URL with appropriate mode
-      setStream({ mode: baseFileType, url: baseUrl, vpsOnline });
+      setStream({ mode: baseFileType, url: baseUrl, fallbackUrl, vpsOnline });
       
     } catch (error) {
       console.error("Error resolving stream:", error);

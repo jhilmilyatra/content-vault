@@ -218,13 +218,25 @@ export function HLSPlayer({
         setCurrentQuality(data.level);
       });
 
-      // Error handling with auto-recovery
+      // Error handling with auto-recovery and fallback
       hls.on(Hls.Events.ERROR, (_, data) => {
         console.warn('HLS error:', data.type, data.details);
         
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
+              // If we have a fallback URL, use it immediately on network errors
+              if (fallbackSrc) {
+                console.log('HLS network error - switching to fallback URL');
+                hls.destroy();
+                hlsRef.current = null;
+                setIsHLS(false);
+                if (video) {
+                  video.src = fallbackSrc;
+                  video.load();
+                }
+                return;
+              }
               setNetworkError(true);
               console.log('Attempting network recovery...');
               hls.startLoad();
@@ -234,6 +246,18 @@ export function HLSPlayer({
               hls.recoverMediaError();
               break;
             default:
+              // Use fallback on any fatal error
+              if (fallbackSrc) {
+                console.log('HLS fatal error - switching to fallback URL');
+                hls.destroy();
+                hlsRef.current = null;
+                setIsHLS(false);
+                if (video) {
+                  video.src = fallbackSrc;
+                  video.load();
+                }
+                return;
+              }
               setMediaError('Unable to play this video. Please try again.');
               onError?.('HLS playback failed');
               break;
