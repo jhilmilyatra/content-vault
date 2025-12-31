@@ -9,7 +9,7 @@ import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { 
   Download, X, File, Loader2,
   Play, Pause, SkipBack, SkipForward,
-  ChevronLeft, ChevronRight, Image, Info, Music, FileVideo
+  ChevronLeft, ChevronRight, Image, Info, Music, FileVideo, Wifi
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { VideoPlayer } from "@/components/media/VideoPlayer";
@@ -24,6 +24,16 @@ interface FilePreviewModalProps {
   onNavigate?: (file: FileItem) => void;
 }
 
+// Stream mode type - decided BEFORE mounting any player
+type StreamMode = 'hls' | 'mp4' | 'audio' | 'image' | 'pdf' | 'other';
+
+interface ResolvedStream {
+  mode: StreamMode;
+  url: string;
+  fallbackUrl?: string;
+  vpsOnline?: boolean;
+}
+
 export function FilePreviewModal({ 
   file, 
   open, 
@@ -31,14 +41,15 @@ export function FilePreviewModal({
   allFiles = [],
   onNavigate 
 }: FilePreviewModalProps) {
-  const [fileUrl, setFileUrl] = useState<string | null>(null);
-  const [hlsUrl, setHlsUrl] = useState<string | null>(null);
-  const [rawVideoUrl, setRawVideoUrl] = useState<string | null>(null); // Direct VPS fallback
+  // Single resolved stream state - decided BEFORE rendering player
+  const [stream, setStream] = useState<ResolvedStream | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
-  const [vpsOnline, setVpsOnline] = useState(true);
+  
+  // Key to force complete player remount on retry
+  const [playerKey, setPlayerKey] = useState(0);
 
   // Audio player state
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -75,58 +86,34 @@ export function FilePreviewModal({
   // Store previous blob URL to revoke on cleanup
   const previousBlobUrlRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    if (open && file) {
-      loadFileUrl();
-      setMediaError(null);
-    } else {
-      // Only revoke when modal closes, not on re-renders
-      if (previousBlobUrlRef.current) {
-        URL.revokeObjectURL(previousBlobUrlRef.current);
-        previousBlobUrlRef.current = null;
-      }
-      setFileUrl(null);
-      setHlsUrl(null);
-      setRawVideoUrl(null);
-      setIsPlaying(false);
-      setCurrentTime(0);
-      setDuration(0);
-      setPlaybackSpeed(1);
-      setShowSpeedMenu(false);
-      setMediaError(null);
-      setShowInfo(false);
-      setVpsOnline(true);
-    }
+  // Determine file type from mime type
+  const getBaseFileType = (mimeType: string): StreamMode => {
+    if (mimeType.startsWith("image/")) return "image";
+    if (mimeType.startsWith("video/")) return "mp4"; // Will be upgraded to 'hls' if available
+    if (mimeType.startsWith("audio/")) return "audio";
+    if (mimeType === "application/pdf") return "pdf";
     
-    // Cleanup on unmount
-    return () => {
-      if (previousBlobUrlRef.current) {
-        URL.revokeObjectURL(previousBlobUrlRef.current);
-        previousBlobUrlRef.current = null;
-      }
-    };
-  }, [open, file?.id]); // Use file.id instead of file object to prevent unnecessary re-runs
-
-  const navigateGallery = (direction: number) => {
-    const newIndex = currentIndex + direction;
-    if (newIndex >= 0 && newIndex < mediaFiles.length) {
-      lightHaptic();
-      const newFile = mediaFiles[newIndex];
-      if (onNavigate) {
-        onNavigate(newFile);
-      }
-      setCurrentIndex(newIndex);
+    // Check by extension as fallback
+    if (file) {
+      const videoExtensions = ['.mp4', '.webm', '.ogg', '.ogv', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v'];
+      const audioExtensions = ['.mp3', '.wav', '.ogg', '.oga', '.flac', '.aac', '.m4a', '.wma'];
+      const ext = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+      if (videoExtensions.includes(ext)) return "mp4";
+      if (audioExtensions.includes(ext)) return "audio";
     }
+    return "other";
   };
 
-  const loadFileUrl = async (retryCount = 0) => {
+  // CRITICAL: Resolve stream mode BEFORE rendering any player
+  const resolveStreamMode = async (retryCount = 0) => {
     if (!file) return;
+    
     setLoading(true);
-    setHlsUrl(null);
-    setRawVideoUrl(null);
     setMediaError(null);
+    setStream(null);
     
     const MAX_RETRIES = 2;
+    const baseFileType = getBaseFileType(file.mime_type);
     
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -143,10 +130,7 @@ export function FilePreviewModal({
         }
       }).catch((err) => console.error('Failed to track view:', err));
 
-      const isVideo = file.mime_type.startsWith('video/');
-      
-      // Always use edge function as proxy (handles HTTPS/CORS properly)
-      // The edge function will try VPS first, then fall back to Supabase storage
+      // Get base file URL from VPS
       const fileResponse = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=url`,
         {
@@ -164,13 +148,12 @@ export function FilePreviewModal({
         if (status === 503 && retryCount < MAX_RETRIES) {
           console.log(`Server unavailable, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
           await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
-          return loadFileUrl(retryCount + 1);
+          return resolveStreamMode(retryCount + 1);
         }
         
         // Set specific error message based on status
         if (status === 503) {
           setMediaError("Storage server temporarily unavailable. Please try again.");
-          setVpsOnline(false);
         } else if (status === 401 || status === 403) {
           setMediaError("You don't have permission to view this file.");
         } else {
@@ -180,25 +163,58 @@ export function FilePreviewModal({
       }
 
       const urlData = await fileResponse.json();
-      
-      if (isVideo) {
-        // For videos, check if HLS is available via edge function
-        await checkHLSAvailability(file.storage_path);
-        // Set raw video URL as fallback
-        setRawVideoUrl(urlData.url);
+      const baseUrl = urlData.url;
+      const vpsOnline = urlData.storage === 'vps';
+
+      // For video files, check HLS availability FIRST before deciding mode
+      if (baseFileType === 'mp4') {
+        try {
+          console.log('🎬 Checking HLS availability for video...');
+          const hlsResponse = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sign-hls-url?storagePath=${encodeURIComponent(file.storage_path)}`,
+            {
+              headers: {
+                Authorization: `Bearer ${sessionData.session.access_token}`,
+              },
+            }
+          );
+          
+          if (hlsResponse.ok) {
+            const hlsData = await hlsResponse.json();
+            if (hlsData.signedUrl && hlsData.available !== false) {
+              console.log('✅ HLS available - using adaptive streaming');
+              setStream({ 
+                mode: 'hls', 
+                url: hlsData.signedUrl, 
+                fallbackUrl: baseUrl,
+                vpsOnline 
+              });
+              setLoading(false);
+              return;
+            }
+          }
+        } catch (hlsError) {
+          console.debug('HLS check failed, using MP4:', hlsError);
+        }
+        
+        // HLS not available, use MP4
+        console.log('📹 Using direct MP4 stream');
+        setStream({ mode: 'mp4', url: baseUrl, vpsOnline });
+        setLoading(false);
+        return;
       }
+
+      // For other file types, use base URL with appropriate mode
+      setStream({ mode: baseFileType, url: baseUrl, vpsOnline });
       
-      setFileUrl(urlData.url);
-      setVpsOnline(urlData.storage === 'vps');
-      setMediaError(null);
     } catch (error) {
-      console.error("Error loading file:", error);
+      console.error("Error resolving stream:", error);
       
       // Retry on network errors
       if (retryCount < MAX_RETRIES) {
         console.log(`Network error, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
         await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
-        return loadFileUrl(retryCount + 1);
+        return resolveStreamMode(retryCount + 1);
       }
       
       setMediaError("Connection failed. Please check your network and try again.");
@@ -207,33 +223,58 @@ export function FilePreviewModal({
     }
   };
 
-  // Check if HLS version is available for video via edge function
-  const checkHLSAvailability = async (storagePath: string) => {
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) return;
-
-      // Use edge function to check HLS availability (avoids mixed content issues)
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sign-hls-url?storagePath=${encodeURIComponent(storagePath)}`,
-        {
-          headers: {
-            Authorization: `Bearer ${sessionData.session.access_token}`,
-          },
-        }
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.signedUrl) {
-          console.log('HLS available:', data.signedUrl);
-          setHlsUrl(data.signedUrl);
-        }
+  // Reset all state when modal closes or file changes
+  useEffect(() => {
+    if (open && file) {
+      resolveStreamMode();
+      setMediaError(null);
+    } else {
+      // Only revoke when modal closes
+      if (previousBlobUrlRef.current) {
+        URL.revokeObjectURL(previousBlobUrlRef.current);
+        previousBlobUrlRef.current = null;
       }
-    } catch (error) {
-      // Silently fail - fall back to MP4
-      console.debug('HLS check failed, using MP4 fallback:', error);
+      if (stream?.url?.startsWith("blob:")) {
+        URL.revokeObjectURL(stream.url);
+      }
+      setStream(null);
+      setIsPlaying(false);
+      setCurrentTime(0);
+      setDuration(0);
+      setPlaybackSpeed(1);
+      setShowSpeedMenu(false);
+      setMediaError(null);
+      setShowInfo(false);
+      setPlayerKey(0);
     }
+    
+    // Cleanup on unmount
+    return () => {
+      if (previousBlobUrlRef.current) {
+        URL.revokeObjectURL(previousBlobUrlRef.current);
+        previousBlobUrlRef.current = null;
+      }
+    };
+  }, [open, file?.id]);
+
+  const navigateGallery = (direction: number) => {
+    const newIndex = currentIndex + direction;
+    if (newIndex >= 0 && newIndex < mediaFiles.length) {
+      lightHaptic();
+      const newFile = mediaFiles[newIndex];
+      if (onNavigate) {
+        onNavigate(newFile);
+      }
+      setCurrentIndex(newIndex);
+    }
+  };
+
+  // Handle retry - force complete remount with new stream resolution
+  const handleRetry = () => {
+    setMediaError(null);
+    setStream(null);
+    setPlayerKey(prev => prev + 1);
+    resolveStreamMode();
   };
 
   const handleDownload = async () => {
@@ -256,18 +297,13 @@ export function FilePreviewModal({
         }
       }).catch((err) => console.error('Failed to track download:', err));
 
-      let downloadUrl: string;
-      let fetchOptions: RequestInit = {};
-      
       // Always use edge function as proxy for secure downloads
-      downloadUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`;
-      fetchOptions = {
+      const downloadUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`;
+      const response = await fetch(downloadUrl, {
         headers: {
           Authorization: `Bearer ${sessionData.session.access_token}`,
         },
-      };
-      
-      const response = await fetch(downloadUrl, fetchOptions);
+      });
       
       if (!response.ok) throw new Error("Failed to fetch file");
       
@@ -297,21 +333,6 @@ export function FilePreviewModal({
     } finally {
       setDownloading(false);
     }
-  };
-
-  const getFileType = (mimeType: string): "image" | "video" | "audio" | "pdf" | "other" => {
-    if (mimeType.startsWith("image/")) return "image";
-    if (mimeType.startsWith("video/")) return "video";
-    if (mimeType.startsWith("audio/")) return "audio";
-    if (mimeType === "application/pdf") return "pdf";
-    const videoExtensions = ['.mp4', '.webm', '.ogg', '.ogv', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v'];
-    const audioExtensions = ['.mp3', '.wav', '.ogg', '.oga', '.flac', '.aac', '.m4a', '.wma'];
-    if (file) {
-      const ext = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
-      if (videoExtensions.includes(ext)) return "video";
-      if (audioExtensions.includes(ext)) return "audio";
-    }
-    return "other";
   };
 
   // Audio player controls
@@ -412,17 +433,31 @@ export function FilePreviewModal({
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
 
+  // Render the correct player based on resolved stream mode
   const renderPreview = () => {
-    if (!file || !fileUrl) return null;
+    if (!file || !stream) return null;
 
-    const fileType = getFileType(file.mime_type);
+    // Show error state with retry
+    if (mediaError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
+          <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+            <File className="w-8 h-8 text-red-400" />
+          </div>
+          <div className="text-red-400 text-center">{mediaError}</div>
+          <Button variant="outline" onClick={handleRetry} className="rounded-xl border-white/10">
+            Try Again
+          </Button>
+        </div>
+      );
+    }
 
-    switch (fileType) {
+    switch (stream.mode) {
       case "image":
         return (
           <UniversalImageViewer
             key={file.id}
-            src={fileUrl}
+            src={stream.url}
             alt={file.name}
             showControls={true}
             onNavigatePrev={currentIndex > 0 ? () => navigateGallery(-1) : undefined}
@@ -432,27 +467,43 @@ export function FilePreviewModal({
           />
         );
 
-      case "video":
+      case "hls":
+        // HLS adaptive streaming - render HLSPlayer only
+        return (
+          <div className="w-full h-full flex items-center justify-center overflow-hidden">
+            <div className="w-full h-full max-h-[70vh] relative">
+              {/* HLS indicator badge */}
+              <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 px-2 py-1 rounded-full bg-black/60 backdrop-blur-sm text-xs text-white/90">
+                <Wifi className="w-3 h-3 text-green-400" />
+                <span>Adaptive</span>
+              </div>
+              <HLSPlayer 
+                key={`hls-${playerKey}`}
+                src={stream.url}
+                fallbackSrc={stream.fallbackUrl}
+                onError={(error) => {
+                  console.error('HLS playback error:', error);
+                  setMediaError('Unable to play this file. Please try again or download it.');
+                }}
+              />
+            </div>
+          </div>
+        );
+
+      case "mp4":
+        // Direct MP4 stream - render VideoPlayer only
         return (
           <div className="w-full h-full flex items-center justify-center overflow-hidden">
             <div className="w-full h-full max-h-[70vh]">
-              {hlsUrl ? (
-                <HLSPlayer 
-                  src={hlsUrl}
-                  fallbackSrc={rawVideoUrl || fileUrl}
-                  onError={(err) => {
-                    console.warn('HLS playback failed, falling back to MP4:', err);
-                    setHlsUrl(null); // Clear HLS to fall back to VideoPlayer
-                  }}
-                />
-              ) : (
-                <VideoPlayer 
-                  src={fileUrl}
-                  fallbackSrc={rawVideoUrl || undefined}
-                  onError={() => setMediaError('Unable to play this file.')}
-                  crossOrigin={!vpsOnline} // Only use crossOrigin for edge function URLs
-                />
-              )}
+              <VideoPlayer 
+                key={`mp4-${playerKey}`}
+                src={stream.url}
+                fallbackSrc={stream.fallbackUrl}
+                onError={() => {
+                  setMediaError('Unable to play this file. Please try again or download it.');
+                }}
+                crossOrigin={!stream.vpsOnline}
+              />
             </div>
           </div>
         );
@@ -511,8 +562,9 @@ export function FilePreviewModal({
             </div>
             
             <audio
+              key={`audio-${playerKey}`}
               ref={audioRef}
-              src={fileUrl}
+              src={stream.url}
               onTimeUpdate={handleTimeUpdate}
               onLoadedMetadata={handleLoadedMetadata}
               onEnded={handleMediaEnded}
@@ -521,12 +573,6 @@ export function FilePreviewModal({
               onError={handleMediaError}
               className="hidden"
             />
-            
-            {mediaError && (
-              <div className="text-red-400 text-sm text-center px-4 bg-red-500/10 py-2 rounded-lg border border-red-500/20">
-                {mediaError}
-              </div>
-            )}
             
             <div className="w-full max-w-md space-y-4">
               <div className="space-y-2">
@@ -635,7 +681,7 @@ export function FilePreviewModal({
             className="flex-1 w-full h-[75vh] rounded-2xl overflow-hidden border border-white/10"
           >
             <iframe
-              src={`${fileUrl}#toolbar=1&navpanes=0`}
+              src={`${stream.url}#toolbar=1&navpanes=0`}
               className="w-full h-full border-0 bg-white"
               title={file.name}
             />
@@ -676,8 +722,8 @@ export function FilePreviewModal({
     }
   };
 
-  const fileType = file ? getFileType(file.mime_type) : "other";
-  const isVideoOrImage = fileType === "video" || fileType === "image";
+  const isVideoOrImage = stream?.mode === "hls" || stream?.mode === "mp4" || stream?.mode === "image";
+  const fileType = file ? getBaseFileType(file.mime_type) : "other";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -694,7 +740,7 @@ export function FilePreviewModal({
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <div className="p-2 rounded-xl bg-gradient-to-br from-gold/20 to-gold/5 border border-gold/20">
               {fileType === 'image' ? <Image className="w-5 h-5 text-gold" /> :
-               fileType === 'video' ? <FileVideo className="w-5 h-5 text-gold" /> :
+               fileType === 'mp4' ? <FileVideo className="w-5 h-5 text-gold" /> :
                fileType === 'audio' ? <Music className="w-5 h-5 text-gold" /> :
                <File className="w-5 h-5 text-gold" />}
             </div>
@@ -707,7 +753,7 @@ export function FilePreviewModal({
           </div>
           
           {/* Gallery counter */}
-          {mediaFiles.length > 1 && (fileType === 'image' || fileType === 'video') && (
+          {mediaFiles.length > 1 && (fileType === 'image' || fileType === 'mp4') && (
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] mr-4">
               <Image className="w-4 h-4 text-white/40" />
               <span className="text-sm text-white/60 font-medium">
@@ -736,7 +782,7 @@ export function FilePreviewModal({
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               onClick={handleDownload}
-              disabled={!fileUrl || downloading}
+              disabled={!stream?.url || downloading}
               className="w-9 h-9 rounded-xl bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-all disabled:opacity-30"
             >
               {downloading ? (
@@ -774,12 +820,13 @@ export function FilePreviewModal({
                   <p className="text-white/40 text-sm">Loading preview...</p>
                 </div>
               </motion.div>
-            ) : fileUrl ? (
+            ) : stream ? (
               <motion.div
                 key="content"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
+                className="w-full h-full"
               >
                 {renderPreview()}
               </motion.div>
@@ -798,18 +845,17 @@ export function FilePreviewModal({
                   <p className="text-white/60 font-medium">
                     {mediaError || "Unable to load preview"}
                   </p>
-                  {!vpsOnline && (
+                  {stream?.vpsOnline === false && (
                     <p className="text-white/30 text-sm mt-1">
                       The storage server may be temporarily offline
                     </p>
                   )}
                 </div>
                 <Button
-                  onClick={() => loadFileUrl()}
+                  onClick={handleRetry}
                   variant="outline"
                   className="mt-2 rounded-xl border-white/10 hover:bg-white/5"
                 >
-                  <Loader2 className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : 'hidden'}`} />
                   Try Again
                 </Button>
               </motion.div>
