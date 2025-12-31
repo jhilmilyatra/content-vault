@@ -131,7 +131,12 @@ const FileManager = () => {
     files.map(f => ({ id: f.id, storage_path: f.storage_path })), 
     [files]
   );
-  useCacheWarming(filesForWarming, !loading && files.length > 0);
+  const { warmUrl } = useCacheWarming(filesForWarming, !loading && files.length > 0);
+
+  // Hover-based cache warming handler
+  const handleFileHover = useCallback((storagePath: string) => {
+    warmUrl(storagePath);
+  }, [warmUrl]);
 
   // Check if user has seen onboarding
   useEffect(() => {
@@ -1101,6 +1106,7 @@ const FileManager = () => {
                     whileHover={{ scale: 1.02, y: -2 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={handleFileClick}
+                    onMouseEnter={() => handleFileHover(file.storage_path)}
                     onTouchStart={() => handleLongPressStart('file', file)}
                     onTouchEnd={handleLongPressEnd}
                     onTouchMove={handleLongPressMove}
