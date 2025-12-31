@@ -121,12 +121,21 @@ Deno.serve(async (req) => {
     // === ACTION: URL ===
     // Returns a direct URL for the client to use (for downloads, video playback, etc.)
     if (action === "url") {
-      // ALWAYS generate Supabase fallback URL first (guaranteed to work)
-      const { data: supabaseUrlData, error: supabaseUrlError } = await supabase.storage
-        .from("user-files")
-        .createSignedUrl(storagePath, 7200);
-      
-      const fallbackUrl = supabaseUrlError ? null : supabaseUrlData?.signedUrl;
+      // Try to get Supabase fallback URL (may not exist if file is VPS-only)
+      let fallbackUrl: string | null = null;
+      try {
+        const { data: supabaseUrlData, error: supabaseUrlError } = await supabase.storage
+          .from("user-files")
+          .createSignedUrl(storagePath, 7200);
+        
+        if (!supabaseUrlError && supabaseUrlData?.signedUrl) {
+          fallbackUrl = supabaseUrlData.signedUrl;
+        } else {
+          console.log("Supabase fallback not available:", supabaseUrlError?.message || "No signed URL");
+        }
+      } catch (e) {
+        console.log("Supabase fallback generation failed:", e);
+      }
       
       // Try VPS if configured
       if (hasCdnUrl && hasVpsEndpoint) {
@@ -145,10 +154,13 @@ Deno.serve(async (req) => {
             
             console.log(`✅ Generated signed VPS URL via CDN`);
             
+            // If no Supabase fallback, generate a direct VPS endpoint fallback
+            const directVpsFallback = fallbackUrl || `${envVpsEndpoint}/stream?path=${encodeURIComponent(storagePath)}`;
+            
             return new Response(
               JSON.stringify({ 
                 url: signedUrl, 
-                fallbackUrl, // Always include fallback
+                fallbackUrl: fallbackUrl || directVpsFallback,
                 storage: "vps",
                 signed: true
               }),
@@ -167,30 +179,51 @@ Deno.serve(async (req) => {
         }
       }
       
-      // Use Supabase URL
-      if (!fallbackUrl) {
-        console.error("Both VPS and Supabase URL generation failed");
+      // VPS unavailable - use Supabase if available
+      if (fallbackUrl) {
+        console.log("Using Supabase signed URL");
         return new Response(
-          JSON.stringify({ error: "Failed to generate download URL" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ 
+            url: fallbackUrl, 
+            storage: "cloud",
+            signed: true
+          }),
+          { 
+            status: 200, 
+            headers: { 
+              ...corsHeaders, 
+              "Content-Type": "application/json",
+              "Cache-Control": "private, max-age=60"
+            } 
+          }
         );
       }
       
-      console.log("Using Supabase signed URL");
+      // Last resort - try VPS endpoint directly without CDN
+      if (hasVpsEndpoint) {
+        console.log("Using direct VPS endpoint (no CDN)");
+        const directUrl = await generateSignedVpsUrl(envVpsEndpoint, storagePath, user.id, 7200);
+        return new Response(
+          JSON.stringify({ 
+            url: directUrl, 
+            storage: "vps-direct",
+            signed: true
+          }),
+          { 
+            status: 200, 
+            headers: { 
+              ...corsHeaders, 
+              "Content-Type": "application/json",
+              "Cache-Control": "private, max-age=60"
+            } 
+          }
+        );
+      }
+      
+      console.error("No storage available");
       return new Response(
-        JSON.stringify({ 
-          url: fallbackUrl, 
-          storage: "cloud",
-          signed: true
-        }),
-        { 
-          status: 200, 
-          headers: { 
-            ...corsHeaders, 
-            "Content-Type": "application/json",
-            "Cache-Control": "private, max-age=60"
-          } 
-        }
+        JSON.stringify({ error: "Failed to generate download URL" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -237,62 +270,72 @@ Deno.serve(async (req) => {
       );
     }
 
-    // === ACTION: GET (stream through edge function) ===
-    // Note: This should be avoided for large files - use action=url instead
+    // === ACTION: GET (stream/redirect for video playback) ===
     if (action === "get") {
-      // For GET action, prefer returning a redirect to signed URL
-      // This avoids edge function timeout issues with large files
+      // Try Supabase first - most reliable
+      try {
+        const { data: supabaseData, error: supabaseError } = await supabase.storage
+          .from("user-files")
+          .createSignedUrl(storagePath, 3600);
+        
+        if (!supabaseError && supabaseData?.signedUrl) {
+          console.log("GET: Redirecting to Supabase signed URL");
+          return new Response(null, {
+            status: 302,
+            headers: {
+              ...corsHeaders,
+              "Location": supabaseData.signedUrl,
+              "Cache-Control": "no-cache"
+            }
+          });
+        }
+      } catch (e) {
+        console.log("Supabase signed URL failed:", e);
+      }
       
-      // Try VPS with CDN first
-      if (hasCdnUrl && hasVpsEndpoint) {
+      // Supabase doesn't have the file - try VPS
+      if (hasVpsEndpoint) {
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 3000);
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
           
-          const healthCheck = await fetch(`${envVpsEndpoint}/health`, {
+          // Stream directly from VPS through edge function
+          const vpsStreamUrl = `${envVpsEndpoint}/stream?path=${encodeURIComponent(storagePath)}`;
+          const vpsResponse = await fetch(vpsStreamUrl, {
             headers: { "Authorization": `Bearer ${envVpsApiKey}` },
             signal: controller.signal,
           });
           clearTimeout(timeoutId);
           
-          if (healthCheck.ok) {
-            const signedUrl = await generateSignedVpsUrl(envVpsCdnUrl, storagePath, user.id, 7200);
+          if (vpsResponse.ok && vpsResponse.body) {
+            console.log("GET: Streaming from VPS");
+            const contentType = vpsResponse.headers.get("content-type") || "application/octet-stream";
+            const contentLength = vpsResponse.headers.get("content-length");
             
-            // Redirect to the signed URL
-            return new Response(null, {
-              status: 302,
-              headers: {
-                ...corsHeaders,
-                "Location": signedUrl,
-                "Cache-Control": "no-cache"
-              }
+            const headers: Record<string, string> = {
+              ...corsHeaders,
+              "Content-Type": contentType,
+              "Cache-Control": "private, max-age=3600",
+            };
+            
+            if (contentLength) {
+              headers["Content-Length"] = contentLength;
+            }
+            
+            return new Response(vpsResponse.body, {
+              status: 200,
+              headers,
             });
           }
         } catch (e) {
-          console.warn("VPS unavailable for GET, using Supabase:", e);
+          console.warn("VPS stream failed:", e);
         }
       }
       
-      // Fallback: Redirect to Supabase signed URL
-      const { data, error } = await supabase.storage
-        .from("user-files")
-        .createSignedUrl(storagePath, 3600);
-      
-      if (error) {
-        return new Response(
-          JSON.stringify({ error: "File not available" }),
-          { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      
-      return new Response(null, {
-        status: 302,
-        headers: {
-          ...corsHeaders,
-          "Location": data.signedUrl,
-          "Cache-Control": "no-cache"
-        }
-      });
+      return new Response(
+        JSON.stringify({ error: "File not available" }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     return new Response(
