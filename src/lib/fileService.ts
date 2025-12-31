@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { getCachedUrl, setCachedUrl } from "@/lib/urlCache";
+import { getCachedUrl, setCachedUrl, clearUrlCache } from "@/lib/urlCache";
 
 export interface FileItem {
   id: string;
@@ -1230,6 +1230,9 @@ export const uploadMultipleFiles = async (
 };
 
 export const deleteFile = async (fileId: string, storagePath: string): Promise<void> => {
+  // Clear URL cache for this file
+  clearUrlCache(storagePath);
+  
   // Soft delete in database
   const { error: dbError } = await supabase
     .from("files")
@@ -1240,6 +1243,9 @@ export const deleteFile = async (fileId: string, storagePath: string): Promise<v
 };
 
 export const permanentDeleteFile = async (fileId: string, storagePath: string): Promise<void> => {
+  // Clear URL cache for this file
+  clearUrlCache(storagePath);
+  
   // Try to delete from VPS first
   const nodes = getStorageNodes();
   for (const node of nodes) {
@@ -1377,7 +1383,12 @@ export const renameFile = async (fileId: string, newName: string): Promise<void>
   if (error) throw error;
 };
 
-export const moveFile = async (fileId: string, newFolderId: string | null): Promise<void> => {
+export const moveFile = async (fileId: string, newFolderId: string | null, storagePath?: string): Promise<void> => {
+  // Clear URL cache if storage path provided (file location conceptually changed)
+  if (storagePath) {
+    clearUrlCache(storagePath);
+  }
+  
   const { error } = await supabase
     .from("files")
     .update({ folder_id: newFolderId })
