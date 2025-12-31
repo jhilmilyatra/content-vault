@@ -46,12 +46,17 @@ async function generateSignature(message: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Default TTL: 10 minutes for signed URLs
+// This should be >= playlist TTL + max expected watch session
+const DEFAULT_URL_TTL = 600; // 10 minutes
+
 /**
  * Generate a signed HLS URL
+ * TTL should cover: playlist refresh (30s) + expected watch time
  */
 async function generateSignedHLSUrl(
   hlsPath: string, 
-  expiresInSeconds: number = 7200
+  expiresInSeconds: number = DEFAULT_URL_TTL
 ): Promise<string> {
   const expires = Math.floor(Date.now() / 1000) + expiresInSeconds;
   const message = `${hlsPath}${expires}`;
@@ -66,7 +71,7 @@ async function generateSignedHLSUrl(
 async function generateSignedStreamUrl(
   storagePath: string, 
   guestId: string,
-  expiresInSeconds: number = 7200
+  expiresInSeconds: number = DEFAULT_URL_TTL
 ): Promise<string> {
   const expires = Math.floor(Date.now() / 1000) + expiresInSeconds;
   const message = `${storagePath}:${guestId}:${expires}`;
@@ -92,16 +97,18 @@ interface HLSStatus {
 
 /**
  * Check HLS availability on VPS
+ * Uses HEAD request first for quick check, then GET for full data if available
  */
 async function checkHLSStatus(userId: string, fileName: string): Promise<HLSStatus> {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
     
-    const response = await fetch(
+    // Use HEAD first for quick existence check (reduces VPS load)
+    const headResponse = await fetch(
       `${VPS_CONFIG.endpoint}/hls-status/${userId}/${fileName}`,
       {
-        method: "GET",
+        method: "HEAD",
         headers: {
           "Authorization": `Bearer ${VPS_CONFIG.apiKey}`,
         },
@@ -110,11 +117,32 @@ async function checkHLSStatus(userId: string, fileName: string): Promise<HLSStat
     );
     clearTimeout(timeoutId);
     
-    if (!response.ok) {
+    // If HEAD fails, HLS not available
+    if (!headResponse.ok) {
       return { hasHLS: false };
     }
     
-    const data = await response.json();
+    // HLS exists - get full status with GET
+    const controller2 = new AbortController();
+    const timeoutId2 = setTimeout(() => controller2.abort(), 3000);
+    
+    const getResponse = await fetch(
+      `${VPS_CONFIG.endpoint}/hls-status/${userId}/${fileName}`,
+      {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${VPS_CONFIG.apiKey}`,
+        },
+        signal: controller2.signal,
+      }
+    );
+    clearTimeout(timeoutId2);
+    
+    if (!getResponse.ok) {
+      return { hasHLS: false };
+    }
+    
+    const data = await getResponse.json();
     return data;
   } catch (error) {
     console.warn("HLS status check failed:", error);
