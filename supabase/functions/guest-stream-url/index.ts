@@ -7,26 +7,14 @@ const corsHeaders = {
 };
 
 // VPS Configuration
-// VPS_ENDPOINT = internal HTTP for server-to-server (health checks, etc.)
+// VPS_ENDPOINT = internal HTTP for server-to-server (health checks)
 // VPS_CDN_URL = public HTTPS URL for client-facing URLs (Cloudflare proxied)
-const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "http://46.38.232.46:4000";
-const VPS_CDN_URL = Deno.env.get("VPS_CDN_URL") || "https://media.trycloudflare.com"; // MUST be HTTPS
-const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "kARTOOS007";
+const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "";
+const VPS_CDN_URL = Deno.env.get("VPS_CDN_URL") || "";
+const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "";
 
 // Signing secret for URL tokens
-const SIGNING_SECRET = Deno.env.get("HLS_SIGNING_SECRET") || "default-signing-secret";
-
-/**
- * Validate URL is HTTPS - critical for mixed content prevention
- */
-function ensureHttps(url: string): string {
-  if (url.startsWith("https://")) {
-    return url;
-  }
-  // If we somehow got an HTTP URL, log error and throw
-  console.error(`❌ SECURITY: Attempted to return HTTP URL to client: ${url}`);
-  throw new Error("Insecure media URL blocked - HTTPS required");
-}
+const SIGNING_SECRET = Deno.env.get("HLS_SIGNING_SECRET") || Deno.env.get("VPS_API_KEY") || "default-signing-secret";
 
 /**
  * Generate HMAC signature for signed URLs
@@ -52,7 +40,7 @@ async function generateSignature(message: string): Promise<string> {
 async function generateSignedUrl(
   storagePath: string, 
   guestId: string,
-  expiresInSeconds: number = 3600
+  expiresInSeconds: number = 7200
 ): Promise<string> {
   const expires = Math.floor(Date.now() / 1000) + expiresInSeconds;
   const message = `${storagePath}:${guestId}:${expires}`;
@@ -65,9 +53,8 @@ async function generateSignedUrl(
     sig: signature,
   });
   
-  // Always return HTTPS URL via CDN
-  const url = `${VPS_CDN_URL}/stream?${params.toString()}`;
-  return ensureHttps(url);
+  // Use the HTTPS CDN URL for client-facing URLs
+  return `${VPS_CDN_URL}/stream?${params.toString()}`;
 }
 
 Deno.serve(async (req) => {
@@ -147,46 +134,50 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check VPS availability (internal HTTP call - server-to-server)
-    let vpsAvailable = false;
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-      
-      const healthCheck = await fetch(`${VPS_ENDPOINT}/health`, {
-        headers: { "Authorization": `Bearer ${VPS_API_KEY}` },
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      vpsAvailable = healthCheck.ok;
-    } catch {
-      console.warn("VPS health check failed, using fallback");
-    }
+    // Check if VPS CDN is properly configured (must be HTTPS)
+    const hasCdnUrl = VPS_CDN_URL && VPS_CDN_URL.startsWith("https://");
+    const hasVpsEndpoint = VPS_ENDPOINT && VPS_API_KEY;
 
-    if (vpsAvailable) {
-      // Generate signed VPS streaming URL
-      const streamUrl = await generateSignedUrl(storagePath, guestId, 7200); // 2 hour expiry
-      
-      const totalTime = performance.now() - startTime;
-      console.log(`✅ Generated signed URL: ${Math.round(totalTime)}ms`);
-      
-      return new Response(
-        JSON.stringify({
-          url: streamUrl,
-          type: 'vps',
-          file: {
-            id: accessResult.file_id,
-            name: accessResult.file_name,
-            original_name: accessResult.file_original_name,
-            mime_type: accessResult.file_mime_type,
-            size: accessResult.file_size,
-          },
-        }),
-        { 
-          status: 200, 
-          headers: { ...corsHeaders, "Content-Type": "application/json" } 
+    // Try VPS if CDN is configured
+    if (hasCdnUrl && hasVpsEndpoint) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        
+        const healthCheck = await fetch(`${VPS_ENDPOINT}/health`, {
+          headers: { "Authorization": `Bearer ${VPS_API_KEY}` },
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        
+        if (healthCheck.ok) {
+          // Generate signed VPS streaming URL (HTTPS via CDN)
+          const streamUrl = await generateSignedUrl(storagePath, guestId, 7200);
+          
+          const totalTime = performance.now() - startTime;
+          console.log(`✅ Generated signed VPS URL: ${Math.round(totalTime)}ms`);
+          
+          return new Response(
+            JSON.stringify({
+              url: streamUrl,
+              type: 'vps',
+              file: {
+                id: accessResult.file_id,
+                name: accessResult.file_name,
+                original_name: accessResult.file_original_name,
+                mime_type: accessResult.file_mime_type,
+                size: accessResult.file_size,
+              },
+            }),
+            { 
+              status: 200, 
+              headers: { ...corsHeaders, "Content-Type": "application/json" } 
+            }
+          );
         }
-      );
+      } catch (e) {
+        console.warn("VPS health check failed, using Supabase fallback:", e);
+      }
     }
 
     // Fallback to Supabase signed URL

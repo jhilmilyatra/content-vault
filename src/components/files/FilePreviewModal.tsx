@@ -315,56 +315,81 @@ export function FilePreviewModal({
         }
       }).catch((err) => console.error('Failed to track download:', err));
 
-      // Get signed URL instead of streaming through edge function
-      const urlResponse = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=url`,
-        {
-          headers: {
-            Authorization: `Bearer ${sessionData.session.access_token}`,
-          },
-        }
-      );
+      // Get signed URL for download
+      let downloadUrl: string | null = null;
       
-      if (!urlResponse.ok) {
-        // Fallback to Supabase signed URL
+      try {
+        const urlResponse = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=url`,
+          {
+            headers: {
+              Authorization: `Bearer ${sessionData.session.access_token}`,
+            },
+          }
+        );
+        
+        if (urlResponse.ok) {
+          const { url } = await urlResponse.json();
+          downloadUrl = url;
+        }
+      } catch (e) {
+        console.warn('Edge function failed, using direct Supabase:', e);
+      }
+      
+      // Fallback to Supabase signed URL if edge function failed
+      if (!downloadUrl) {
         const { data: signedData } = await supabase.storage
           .from('user-files')
           .createSignedUrl(file.storage_path, 3600);
         
         if (signedData?.signedUrl) {
-          // Open in new tab for download
-          const a = document.createElement("a");
-          a.href = signedData.signedUrl;
-          a.download = file.original_name;
-          a.target = "_blank";
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          
-          toast({
-            title: "Download started",
-            description: `Downloading ${file.original_name}`,
-          });
-          return;
+          downloadUrl = signedData.signedUrl;
         }
+      }
+      
+      if (!downloadUrl) {
         throw new Error("Failed to get download URL");
       }
       
-      const { url } = await urlResponse.json();
-      
-      // Download using the signed URL
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = file.original_name;
-      a.target = "_blank"; // Open in new tab to trigger browser download
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      
-      toast({
-        title: "Download started",
-        description: `Downloading ${file.original_name}`,
-      });
+      // Fetch the file as blob and trigger download
+      // This ensures proper download regardless of CORS
+      try {
+        const response = await fetch(downloadUrl);
+        if (!response.ok) throw new Error('Download failed');
+        
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = file.original_name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        // Cleanup blob URL after a short delay
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+        
+        toast({
+          title: "Download complete",
+          description: `${file.original_name} saved`,
+        });
+      } catch (fetchError) {
+        // If blob download fails, try direct link (works for same-origin or CORS-enabled)
+        console.warn('Blob download failed, trying direct link:', fetchError);
+        const a = document.createElement("a");
+        a.href = downloadUrl;
+        a.download = file.original_name;
+        // Don't use target="_blank" - it can cause issues
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        toast({
+          title: "Download started",
+          description: `Downloading ${file.original_name}`,
+        });
+      }
     } catch (error) {
       console.error("Download error:", error);
       toast({
