@@ -62,7 +62,7 @@ import ShareDialog from "@/components/files/ShareDialog";
 import ShareFolderDialog from "@/components/files/ShareFolderDialog";
 import BulkActionsBar from "@/components/files/BulkActionsBar";
 import { FilePreviewModal } from "@/components/files/FilePreviewModal";
-import { useCacheWarming } from "@/hooks/useCacheWarming";
+import { useCacheWarming, useScrollPrefetch } from "@/hooks/useCacheWarming";
 import { IosActionSheet } from "@/components/ios/IosActionSheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -126,12 +126,18 @@ const FileManager = () => {
   const isMobile = useIsMobile();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Scroll container ref for prefetching
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
   // Pre-fetch URLs for visible files (cache warming)
   const filesForWarming = useMemo(() => 
     files.map(f => ({ id: f.id, storage_path: f.storage_path })), 
     [files]
   );
   const { warmUrl } = useCacheWarming(filesForWarming, !loading && files.length > 0);
+
+  // Scroll-based prefetching for upcoming files
+  useScrollPrefetch(scrollContainerRef, filesForWarming, !loading && files.length > 0);
 
   // Hover-based cache warming handler
   const handleFileHover = useCallback((storagePath: string) => {
@@ -596,6 +602,7 @@ const FileManager = () => {
         />
 
         <div 
+          ref={scrollContainerRef}
           className={`space-y-6 min-h-[calc(100vh-8rem)] transition-all ${isDragging ? 'relative' : ''}`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
