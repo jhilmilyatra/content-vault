@@ -45,6 +45,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
 import MemberChatPanel from "./MemberChatPanel";
 import NotificationDropdown from "./NotificationDropdown";
+import { VpsStatusIndicator } from "./VpsStatusIndicator";
 import IosTabBar from "@/components/ios/IosTabBar";
 import { cn } from "@/lib/utils";
 import { lightHaptic } from "@/lib/haptics";
@@ -442,6 +443,9 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
             </div>
 
             <div className="flex items-center gap-1">
+              {/* VPS Status Indicator */}
+              <VpsStatusIndicator compact className="mr-1" />
+              
               {/* Chat button for members */}
               {role === "member" && (
                 <Button 
