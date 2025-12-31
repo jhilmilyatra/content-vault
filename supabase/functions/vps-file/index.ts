@@ -58,10 +58,13 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     
     // VPS_ENDPOINT = internal HTTP for server-to-server
-    // VPS_CDN_URL = public HTTPS URL for client-facing URLs
+    // VPS_CDN_URL = public HTTPS URL for client-facing URLs (Cloudflare proxied)
     const envVpsEndpoint = Deno.env.get("VPS_ENDPOINT") || "http://46.38.232.46:4000";
-    const envVpsCdnUrl = Deno.env.get("VPS_CDN_URL") || "https://media.trycloudflare.com";
+    const envVpsCdnUrl = Deno.env.get("VPS_CDN_URL");
     const envVpsApiKey = Deno.env.get("VPS_API_KEY") || "kARTOOS007";
+    
+    // Check if CDN URL is properly configured (must be HTTPS)
+    const hasCdnUrl = envVpsCdnUrl && envVpsCdnUrl.startsWith("https://");
 
     // Custom VPS from headers
     const headerVpsEndpoint = req.headers.get("x-vps-endpoint");
@@ -113,13 +116,33 @@ Deno.serve(async (req) => {
     // Determine which VPS to use (internal endpoint for server calls)
     const vpsEndpoint = headerVpsEndpoint || envVpsEndpoint;
     const vpsApiKey = headerVpsApiKey || envVpsApiKey;
-    // CDN URL for client-facing responses (HTTPS)
-    const vpsCdnUrl = envVpsCdnUrl;
 
     if (action === "url") {
-      // Get URL for file
+      // If CDN URL is not properly configured, always use Supabase signed URLs
+      // This avoids mixed content issues (HTTP VPS on HTTPS page)
+      if (!hasCdnUrl) {
+        console.log("CDN not configured, using Supabase signed URLs");
+        const { data, error } = await supabase.storage
+          .from("user-files")
+          .createSignedUrl(storagePath, 3600);
+        
+        if (error) throw error;
+        
+        return new Response(
+          JSON.stringify({ url: data.signedUrl, storage: "cloud" }),
+          { 
+            status: 200, 
+            headers: { 
+              ...corsHeaders, 
+              "Content-Type": "application/json",
+              "Cache-Control": "private, max-age=60, stale-while-revalidate=120"
+            } 
+          }
+        );
+      }
+      
+      // CDN is configured - check if file exists on VPS
       if (vpsEndpoint && vpsApiKey) {
-        // Check if file exists on VPS
         const vpsStartTime = performance.now();
         try {
           const checkResponse = await fetchWithRetry(`${vpsEndpoint}/files/${storagePath}`, {
@@ -135,12 +158,8 @@ Deno.serve(async (req) => {
               console.warn(`⚠️ SLOW_EDGE [vps-file:url] ${Math.round(totalTime)}ms (auth: ${Math.round(authTime)}ms, vps: ${Math.round(vpsTime)}ms)`);
             }
             
-            // Return HTTPS CDN URL, not internal HTTP endpoint
-            const clientUrl = `${vpsCdnUrl}/files/${storagePath}`;
-            if (!clientUrl.startsWith("https://")) {
-              console.error(`❌ SECURITY: Attempted to return HTTP URL: ${clientUrl}`);
-              throw new Error("Insecure media URL blocked");
-            }
+            // Return HTTPS CDN URL
+            const clientUrl = `${envVpsCdnUrl}/files/${storagePath}`;
             
             return new Response(
               JSON.stringify({ url: clientUrl, storage: "vps" }),
