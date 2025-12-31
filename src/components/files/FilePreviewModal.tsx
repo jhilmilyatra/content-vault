@@ -147,14 +147,32 @@ export function FilePreviewModal({
         // Handle 503 (server unavailable) with retry
         if (status === 503 && retryCount < MAX_RETRIES) {
           console.log(`Server unavailable, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
-          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+          await new Promise(resolve => setTimeout(resolve, 1500 * (retryCount + 1)));
           return resolveStreamMode(retryCount + 1);
         }
         
-        // Set specific error message based on status
+        // 503 after retries - try direct Supabase signed URL as last resort
         if (status === 503) {
-          setMediaError("Storage server temporarily unavailable. Please try again.");
-        } else if (status === 401 || status === 403) {
+          console.log('VPS offline, trying direct Supabase storage...');
+          try {
+            const { data: signedData, error: signedError } = await supabase.storage
+              .from('user-files')
+              .createSignedUrl(file.storage_path, 3600);
+            
+            if (signedData?.signedUrl && !signedError) {
+              console.log('✅ Got direct Supabase URL');
+              setStream({ mode: baseFileType, url: signedData.signedUrl, vpsOnline: false });
+              setLoading(false);
+              return;
+            }
+          } catch (e) {
+            console.error('Direct Supabase fallback failed:', e);
+          }
+          setMediaError("Storage server temporarily unavailable. Please try again later.");
+          return;
+        }
+        
+        if (status === 401 || status === 403) {
           setMediaError("You don't have permission to view this file.");
         } else {
           setMediaError(errorData.error || "Failed to load file");
