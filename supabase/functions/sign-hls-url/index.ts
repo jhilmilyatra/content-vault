@@ -51,8 +51,9 @@ async function generateSignature(data: string, secret: string): Promise<string> 
 
 /**
  * Sign a URL with expiry and HMAC
+ * Default TTL: 10 minutes (should be >= playlist TTL + max watch time buffer)
  */
-async function signUrl(baseUrl: string, path: string, expiresInSec: number = 3600): Promise<string> {
+async function signUrl(baseUrl: string, path: string, expiresInSec: number = 600): Promise<string> {
   const exp = Math.floor(Date.now() / 1000) + expiresInSec;
   const dataToSign = `${path}${exp}`;
   const sig = await generateSignature(dataToSign, SIGNING_SECRET);

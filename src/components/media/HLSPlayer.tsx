@@ -67,12 +67,14 @@ export function HLSPlayer({
   // HLS specific state
   const [isBuffering, setIsBuffering] = useState(true); // Start true until canplay
   const [isStalled, setIsStalled] = useState(false); // Track stalled state separately
+  const [showBufferSpinner, setShowBufferSpinner] = useState(false); // Delayed spinner display
   const [qualityLevels, setQualityLevels] = useState<QualityLevel[]>([]);
   const [currentQuality, setCurrentQuality] = useState(-1); // -1 = auto
   const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [networkError, setNetworkError] = useState(false);
   const [isHLS, setIsHLS] = useState(false);
   const [bufferHealth, setBufferHealth] = useState(0); // Buffer ahead in seconds
+  const bufferSpinnerTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // UI state
   const [showControls, setShowControls] = useState(true);
@@ -122,6 +124,7 @@ export function HLSPlayer({
 
     // Real buffering detection via native video events
     // These events are the most reliable for detecting actual playback issues
+    // HARDENING: Use 150ms delay before showing spinner to avoid flicker on micro-buffers
     const handleWaiting = () => {
       console.log('🎬 Video waiting (buffering)');
       setIsBuffering(true);
@@ -269,9 +272,32 @@ export function HLSPlayer({
       if (controlsTimeoutRef.current) {
         clearTimeout(controlsTimeoutRef.current);
       }
+      if (bufferSpinnerTimeoutRef.current) {
+        clearTimeout(bufferSpinnerTimeoutRef.current);
+      }
       document.body.style.overflow = '';
     };
   }, [src, fallbackSrc, isHLSSource, onError]);
+
+  // HARDENING: Delay buffer spinner by 150ms to avoid flicker on micro-buffers
+  useEffect(() => {
+    if (isBuffering || isStalled) {
+      bufferSpinnerTimeoutRef.current = setTimeout(() => {
+        setShowBufferSpinner(true);
+      }, 150);
+    } else {
+      if (bufferSpinnerTimeoutRef.current) {
+        clearTimeout(bufferSpinnerTimeoutRef.current);
+      }
+      setShowBufferSpinner(false);
+    }
+    
+    return () => {
+      if (bufferSpinnerTimeoutRef.current) {
+        clearTimeout(bufferSpinnerTimeoutRef.current);
+      }
+    };
+  }, [isBuffering, isStalled]);
 
   // Quality switching
   const setQuality = useCallback((level: number) => {
@@ -840,9 +866,9 @@ export function HLSPlayer({
           <X className="w-5 h-5" />
         </motion.button>
 
-        {/* Buffering indicator */}
+        {/* Buffering indicator - delayed by 150ms to avoid flicker */}
         <AnimatePresence>
-          {isBuffering && (
+          {showBufferSpinner && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -937,9 +963,9 @@ export function HLSPlayer({
       onMouseMove={resetControlsTimeout}
       onClick={resetControlsTimeout}
     >
-      {/* Buffering indicator */}
+      {/* Buffering indicator - delayed by 150ms to avoid flicker */}
       <AnimatePresence>
-        {isBuffering && (
+        {showBufferSpinner && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
