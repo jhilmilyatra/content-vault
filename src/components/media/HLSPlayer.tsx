@@ -510,33 +510,68 @@ export function HLSPlayer({
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
         }}
       >
-        {/* Progress bar */}
+        {/* Progress bar - YouTube style with buffer visualization */}
         <div className="mb-3">
-          <div className="relative h-1.5 group">
-            {/* Buffered indicator */}
-            <div 
-              className="absolute h-full bg-white/20 rounded-full"
-              style={{ width: `${(buffered / duration) * 100}%` }}
-            />
-            {/* Progress track */}
-            <div 
-              className="absolute h-full rounded-full"
-              style={{ 
-                width: `${(currentTime / duration) * 100}%`,
-                background: 'linear-gradient(90deg, hsl(43 100% 50%) 0%, hsl(38 100% 55%) 100%)',
-              }}
-            />
+          <div className="relative h-1 group hover:h-1.5 transition-all duration-150">
+            {/* Background track */}
+            <div className="absolute inset-0 bg-white/10 rounded-full overflow-hidden">
+              {/* Buffered segments visualization - YouTube style */}
+              <div 
+                className="absolute h-full bg-white/30 rounded-full transition-all duration-300 ease-out"
+                style={{ 
+                  width: `${duration > 0 ? (buffered / duration) * 100 : 0}%`,
+                }}
+              />
+              {/* Playback progress - gradient with glow */}
+              <div 
+                className="absolute h-full rounded-full transition-[width] duration-100"
+                style={{ 
+                  width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%`,
+                  background: 'linear-gradient(90deg, hsl(43 100% 50%) 0%, hsl(38 100% 55%) 100%)',
+                  boxShadow: '0 0 8px hsla(43, 100%, 50%, 0.5)',
+                }}
+              />
+            </div>
+            {/* Interactive slider overlay */}
             <Slider
               value={[currentTime]}
               min={0}
               max={duration || 100}
               step={0.1}
               onValueChange={handleSeek}
-              className="absolute inset-0 cursor-pointer touch-manipulation [&>span:first-child]:bg-transparent [&_[role=slider]]:w-4 [&_[role=slider]]:h-4 [&_[role=slider]]:bg-white [&_[role=slider]]:border-0 [&_[role=slider]]:shadow-lg [&_[role=slider]]:opacity-0 group-hover:[&_[role=slider]]:opacity-100 [&_[role=slider]]:transition-opacity"
+              className="absolute inset-0 cursor-pointer touch-manipulation [&>span:first-child]:bg-transparent [&_[role=slider]]:w-3.5 [&_[role=slider]]:h-3.5 group-hover:[&_[role=slider]]:w-4 group-hover:[&_[role=slider]]:h-4 [&_[role=slider]]:bg-white [&_[role=slider]]:border-0 [&_[role=slider]]:shadow-[0_0_10px_rgba(0,0,0,0.4)] [&_[role=slider]]:opacity-0 group-hover:[&_[role=slider]]:opacity-100 [&_[role=slider]]:transition-all [&_[role=slider]]:duration-150"
             />
+            {/* Buffering pulse animation when actively buffering */}
+            {isBuffering && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: [0.3, 0.6, 0.3] }}
+                transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                className="absolute h-full rounded-full"
+                style={{ 
+                  left: `${duration > 0 ? (buffered / duration) * 100 : 0}%`,
+                  width: '20px',
+                  background: 'linear-gradient(90deg, rgba(255,255,255,0.3) 0%, transparent 100%)',
+                }}
+              />
+            )}
           </div>
-          <div className="flex justify-between text-[11px] text-white/50 mt-1.5 font-medium tracking-wide">
+          {/* Time display with buffer info */}
+          <div className="flex justify-between items-center text-[11px] text-white/50 mt-1.5 font-medium tracking-wide">
             <span>{formatTime(currentTime)}</span>
+            <div className="flex items-center gap-2">
+              {/* Buffer percentage indicator */}
+              {isBuffering && buffered > currentTime && (
+                <span className="text-white/30 text-[10px]">
+                  Buffering...
+                </span>
+              )}
+              {!isBuffering && buffered > 0 && buffered < duration && (
+                <span className="text-white/30 text-[10px]">
+                  {Math.round((buffered / duration) * 100)}% buffered
+                </span>
+              )}
+            </div>
             <span>{formatTime(duration)}</span>
           </div>
         </div>
