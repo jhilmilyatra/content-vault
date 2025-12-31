@@ -119,12 +119,14 @@ export function FilePreviewModal({
     }
   };
 
-  const loadFileUrl = async () => {
+  const loadFileUrl = async (retryCount = 0) => {
     if (!file) return;
     setLoading(true);
     setHlsUrl(null);
     setRawVideoUrl(null);
     setMediaError(null);
+    
+    const MAX_RETRIES = 2;
     
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -156,7 +158,25 @@ export function FilePreviewModal({
 
       if (!fileResponse.ok) {
         const errorData = await fileResponse.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to get file URL");
+        const status = fileResponse.status;
+        
+        // Handle 503 (server unavailable) with retry
+        if (status === 503 && retryCount < MAX_RETRIES) {
+          console.log(`Server unavailable, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+          return loadFileUrl(retryCount + 1);
+        }
+        
+        // Set specific error message based on status
+        if (status === 503) {
+          setMediaError("Storage server temporarily unavailable. Please try again.");
+          setVpsOnline(false);
+        } else if (status === 401 || status === 403) {
+          setMediaError("You don't have permission to view this file.");
+        } else {
+          setMediaError(errorData.error || "Failed to load file");
+        }
+        return;
       }
 
       const urlData = await fileResponse.json();
@@ -170,13 +190,18 @@ export function FilePreviewModal({
       
       setFileUrl(urlData.url);
       setVpsOnline(urlData.storage === 'vps');
+      setMediaError(null);
     } catch (error) {
       console.error("Error loading file:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load file preview",
-        variant: "destructive",
-      });
+      
+      // Retry on network errors
+      if (retryCount < MAX_RETRIES) {
+        console.log(`Network error, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return loadFileUrl(retryCount + 1);
+      }
+      
+      setMediaError("Connection failed. Please check your network and try again.");
     } finally {
       setLoading(false);
     }
@@ -764,9 +789,29 @@ export function FilePreviewModal({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="flex-1 flex items-center justify-center min-h-[400px]"
+                className="flex-1 flex flex-col items-center justify-center min-h-[400px] gap-4"
               >
-                <p className="text-white/40">Unable to load preview</p>
+                <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                  <File className="w-8 h-8 text-red-400" />
+                </div>
+                <div className="text-center max-w-md">
+                  <p className="text-white/60 font-medium">
+                    {mediaError || "Unable to load preview"}
+                  </p>
+                  {!vpsOnline && (
+                    <p className="text-white/30 text-sm mt-1">
+                      The storage server may be temporarily offline
+                    </p>
+                  )}
+                </div>
+                <Button
+                  onClick={() => loadFileUrl()}
+                  variant="outline"
+                  className="mt-2 rounded-xl border-white/10 hover:bg-white/5"
+                >
+                  <Loader2 className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : 'hidden'}`} />
+                  Try Again
+                </Button>
               </motion.div>
             )}
           </AnimatePresence>
