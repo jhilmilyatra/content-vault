@@ -56,9 +56,12 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    // Primary VPS storage - hardcoded
-    const envVpsEndpoint = "http://46.38.232.46:4000";
-    const envVpsApiKey = "kARTOOS007";
+    
+    // VPS_ENDPOINT = internal HTTP for server-to-server
+    // VPS_CDN_URL = public HTTPS URL for client-facing URLs
+    const envVpsEndpoint = Deno.env.get("VPS_ENDPOINT") || "http://46.38.232.46:4000";
+    const envVpsCdnUrl = Deno.env.get("VPS_CDN_URL") || "https://media.trycloudflare.com";
+    const envVpsApiKey = Deno.env.get("VPS_API_KEY") || "kARTOOS007";
 
     // Custom VPS from headers
     const headerVpsEndpoint = req.headers.get("x-vps-endpoint");
@@ -107,9 +110,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Determine which VPS to use
+    // Determine which VPS to use (internal endpoint for server calls)
     const vpsEndpoint = headerVpsEndpoint || envVpsEndpoint;
     const vpsApiKey = headerVpsApiKey || envVpsApiKey;
+    // CDN URL for client-facing responses (HTTPS)
+    const vpsCdnUrl = envVpsCdnUrl;
 
     if (action === "url") {
       // Get URL for file
@@ -130,14 +135,20 @@ Deno.serve(async (req) => {
               console.warn(`⚠️ SLOW_EDGE [vps-file:url] ${Math.round(totalTime)}ms (auth: ${Math.round(authTime)}ms, vps: ${Math.round(vpsTime)}ms)`);
             }
             
+            // Return HTTPS CDN URL, not internal HTTP endpoint
+            const clientUrl = `${vpsCdnUrl}/files/${storagePath}`;
+            if (!clientUrl.startsWith("https://")) {
+              console.error(`❌ SECURITY: Attempted to return HTTP URL: ${clientUrl}`);
+              throw new Error("Insecure media URL blocked");
+            }
+            
             return new Response(
-              JSON.stringify({ url: `${vpsEndpoint}/files/${storagePath}`, storage: "vps" }),
+              JSON.stringify({ url: clientUrl, storage: "vps" }),
               { 
                 status: 200, 
                 headers: { 
                   ...corsHeaders, 
                   "Content-Type": "application/json",
-                  // ✅ CACHE: Cache URL responses
                   "Cache-Control": "private, max-age=60, stale-while-revalidate=120"
                 } 
               }

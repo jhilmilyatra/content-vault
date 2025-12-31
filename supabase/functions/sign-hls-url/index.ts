@@ -19,11 +19,25 @@ const corsHeaders = {
 };
 
 // VPS Configuration
-const VPS_ENDPOINT = Deno.env.get('VPS_STORAGE_URL') || 'http://46.38.232.46:4000';
-const VPS_API_KEY = Deno.env.get('VPS_STORAGE_API_KEY') || 'kARTOOS007';
+// VPS_ENDPOINT = internal HTTP for server-to-server (HLS status checks)
+// VPS_CDN_URL = public HTTPS URL for client-facing URLs (Cloudflare proxied)
+const VPS_ENDPOINT = Deno.env.get('VPS_ENDPOINT') || Deno.env.get('VPS_STORAGE_URL') || 'http://46.38.232.46:4000';
+const VPS_CDN_URL = Deno.env.get('VPS_CDN_URL') || 'https://media.trycloudflare.com'; // MUST be HTTPS
+const VPS_API_KEY = Deno.env.get('VPS_API_KEY') || Deno.env.get('VPS_STORAGE_API_KEY') || 'kARTOOS007';
 
 // Signing secret - should match VPS server
 const SIGNING_SECRET = Deno.env.get('HLS_SIGNING_SECRET') || VPS_API_KEY || 'default-signing-secret';
+
+/**
+ * Validate URL is HTTPS - critical for mixed content prevention
+ */
+function ensureHttps(url: string): string {
+  if (url.startsWith("https://")) {
+    return url;
+  }
+  console.error(`❌ SECURITY: Attempted to return HTTP URL to client: ${url}`);
+  throw new Error("Insecure media URL blocked - HTTPS required");
+}
 
 /**
  * Generate HMAC-SHA256 signature
@@ -55,12 +69,14 @@ const TWELVE_HOURS = 12 * 60 * 60; // 43200 seconds
 /**
  * Sign a URL with expiry and HMAC (12-hour validity)
  */
-async function signUrl(baseUrl: string, path: string, expiresInSec: number = TWELVE_HOURS): Promise<string> {
+async function signUrl(path: string, expiresInSec: number = TWELVE_HOURS): Promise<string> {
   const exp = Math.floor(Date.now() / 1000) + expiresInSec;
   const dataToSign = `${path}${exp}`;
   const sig = await generateSignature(dataToSign, SIGNING_SECRET);
   
-  return `${baseUrl}${path}?exp=${exp}&sig=${sig}`;
+  // Return HTTPS CDN URL for client
+  const url = `${VPS_CDN_URL}${path}?exp=${exp}&sig=${sig}`;
+  return ensureHttps(url);
 }
 
 Deno.serve(async (req) => {
@@ -204,7 +220,7 @@ Deno.serve(async (req) => {
       
       // HLS is available - generate signed URL with 12-hour TTL
       const hlsPath = `/hls/${userId}/${baseName}/index.m3u8`;
-      const signedUrl = await signUrl(VPS_ENDPOINT, hlsPath, TWELVE_HOURS);
+      const signedUrl = await signUrl(hlsPath, TWELVE_HOURS);
       
       console.log(`HLS URL generated for: ${storagePath} (12h TTL)`);
       

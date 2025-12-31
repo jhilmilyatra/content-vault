@@ -20,13 +20,25 @@ const corsHeaders = {
 };
 
 // VPS Configuration
-const VPS_CONFIG = {
-  endpoint: "http://46.38.232.46:4000",
-  apiKey: "kARTOOS007",
-};
+// VPS_ENDPOINT = internal HTTP for server-to-server (health checks, HLS status, etc.)
+// VPS_CDN_URL = public HTTPS URL for client-facing URLs (Cloudflare proxied)
+const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "http://46.38.232.46:4000";
+const VPS_CDN_URL = Deno.env.get("VPS_CDN_URL") || "https://media.trycloudflare.com"; // MUST be HTTPS
+const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "kARTOOS007";
 
 // Signing secret for URL tokens
-const SIGNING_SECRET = Deno.env.get("HLS_SIGNING_SECRET") || VPS_CONFIG.apiKey || "default-signing-secret";
+const SIGNING_SECRET = Deno.env.get("HLS_SIGNING_SECRET") || VPS_API_KEY || "default-signing-secret";
+
+/**
+ * Validate URL is HTTPS - critical for mixed content prevention
+ */
+function ensureHttps(url: string): string {
+  if (url.startsWith("https://")) {
+    return url;
+  }
+  console.error(`❌ SECURITY: Attempted to return HTTP URL to client: ${url}`);
+  throw new Error("Insecure media URL blocked - HTTPS required");
+}
 
 /**
  * Generate HMAC signature for signed URLs
@@ -62,7 +74,9 @@ async function generateSignedHLSUrl(
   const message = `${hlsPath}${expires}`;
   const signature = await generateSignature(message);
   
-  return `${VPS_CONFIG.endpoint}${hlsPath}?exp=${expires}&sig=${signature}`;
+  // Return HTTPS CDN URL for client
+  const url = `${VPS_CDN_URL}${hlsPath}?exp=${expires}&sig=${signature}`;
+  return ensureHttps(url);
 }
 
 /**
@@ -84,7 +98,9 @@ async function generateSignedStreamUrl(
     sig: signature,
   });
   
-  return `${VPS_CONFIG.endpoint}/stream?${params.toString()}`;
+  // Return HTTPS CDN URL for client
+  const url = `${VPS_CDN_URL}/stream?${params.toString()}`;
+  return ensureHttps(url);
 }
 
 interface HLSStatus {
@@ -104,34 +120,33 @@ async function checkHLSStatus(userId: string, fileName: string): Promise<HLSStat
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
     
-    // Use HEAD first for quick existence check (reduces VPS load)
+    // Internal HTTP call to VPS (server-to-server)
     const headResponse = await fetch(
-      `${VPS_CONFIG.endpoint}/hls-status/${userId}/${fileName}`,
+      `${VPS_ENDPOINT}/hls-status/${userId}/${fileName}`,
       {
         method: "HEAD",
         headers: {
-          "Authorization": `Bearer ${VPS_CONFIG.apiKey}`,
+          "Authorization": `Bearer ${VPS_API_KEY}`,
         },
         signal: controller.signal,
       }
     );
     clearTimeout(timeoutId);
     
-    // If HEAD fails, HLS not available
     if (!headResponse.ok) {
       return { hasHLS: false };
     }
     
-    // HLS exists - get full status with GET
+    // HLS exists - get full status with GET (internal HTTP call)
     const controller2 = new AbortController();
     const timeoutId2 = setTimeout(() => controller2.abort(), 3000);
     
     const getResponse = await fetch(
-      `${VPS_CONFIG.endpoint}/hls-status/${userId}/${fileName}`,
+      `${VPS_ENDPOINT}/hls-status/${userId}/${fileName}`,
       {
         method: "GET",
         headers: {
-          "Authorization": `Bearer ${VPS_CONFIG.apiKey}`,
+          "Authorization": `Bearer ${VPS_API_KEY}`,
         },
         signal: controller2.signal,
       }

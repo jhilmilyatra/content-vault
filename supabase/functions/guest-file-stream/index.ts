@@ -10,11 +10,10 @@ const corsHeaders = {
 // Performance tracking
 const SLOW_THRESHOLD_MS = 200;
 
-// Primary VPS storage - hardcoded same as fileService
-const VPS_CONFIG = {
-  endpoint: "http://46.38.232.46:4000",
-  apiKey: "kARTOOS007",
-};
+// VPS Configuration
+// VPS_ENDPOINT = internal HTTP for server-to-server (streaming via edge function proxy)
+const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "http://46.38.232.46:4000";
+const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "kARTOOS007";
 
 // VPS timeout for availability check (ms)
 const VPS_CHECK_TIMEOUT = 3000;
@@ -123,10 +122,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check if VPS is available with a quick HEAD request
+    // Check if VPS is available with a quick HEAD request (internal server-to-server)
     const vpsStartTime = performance.now();
     let vpsAvailable = false;
-    const vpsFileUrl = `${VPS_CONFIG.endpoint}/files/${storagePath}`;
+    const vpsFileUrl = `${VPS_ENDPOINT}/files/${storagePath}`;
     
     try {
       const controller = new AbortController();
@@ -134,7 +133,7 @@ Deno.serve(async (req) => {
       
       const vpsCheckResponse = await fetch(vpsFileUrl, {
         method: "HEAD",
-        headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` },
+        headers: { "Authorization": `Bearer ${VPS_API_KEY}` },
         signal: controller.signal,
       });
       
@@ -160,7 +159,7 @@ Deno.serve(async (req) => {
         
         // Build request headers for VPS
         const vpsHeaders: Record<string, string> = {
-          "Authorization": `Bearer ${VPS_CONFIG.apiKey}`,
+          "Authorization": `Bearer ${VPS_API_KEY}`,
         };
         
         // Forward range header if provided for video seeking
