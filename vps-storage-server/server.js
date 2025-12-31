@@ -922,6 +922,138 @@ app.post('/upload-base64', authenticate, (req, res) => {
 });
 
 // ============================================
+// Signed URL Streaming Endpoint (Public, No Auth Required)
+// Validates access via HMAC signature in query params
+// ============================================
+app.get('/stream', (req, res) => {
+  try {
+    const { path: storagePath, guest: guestId, expires, sig } = req.query;
+    
+    if (!storagePath || !guestId || !expires || !sig) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+    
+    // Check expiration
+    const expiresTimestamp = parseInt(expires);
+    const now = Math.floor(Date.now() / 1000);
+    
+    if (now > expiresTimestamp) {
+      return res.status(403).json({ error: 'URL has expired' });
+    }
+    
+    // Verify HMAC signature
+    const message = `${storagePath}:${guestId}:${expires}`;
+    const expectedSig = crypto.createHmac('sha256', HLS_SIGNING_SECRET)
+      .update(message)
+      .digest('hex');
+    
+    if (sig !== expectedSig) {
+      console.warn(`Invalid signature for stream: ${storagePath}`);
+      return res.status(403).json({ error: 'Invalid signature' });
+    }
+    
+    // Parse storage path (userId/fileName)
+    const pathParts = storagePath.split('/');
+    if (pathParts.length !== 2) {
+      return res.status(400).json({ error: 'Invalid storage path format' });
+    }
+    
+    const [userId, fileName] = pathParts;
+    
+    // Validate and get safe path
+    const pathInfo = getSafePath(userId, fileName);
+    if (!pathInfo) {
+      return res.status(400).json({ error: 'Invalid path parameters' });
+    }
+    
+    if (!fs.existsSync(pathInfo.fullPath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    
+    const stat = fs.statSync(pathInfo.fullPath);
+    const fileSize = stat.size;
+    const range = req.headers.range;
+    
+    // Determine content type
+    const ext = path.extname(fileName).toLowerCase();
+    const mimeTypes = {
+      '.mp4': 'video/mp4',
+      '.webm': 'video/webm',
+      '.mov': 'video/quicktime',
+      '.avi': 'video/x-msvideo',
+      '.mkv': 'video/x-matroska',
+      '.m4v': 'video/mp4',
+      '.mp3': 'audio/mpeg',
+      '.wav': 'audio/wav',
+      '.ogg': 'audio/ogg',
+      '.flac': 'audio/flac',
+      '.aac': 'audio/aac',
+      '.m4a': 'audio/mp4',
+      '.pdf': 'application/pdf',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+    };
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+    
+    console.log(`📺 Stream request: ${storagePath}, guest=${guestId}, range=${range || 'full'}`);
+    
+    // Common headers for streaming
+    const commonHeaders = {
+      'Content-Type': contentType,
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'public, max-age=3600',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': 'Range, Content-Type',
+      'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+    };
+    
+    // Handle range requests for video/audio seeking
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunkSize = end - start + 1;
+      
+      // Validate range
+      if (start >= fileSize || end >= fileSize || start > end) {
+        res.status(416).json({ error: 'Range not satisfiable' });
+        return;
+      }
+      
+      console.log(`📺 Streaming range: ${start}-${end}/${fileSize} (${chunkSize} bytes)`);
+      
+      const stream = fs.createReadStream(pathInfo.fullPath, { start, end });
+      
+      res.writeHead(206, {
+        ...commonHeaders,
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Content-Length': chunkSize,
+      });
+      
+      stream.pipe(res);
+    } else {
+      // Full file streaming
+      console.log(`📺 Streaming full file: ${fileSize} bytes`);
+      
+      res.writeHead(200, {
+        ...commonHeaders,
+        'Content-Length': fileSize,
+      });
+      
+      const stream = fs.createReadStream(pathInfo.fullPath);
+      stream.pipe(res);
+    }
+  } catch (error) {
+    console.error('Stream error:', error);
+    res.status(500).json({ error: 'Stream failed', message: error.message });
+  }
+});
+
+// ============================================
 // File Download/Serve Endpoint with Range Support
 // ============================================
 app.get('/files/:userId/:fileName', (req, res) => {

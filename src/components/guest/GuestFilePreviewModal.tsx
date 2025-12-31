@@ -73,13 +73,27 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
       const isVideo = file.mime_type.startsWith("video/");
       const isAudio = file.mime_type.startsWith("audio/");
       
-      // For video/audio files, use the streaming proxy edge function URL directly
-      // This enables proper range request support for seeking
+      // For video/audio files, get a signed streaming URL
+      // This enables direct VPS streaming with proper range request support for seeking
       if (isVideo || isAudio) {
-        // Build the proxy URL - edge function will handle streaming
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const proxyUrl = `${supabaseUrl}/functions/v1/guest-file-proxy?guestId=${encodeURIComponent(guestId)}&path=${encodeURIComponent(file.storage_path)}`;
-        setFileUrl(proxyUrl);
+        const response = await supabase.functions.invoke('guest-stream-url', {
+          body: {
+            guestId,
+            storagePath: file.storage_path,
+          },
+        });
+
+        if (response.error) {
+          throw new Error(response.error.message || 'Failed to get stream URL');
+        }
+
+        if (response.data?.url) {
+          console.log(`Stream URL type: ${response.data.type}`);
+          setFileUrl(response.data.url);
+        } else {
+          throw new Error('No streaming URL returned');
+        }
+        
         setLoading(false);
         return;
       }
