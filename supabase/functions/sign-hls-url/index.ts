@@ -48,7 +48,9 @@ async function signUrl(path: string, expiresInSec: number = TWELVE_HOURS): Promi
   const dataToSign = `${path}${exp}`;
   const sig = await generateSignature(dataToSign, SIGNING_SECRET);
   
-  return `${VPS_CDN_URL}${path}?exp=${exp}&sig=${sig}`;
+  // Normalize URL - remove trailing slashes from CDN URL
+  const normalizedCdnUrl = VPS_CDN_URL.replace(/\/+$/, '');
+  return `${normalizedCdnUrl}${path}?exp=${exp}&sig=${sig}`;
 }
 
 Deno.serve(async (req) => {

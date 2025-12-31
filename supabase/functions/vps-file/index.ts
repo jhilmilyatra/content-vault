@@ -45,13 +45,14 @@ async function generateSignedVpsUrl(
   
   const params = new URLSearchParams({
     path: storagePath,
-    guest: userId, // Using 'guest' param as VPS expects it
+    guest: userId,
     expires: String(expires),
     sig: signature,
   });
   
-  // Use /stream endpoint which supports signed URLs
-  return `${cdnBaseUrl}/stream?${params.toString()}`;
+  // Normalize URL - remove trailing slashes from base URL
+  const normalizedBase = cdnBaseUrl.replace(/\/+$/, '');
+  return `${normalizedBase}/stream?${params.toString()}`;
 }
 
 Deno.serve(async (req) => {
@@ -120,10 +121,16 @@ Deno.serve(async (req) => {
     // === ACTION: URL ===
     // Returns a direct URL for the client to use (for downloads, video playback, etc.)
     if (action === "url") {
-      // Priority 1: If CDN URL is configured, use signed VPS URLs
+      // ALWAYS generate Supabase fallback URL first (guaranteed to work)
+      const { data: supabaseUrlData, error: supabaseUrlError } = await supabase.storage
+        .from("user-files")
+        .createSignedUrl(storagePath, 7200);
+      
+      const fallbackUrl = supabaseUrlError ? null : supabaseUrlData?.signedUrl;
+      
+      // Try VPS if configured
       if (hasCdnUrl && hasVpsEndpoint) {
         try {
-          // Quick health check on VPS (using internal endpoint)
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 3000);
           
@@ -134,7 +141,6 @@ Deno.serve(async (req) => {
           clearTimeout(timeoutId);
           
           if (healthCheck.ok) {
-            // Generate signed URL using CDN domain
             const signedUrl = await generateSignedVpsUrl(envVpsCdnUrl, storagePath, user.id, 7200);
             
             console.log(`✅ Generated signed VPS URL via CDN`);
@@ -142,6 +148,7 @@ Deno.serve(async (req) => {
             return new Response(
               JSON.stringify({ 
                 url: signedUrl, 
+                fallbackUrl, // Always include fallback
                 storage: "vps",
                 signed: true
               }),
@@ -160,23 +167,19 @@ Deno.serve(async (req) => {
         }
       }
       
-      // Priority 2: Fallback to Supabase signed URL (always works)
-      console.log("Using Supabase signed URL fallback");
-      const { data, error } = await supabase.storage
-        .from("user-files")
-        .createSignedUrl(storagePath, 7200); // 2 hour expiry
-      
-      if (error) {
-        console.error("Supabase signed URL error:", error);
+      // Use Supabase URL
+      if (!fallbackUrl) {
+        console.error("Both VPS and Supabase URL generation failed");
         return new Response(
           JSON.stringify({ error: "Failed to generate download URL" }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       
+      console.log("Using Supabase signed URL");
       return new Response(
         JSON.stringify({ 
-          url: data.signedUrl, 
+          url: fallbackUrl, 
           storage: "cloud",
           signed: true
         }),
