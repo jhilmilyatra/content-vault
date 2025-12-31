@@ -95,3 +95,6 @@ verify_jwt = false
 
 [functions.owner-delete-file]
 verify_jwt = false
+
+[functions.vps-health]
+verify_jwt = false

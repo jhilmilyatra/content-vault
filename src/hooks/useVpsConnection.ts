@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
 interface VpsConnectionState {
@@ -7,9 +8,6 @@ interface VpsConnectionState {
   reconnectAttempts: number;
   nextRetryIn: number | null;
 }
-
-const VPS_ENDPOINT = "http://46.38.232.46:4000";
-const VPS_API_KEY = "kARTOOS007";
 
 // Exponential backoff config
 const INITIAL_RETRY_DELAY = 2000; // 2 seconds
@@ -45,21 +43,19 @@ export function useVpsConnection() {
     }
   }, []);
 
+  // Route health check through edge function to avoid CORS/mixed content issues
   const checkConnection = useCallback(async (): Promise<boolean> => {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-      const response = await fetch(`${VPS_ENDPOINT}/health`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${VPS_API_KEY}`,
-        },
-        signal: controller.signal,
+      const { data, error } = await supabase.functions.invoke('vps-health', {
+        method: 'GET',
       });
 
-      clearTimeout(timeoutId);
-      return response.ok;
+      if (error) {
+        console.log("VPS health check edge function error:", error);
+        return false;
+      }
+
+      return data?.status === "online";
     } catch (error) {
       console.log("VPS health check failed:", error);
       return false;
