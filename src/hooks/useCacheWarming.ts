@@ -11,15 +11,18 @@ interface FileForWarming {
 const BATCH_SIZE = 5;
 // Delay between batches to avoid overwhelming the server
 const BATCH_DELAY_MS = 500;
+// How many files ahead to prefetch on scroll
+const PREFETCH_AHEAD_COUNT = 10;
 
 /**
  * Hook to pre-fetch and cache URLs for visible files
- * Uses IntersectionObserver to detect when files become visible
+ * Includes scroll-based prefetching for upcoming files
  */
 export function useCacheWarming(files: FileForWarming[], enabled: boolean = true) {
   const warmingInProgress = useRef<Set<string>>(new Set());
   const warmingQueue = useRef<string[]>([]);
   const isProcessing = useRef(false);
+  const lastPrefetchIndex = useRef(0);
 
   const warmUrl = useCallback(async (storagePath: string) => {
     // Skip if already cached or warming in progress
@@ -92,20 +95,88 @@ export function useCacheWarming(files: FileForWarming[], enabled: boolean = true
     }
   }, [processQueue]);
 
-  // Warm cache for all provided files when they change
+  // Prefetch next batch of files based on scroll position
+  const prefetchOnScroll = useCallback((visibleIndex: number) => {
+    if (!enabled || files.length === 0) return;
+    
+    // Calculate which files to prefetch (ahead of current position)
+    const startIndex = Math.max(visibleIndex, lastPrefetchIndex.current);
+    const endIndex = Math.min(startIndex + PREFETCH_AHEAD_COUNT, files.length);
+    
+    if (startIndex >= endIndex) return;
+    
+    const pathsToPrefetch = files
+      .slice(startIndex, endIndex)
+      .map(f => f.storage_path);
+    
+    if (pathsToPrefetch.length > 0) {
+      lastPrefetchIndex.current = endIndex;
+      queueForWarming(pathsToPrefetch);
+      console.log(`📜 Scroll prefetch: files ${startIndex}-${endIndex}`);
+    }
+  }, [enabled, files, queueForWarming]);
+
+  // Warm cache for initial visible files when they change
   useEffect(() => {
     if (!enabled || files.length === 0) return;
 
-    // Small delay to let the UI settle first
+    // Reset prefetch index when files change
+    lastPrefetchIndex.current = 0;
+
+    // Small delay to let the UI settle first - warm first batch
     const timeoutId = setTimeout(() => {
-      const paths = files.map(f => f.storage_path);
-      queueForWarming(paths);
+      const initialPaths = files.slice(0, PREFETCH_AHEAD_COUNT).map(f => f.storage_path);
+      queueForWarming(initialPaths);
+      lastPrefetchIndex.current = Math.min(PREFETCH_AHEAD_COUNT, files.length);
     }, 1000);
 
     return () => clearTimeout(timeoutId);
   }, [files, enabled, queueForWarming]);
 
-  return { queueForWarming, warmUrl };
+  return { queueForWarming, warmUrl, prefetchOnScroll };
+}
+
+/**
+ * Hook for scroll-based cache prefetching
+ * Attach to a scrollable container to trigger prefetching
+ */
+export function useScrollPrefetch(
+  containerRef: React.RefObject<HTMLElement>,
+  files: { storage_path: string }[],
+  enabled: boolean = true
+) {
+  const { prefetchOnScroll } = useCacheWarming(
+    files.map((f, i) => ({ id: String(i), storage_path: f.storage_path })),
+    enabled
+  );
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !enabled) return;
+
+    let ticking = false;
+
+    const handleScroll = () => {
+      if (ticking) return;
+      
+      ticking = true;
+      requestAnimationFrame(() => {
+        const { scrollTop, scrollHeight, clientHeight } = container;
+        const scrollPercentage = scrollTop / (scrollHeight - clientHeight);
+        
+        // When scrolled past 60%, start prefetching more
+        if (scrollPercentage > 0.6) {
+          const estimatedVisibleIndex = Math.floor(scrollPercentage * files.length);
+          prefetchOnScroll(estimatedVisibleIndex);
+        }
+        
+        ticking = false;
+      });
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [containerRef, files, enabled, prefetchOnScroll]);
 }
 
 /**
