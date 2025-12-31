@@ -14,6 +14,9 @@ const VPS_CONFIG = {
   apiKey: "kARTOOS007",
 };
 
+// VPS timeout for availability check (ms)
+const VPS_CHECK_TIMEOUT = 3000;
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -97,7 +100,7 @@ Deno.serve(async (req) => {
     };
 
     // Size limits for preview - large files should use download instead
-    const MAX_PREVIEW_SIZE = 100 * 1024 * 1024; // 100MB max for preview
+    const MAX_PREVIEW_SIZE = 500 * 1024 * 1024; // 500MB max for preview
     const isLargeFile = fileData.size_bytes > MAX_PREVIEW_SIZE;
     
     // For large files that aren't video/audio, suggest download instead
@@ -116,56 +119,86 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Try to get file from VPS first
+    // Try to verify file exists on VPS with HEAD request (with timeout)
     const vpsStartTime = performance.now();
-    console.log(`Fetching file from VPS: ${VPS_CONFIG.endpoint}/files/${storagePath}`);
+    let vpsAvailable = false;
     
     try {
-      // Just check if file exists on VPS with HEAD request
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), VPS_CHECK_TIMEOUT);
+      
       const vpsCheckResponse = await fetch(`${VPS_CONFIG.endpoint}/files/${storagePath}`, {
         method: "HEAD",
         headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` },
+        signal: controller.signal,
       });
       
-      const vpsTime = performance.now() - vpsStartTime;
+      clearTimeout(timeoutId);
+      vpsAvailable = vpsCheckResponse.ok;
       
-      if (vpsCheckResponse.ok) {
-        // VPS has the file - create a proxy URL through this edge function
-        const proxyUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/guest-file-proxy?guestId=${encodeURIComponent(guestId)}&path=${encodeURIComponent(storagePath)}`;
-        
-        const totalTime = performance.now() - startTime;
-        if (totalTime > SLOW_THRESHOLD_MS) {
-          console.warn(`⚠️ SLOW_EDGE [guest-file-stream] ${Math.round(totalTime)}ms (db: ${Math.round(dbTime)}ms, vps: ${Math.round(vpsTime)}ms)`);
-        }
-        
-        console.log(`VPS file found, returning proxy URL in ${Math.round(totalTime)}ms`);
-        return new Response(
-          JSON.stringify({ 
-            url: proxyUrl,
-            fileName: fileData.original_name,
-            mimeType: fileData.mime_type,
-            size: fileData.size_bytes,
-            source: "vps"
-          }),
-          { 
-            status: 200, 
-            headers: { 
-              ...corsHeaders, 
-              "Content-Type": "application/json",
-              // ✅ CACHE: Cache file URL for 2 minutes
-              "Cache-Control": "public, max-age=120, stale-while-revalidate=300"
-            } 
-          }
-        );
-      } else {
-        console.log(`VPS returned ${vpsCheckResponse.status}, trying Supabase storage`);
+      const vpsTime = performance.now() - vpsStartTime;
+      console.log(`VPS check: ${vpsAvailable ? 'available' : 'not found'} in ${Math.round(vpsTime)}ms`);
+    } catch (vpsError: unknown) {
+      const errorMessage = vpsError instanceof Error ? vpsError.message : String(vpsError);
+      console.error("VPS check error (timeout or network):", errorMessage);
+      // VPS unavailable, fall back to Supabase storage
+    }
+
+    if (vpsAvailable) {
+      // ✅ KEY FIX: Return DIRECT VPS URL instead of proxy URL
+      // The VPS /files endpoint is public and handles range requests properly
+      // This avoids edge function timeouts and enables proper video streaming
+      const directVpsUrl = `${VPS_CONFIG.endpoint}/files/${storagePath}`;
+      
+      const totalTime = performance.now() - startTime;
+      if (totalTime > SLOW_THRESHOLD_MS) {
+        console.warn(`⚠️ SLOW_EDGE [guest-file-stream] ${Math.round(totalTime)}ms (db: ${Math.round(dbTime)}ms)`);
       }
-    } catch (vpsError) {
-      console.error("VPS fetch error:", vpsError);
+      
+      console.log(`✅ Returning direct VPS URL for streaming: ${Math.round(totalTime)}ms`);
+      
+      // Record file view asynchronously (don't block response)
+      (async () => {
+        try {
+          await supabaseAdmin.rpc('record_file_view', {
+            p_file_id: fileData.id,
+            p_guest_id: guestId,
+            p_view_type: 'stream',
+            p_bytes_transferred: fileData.size_bytes
+          });
+          console.log(`📊 Recorded view: file=${fileData.id}, guest=${guestId}`);
+        } catch (err) {
+          console.error('Failed to record view:', err);
+        }
+      })();
+      
+      return new Response(
+        JSON.stringify({ 
+          url: directVpsUrl,
+          fileName: fileData.original_name,
+          mimeType: fileData.mime_type,
+          size: fileData.size_bytes,
+          source: "vps-direct",
+          // Include streaming hints for the client
+          streaming: {
+            supportsRange: true,
+            supportsHLS: fileData.mime_type.startsWith("video/"),
+          }
+        }),
+        { 
+          status: 200, 
+          headers: { 
+            ...corsHeaders, 
+            "Content-Type": "application/json",
+            // ✅ CACHE: Cache file URL for 5 minutes (file URLs are stable)
+            "Cache-Control": "public, max-age=300, stale-while-revalidate=600"
+          } 
+        }
+      );
     }
 
     // Fallback: Try Supabase storage
-    console.log("Trying Supabase storage fallback...");
+    console.log("VPS unavailable, trying Supabase storage fallback...");
     const { data: signedUrlData, error: signedUrlError } = await supabaseAdmin
       .storage
       .from("user-files")
@@ -184,13 +217,31 @@ Deno.serve(async (req) => {
       console.warn(`⚠️ SLOW_EDGE [guest-file-stream] ${Math.round(totalTime)}ms (supabase fallback)`);
     }
 
+    // Record file view for Supabase fallback
+    (async () => {
+      try {
+        await supabaseAdmin.rpc('record_file_view', {
+          p_file_id: fileData.id,
+          p_guest_id: guestId,
+          p_view_type: 'stream',
+          p_bytes_transferred: fileData.size_bytes
+        });
+      } catch (err) {
+        console.error('Failed to record view:', err);
+      }
+    })();
+
     return new Response(
       JSON.stringify({ 
         url: signedUrlData.signedUrl,
         fileName: fileData.original_name,
         mimeType: fileData.mime_type,
         size: fileData.size_bytes,
-        source: "supabase"
+        source: "supabase",
+        streaming: {
+          supportsRange: true,
+          supportsHLS: false,
+        }
       }),
       { 
         status: 200, 
