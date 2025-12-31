@@ -46,17 +46,17 @@ async function generateSignature(message: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Default TTL: 10 minutes for signed URLs
-// This should be >= playlist TTL + max expected watch session
-const DEFAULT_URL_TTL = 600; // 10 minutes
+// TTL: 12 hours for signed URLs
+// This ensures long-form video playback (3-4+ hours) never hits expiry
+// HLS re-fetches playlists repeatedly - short TTLs break playback
+const TWELVE_HOURS = 12 * 60 * 60; // 43200 seconds
 
 /**
- * Generate a signed HLS URL
- * TTL should cover: playlist refresh (30s) + expected watch time
+ * Generate a signed HLS URL (12-hour validity)
  */
 async function generateSignedHLSUrl(
   hlsPath: string, 
-  expiresInSeconds: number = DEFAULT_URL_TTL
+  expiresInSeconds: number = TWELVE_HOURS
 ): Promise<string> {
   const expires = Math.floor(Date.now() / 1000) + expiresInSeconds;
   const message = `${hlsPath}${expires}`;
@@ -66,12 +66,12 @@ async function generateSignedHLSUrl(
 }
 
 /**
- * Generate a signed direct stream URL (fallback)
+ * Generate a signed direct stream URL (12-hour validity)
  */
 async function generateSignedStreamUrl(
   storagePath: string, 
   guestId: string,
-  expiresInSeconds: number = DEFAULT_URL_TTL
+  expiresInSeconds: number = TWELVE_HOURS
 ): Promise<string> {
   const expires = Math.floor(Date.now() / 1000) + expiresInSeconds;
   const message = `${storagePath}:${guestId}:${expires}`;

@@ -49,11 +49,13 @@ async function generateSignature(data: string, secret: string): Promise<string> 
     .join('');
 }
 
+// TTL: 12 hours for signed URLs - ensures long-form video playback never expires
+const TWELVE_HOURS = 12 * 60 * 60; // 43200 seconds
+
 /**
- * Sign a URL with expiry and HMAC
- * Default TTL: 10 minutes (should be >= playlist TTL + max watch time buffer)
+ * Sign a URL with expiry and HMAC (12-hour validity)
  */
-async function signUrl(baseUrl: string, path: string, expiresInSec: number = 600): Promise<string> {
+async function signUrl(baseUrl: string, path: string, expiresInSec: number = TWELVE_HOURS): Promise<string> {
   const exp = Math.floor(Date.now() / 1000) + expiresInSec;
   const dataToSign = `${path}${exp}`;
   const sig = await generateSignature(dataToSign, SIGNING_SECRET);
