@@ -30,13 +30,24 @@ interface GuestFilePreviewModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
+// Stream mode type - decided BEFORE mounting any player
+type StreamMode = 'hls' | 'mp4' | 'audio' | 'image' | 'pdf' | 'other';
+
+interface ResolvedStream {
+  mode: StreamMode;
+  url: string;
+  fallbackUrl?: string;
+}
+
 export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: GuestFilePreviewModalProps) {
-  const [fileUrl, setFileUrl] = useState<string | null>(null);
-  const [hlsUrl, setHlsUrl] = useState<string | null>(null);
-  const [hlsAvailable, setHlsAvailable] = useState(false);
+  // Single resolved stream state - decided BEFORE rendering player
+  const [stream, setStream] = useState<ResolvedStream | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
+  
+  // Key to force complete player remount on retry
+  const [playerKey, setPlayerKey] = useState(0);
 
   // Audio player state
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -50,40 +61,39 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
 
   const playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
-  useEffect(() => {
-    if (open && file) {
-      loadFileUrl();
-      setMediaError(null);
-    } else {
-      if (fileUrl && fileUrl.startsWith("blob:")) {
-        URL.revokeObjectURL(fileUrl);
-      }
-      setFileUrl(null);
-      setHlsUrl(null);
-      setHlsAvailable(false);
-      setIsPlaying(false);
-      setCurrentTime(0);
-      setDuration(0);
-      setPlaybackSpeed(1);
-      setShowSpeedMenu(false);
-      setMediaError(null);
+  // Determine file type from mime type
+  const getFileType = (mimeType: string): StreamMode => {
+    if (mimeType.startsWith("image/")) return "image";
+    if (mimeType.startsWith("video/")) return "mp4"; // Will be upgraded to 'hls' if available
+    if (mimeType.startsWith("audio/")) return "audio";
+    if (mimeType === "application/pdf") return "pdf";
+    
+    // Check by extension as fallback
+    if (file) {
+      const videoExtensions = ['.mp4', '.webm', '.ogg', '.ogv', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v'];
+      const audioExtensions = ['.mp3', '.wav', '.ogg', '.oga', '.flac', '.aac', '.m4a', '.wma'];
+      const ext = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+      if (videoExtensions.includes(ext)) return "mp4";
+      if (audioExtensions.includes(ext)) return "audio";
     }
-  }, [open, file]);
+    return "other";
+  };
 
-  const loadFileUrl = async () => {
+  // CRITICAL: Resolve stream mode BEFORE rendering any player
+  const resolveStreamMode = async () => {
     if (!file || !guestId) return;
+    
     setLoading(true);
     setMediaError(null);
-    setHlsUrl(null);
-    setHlsAvailable(false);
+    setStream(null);
+    
+    const baseFileType = getFileType(file.mime_type);
     
     try {
-      const isVideo = file.mime_type.startsWith("video/");
-      const isAudio = file.mime_type.startsWith("audio/");
-      
-      // For video files, try HLS first for adaptive streaming
-      if (isVideo) {
+      // For video files, check HLS availability FIRST
+      if (baseFileType === 'mp4') {
         try {
+          console.log('🎬 Resolving video stream mode...');
           const hlsResponse = await supabase.functions.invoke('guest-hls-url', {
             body: {
               guestId,
@@ -92,55 +102,71 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
           });
 
           if (!hlsResponse.error && hlsResponse.data) {
-            const { type, url, hlsAvailable: hasHls } = hlsResponse.data;
+            const { type, url, hlsAvailable } = hlsResponse.data;
             
-            if (type === 'hls' && hasHls) {
-              console.log('🎬 Using HLS adaptive streaming');
-              setHlsUrl(url);
-              setHlsAvailable(true);
-              setFileUrl(url); // Fallback URL
+            if (type === 'hls' && hlsAvailable && url) {
+              console.log('✅ HLS available - using adaptive streaming');
+              
+              // Get fallback MP4 URL for safety
+              let fallbackUrl: string | undefined;
+              try {
+                const streamResponse = await supabase.functions.invoke('guest-stream-url', {
+                  body: { guestId, storagePath: file.storage_path },
+                });
+                if (streamResponse.data?.url) {
+                  fallbackUrl = streamResponse.data.url;
+                }
+              } catch (e) {
+                console.warn('Could not get fallback URL:', e);
+              }
+              
+              setStream({ mode: 'hls', url, fallbackUrl });
               setLoading(false);
               return;
             }
             
-            // HLS not available, use direct stream
+            // HLS not available, use the returned URL as MP4
             if (url) {
-              console.log(`🎬 Using direct stream (HLS status: ${hlsResponse.data.hlsStatus || 'unavailable'})`);
-              setFileUrl(url);
+              console.log('📹 HLS not available - using direct MP4 stream');
+              setStream({ mode: 'mp4', url });
               setLoading(false);
               return;
             }
           }
         } catch (hlsError) {
-          console.warn('HLS URL fetch failed, falling back to direct stream:', hlsError);
-        }
-      }
-      
-      // For audio or video fallback, get a signed streaming URL
-      if (isVideo || isAudio) {
-        const response = await supabase.functions.invoke('guest-stream-url', {
-          body: {
-            guestId,
-            storagePath: file.storage_path,
-          },
-        });
-
-        if (response.error) {
-          throw new Error(response.error.message || 'Failed to get stream URL');
-        }
-
-        if (response.data?.url) {
-          console.log(`Stream URL type: ${response.data.type}`);
-          setFileUrl(response.data.url);
-        } else {
-          throw new Error('No streaming URL returned');
+          console.warn('HLS check failed, falling back to direct stream:', hlsError);
         }
         
-        setLoading(false);
-        return;
+        // Fallback: get direct stream URL
+        const streamResponse = await supabase.functions.invoke('guest-stream-url', {
+          body: { guestId, storagePath: file.storage_path },
+        });
+        
+        if (streamResponse.data?.url) {
+          console.log('📹 Using fallback MP4 stream');
+          setStream({ mode: 'mp4', url: streamResponse.data.url });
+          setLoading(false);
+          return;
+        }
+        
+        throw new Error('Failed to get video stream URL');
       }
       
-      // For other file types, use the regular invoke method
+      // For audio files
+      if (baseFileType === 'audio') {
+        const response = await supabase.functions.invoke('guest-stream-url', {
+          body: { guestId, storagePath: file.storage_path },
+        });
+        
+        if (response.data?.url) {
+          setStream({ mode: 'audio', url: response.data.url });
+          setLoading(false);
+          return;
+        }
+        throw new Error('Failed to get audio stream URL');
+      }
+      
+      // For images, PDFs, and other files
       const response = await supabase.functions.invoke('guest-file-stream', {
         body: {
           guestId,
@@ -159,19 +185,18 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
           description: `This file is ${formatFileSize(response.data.size)}. Please download it to view.`,
           variant: "default",
         });
-        setFileUrl(null);
         setLoading(false);
         return;
       }
 
       if (response.data?.url) {
-        setFileUrl(response.data.url);
+        setStream({ mode: baseFileType, url: response.data.url });
       } else if (response.data instanceof Blob) {
         const blobUrl = URL.createObjectURL(response.data);
-        setFileUrl(blobUrl);
+        setStream({ mode: baseFileType, url: blobUrl });
       }
     } catch (error) {
-      console.error("Error loading file:", error);
+      console.error("Error resolving stream:", error);
       setMediaError("Failed to load file. Please try downloading instead.");
       toast({
         title: "Error",
@@ -181,6 +206,38 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
     } finally {
       setLoading(false);
     }
+  };
+
+  // Reset all state when modal closes or file changes
+  useEffect(() => {
+    if (open && file) {
+      resolveStreamMode();
+      setMediaError(null);
+    } else {
+      // Clean up blob URLs
+      if (stream?.url?.startsWith("blob:")) {
+        URL.revokeObjectURL(stream.url);
+      }
+      if (stream?.fallbackUrl?.startsWith("blob:")) {
+        URL.revokeObjectURL(stream.fallbackUrl);
+      }
+      setStream(null);
+      setIsPlaying(false);
+      setCurrentTime(0);
+      setDuration(0);
+      setPlaybackSpeed(1);
+      setShowSpeedMenu(false);
+      setMediaError(null);
+      setPlayerKey(0);
+    }
+  }, [open, file]);
+
+  // Handle retry - force complete remount with new stream resolution
+  const handleRetry = () => {
+    setMediaError(null);
+    setStream(null);
+    setPlayerKey(prev => prev + 1);
+    resolveStreamMode();
   };
 
   const handleDownload = async () => {
@@ -223,21 +280,6 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
     } finally {
       setDownloading(false);
     }
-  };
-
-  const getFileType = (mimeType: string): "image" | "video" | "audio" | "pdf" | "other" => {
-    if (mimeType.startsWith("image/")) return "image";
-    if (mimeType.startsWith("video/")) return "video";
-    if (mimeType.startsWith("audio/")) return "audio";
-    if (mimeType === "application/pdf") return "pdf";
-    const videoExtensions = ['.mp4', '.webm', '.ogg', '.ogv', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v'];
-    const audioExtensions = ['.mp3', '.wav', '.ogg', '.oga', '.flac', '.aac', '.m4a', '.wma'];
-    if (file) {
-      const ext = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
-      if (videoExtensions.includes(ext)) return "video";
-      if (audioExtensions.includes(ext)) return "audio";
-    }
-    return "other";
   };
 
   // Audio player controls
@@ -333,68 +375,68 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
 
+  // Render the correct player based on resolved stream mode
   const renderPreview = () => {
-    if (!file || !fileUrl) return null;
+    if (!file || !stream) return null;
 
-    const fileType = getFileType(file.mime_type);
+    // Show error state with retry
+    if (mediaError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
+          <div className="text-destructive text-center">{mediaError}</div>
+          <Button variant="outline" onClick={handleRetry}>
+            Try Again
+          </Button>
+        </div>
+      );
+    }
 
-    switch (fileType) {
+    switch (stream.mode) {
       case "image":
         return (
           <UniversalImageViewer
-            src={fileUrl}
+            src={stream.url}
             alt={file.name}
             showControls={true}
           />
         );
 
-      case "video":
+      case "hls":
+        // HLS adaptive streaming - render HLSPlayer only
+        return (
+          <div className="w-full h-full flex items-center justify-center overflow-hidden">
+            <div className="w-full h-full max-h-[70vh] relative">
+              {/* HLS indicator badge */}
+              <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 px-2 py-1 rounded-full bg-black/60 backdrop-blur-sm text-xs text-white/90">
+                <Wifi className="w-3 h-3 text-green-400" />
+                <span>Adaptive</span>
+              </div>
+              <HLSPlayer 
+                key={`hls-${playerKey}`}
+                src={stream.url}
+                fallbackSrc={stream.fallbackUrl}
+                onError={(error) => {
+                  console.error('HLS playback error:', error);
+                  setMediaError('Unable to play this file. Please try again or download it.');
+                }}
+              />
+            </div>
+          </div>
+        );
+
+      case "mp4":
+        // Direct MP4 stream - render VideoPlayer only
         return (
           <div className="w-full h-full flex items-center justify-center overflow-hidden">
             <div className="w-full h-full max-h-[70vh]">
-              {mediaError ? (
-                <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
-                  <div className="text-destructive text-center">{mediaError}</div>
-                  <Button 
-                    variant="outline" 
-                    onClick={() => {
-                      setMediaError(null);
-                      setHlsAvailable(false);
-                      setHlsUrl(null);
-                      loadFileUrl();
-                    }}
-                  >
-                    Try Again
-                  </Button>
-                </div>
-              ) : hlsAvailable && hlsUrl ? (
-                // Use HLSPlayer for adaptive streaming when available
-                <div className="relative w-full h-full">
-                  {/* HLS indicator badge */}
-                  <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 px-2 py-1 rounded-full bg-black/60 backdrop-blur-sm text-xs text-white/90">
-                    <Wifi className="w-3 h-3 text-green-400" />
-                    <span>Adaptive</span>
-                  </div>
-                  <HLSPlayer 
-                    src={hlsUrl}
-                    fallbackSrc={fileUrl}
-                    onError={(error) => {
-                      console.error('HLS playback error:', error);
-                      // Fall back to regular video player
-                      setHlsAvailable(false);
-                      setHlsUrl(null);
-                    }}
-                  />
-                </div>
-              ) : (
-                <VideoPlayer 
-                  src={fileUrl} 
-                  onError={() => {
-                    setMediaError('Unable to play this file. Please try again or download it.');
-                  }}
-                  crossOrigin={false}
-                />
-              )}
+              <VideoPlayer 
+                key={`mp4-${playerKey}`}
+                src={stream.url} 
+                onError={() => {
+                  setMediaError('Unable to play this file. Please try again or download it.');
+                }}
+                crossOrigin={false}
+              />
             </div>
           </div>
         );
@@ -420,8 +462,9 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
             
             {/* Hidden audio element */}
             <audio
+              key={`audio-${playerKey}`}
               ref={audioRef}
-              src={fileUrl}
+              src={stream.url}
               onTimeUpdate={handleTimeUpdate}
               onLoadedMetadata={handleLoadedMetadata}
               onEnded={handleMediaEnded}
@@ -430,12 +473,6 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
               onError={handleMediaError}
               className="hidden"
             />
-            
-            {mediaError && (
-              <div className="text-destructive text-sm text-center px-4">
-                {mediaError}
-              </div>
-            )}
             
             {/* Audio controls */}
             <div className="w-full max-w-md space-y-3">
@@ -544,7 +581,7 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
         return (
           <div className="flex-1 w-full h-[70vh] bg-muted rounded-lg overflow-hidden">
             <iframe
-              src={`${fileUrl}#toolbar=1&navpanes=0`}
+              src={`${stream.url}#toolbar=1&navpanes=0`}
               className="w-full h-full border-0"
               title={file.name}
             />
@@ -579,8 +616,7 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
     }
   };
 
-  const fileType = file ? getFileType(file.mime_type) : "other";
-  const isVideoOrImage = fileType === "video" || fileType === "image";
+  const isVideoOrImage = stream?.mode === "hls" || stream?.mode === "mp4" || stream?.mode === "image";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -600,7 +636,7 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
               variant="ghost"
               size="icon"
               onClick={handleDownload}
-              disabled={downloading || !fileUrl}
+              disabled={downloading || !stream?.url}
               className="h-9 w-9"
             >
               {downloading ? (
@@ -628,7 +664,7 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
             <div className="flex-1 flex items-center justify-center p-8">
               <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
             </div>
-          ) : fileUrl ? (
+          ) : stream ? (
             renderPreview()
           ) : (
             <div className="flex-1 flex items-center justify-center p-8">
