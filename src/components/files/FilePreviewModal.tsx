@@ -315,27 +315,51 @@ export function FilePreviewModal({
         }
       }).catch((err) => console.error('Failed to track download:', err));
 
-      // Always use edge function as proxy for secure downloads
-      const downloadUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`;
-      const response = await fetch(downloadUrl, {
-        headers: {
-          Authorization: `Bearer ${sessionData.session.access_token}`,
-        },
-      });
+      // Get signed URL instead of streaming through edge function
+      const urlResponse = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=url`,
+        {
+          headers: {
+            Authorization: `Bearer ${sessionData.session.access_token}`,
+          },
+        }
+      );
       
-      if (!response.ok) throw new Error("Failed to fetch file");
+      if (!urlResponse.ok) {
+        // Fallback to Supabase signed URL
+        const { data: signedData } = await supabase.storage
+          .from('user-files')
+          .createSignedUrl(file.storage_path, 3600);
+        
+        if (signedData?.signedUrl) {
+          // Open in new tab for download
+          const a = document.createElement("a");
+          a.href = signedData.signedUrl;
+          a.download = file.original_name;
+          a.target = "_blank";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          
+          toast({
+            title: "Download started",
+            description: `Downloading ${file.original_name}`,
+          });
+          return;
+        }
+        throw new Error("Failed to get download URL");
+      }
       
-      const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
+      const { url } = await urlResponse.json();
       
+      // Download using the signed URL
       const a = document.createElement("a");
-      a.href = blobUrl;
+      a.href = url;
       a.download = file.original_name;
+      a.target = "_blank"; // Open in new tab to trigger browser download
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      
-      URL.revokeObjectURL(blobUrl);
       
       toast({
         title: "Download started",
