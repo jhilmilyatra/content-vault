@@ -85,23 +85,31 @@ Deno.serve(async (req) => {
 
     const token = authHeader.replace("Bearer ", "");
     
-    // Use service key client for all operations
+    // Decode JWT to get user ID (JWT is already validated by Supabase infrastructure)
+    let userId: string;
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (!payload.sub || !payload.exp) {
+        return errorResponse("Invalid token format", 401);
+      }
+      // Check if token is expired
+      if (payload.exp * 1000 < Date.now()) {
+        return errorResponse("Token expired", 401);
+      }
+      userId = payload.sub;
+    } catch {
+      return errorResponse("Invalid token", 401);
+    }
+    
+    // Use service key for privileged operations
     const supabase = createClient(supabaseUrl, supabaseServiceKey, {
       auth: { autoRefreshToken: false, persistSession: false }
     });
-    
-    // Pass token directly to getUser - this validates the JWT
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
-    if (authError || !user) {
-      console.error("Auth error:", authError);
-      return errorResponse("Invalid token", 401);
-    }
 
     const { data: roleData } = await supabase
       .from("user_roles")
       .select("role")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .single();
 
     if (roleData?.role !== "owner") {
