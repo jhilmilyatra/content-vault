@@ -76,7 +76,6 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
     // Verify authorization - owner only
     const authHeader = req.headers.get("Authorization");
@@ -84,20 +83,20 @@ Deno.serve(async (req) => {
       return errorResponse("No authorization header", 401);
     }
 
-    // Use anon key with user's auth header to validate token
-    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } }
+    const token = authHeader.replace("Bearer ", "");
+    
+    // Use service key client for all operations
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
     });
     
-    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
+    // Pass token directly to getUser - this validates the JWT
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     
     if (authError || !user) {
       console.error("Auth error:", authError);
       return errorResponse("Invalid token", 401);
     }
-
-    // Use service key for privileged operations
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const { data: roleData } = await supabase
       .from("user_roles")
