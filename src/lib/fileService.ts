@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCachedUrl, setCachedUrl, clearUrlCache } from "@/lib/urlCache";
 import { warmVideoStreamUrl, isVideoFile } from "@/lib/videoStreamCache";
+import { extractVideoMetadata, updateVideoMetadata, isVideo } from "@/lib/videoMetadata";
 
 export interface FileItem {
   id: string;
@@ -390,6 +391,44 @@ export const hasVPSStorage = (): boolean => {
 };
 
 /**
+ * Extract video metadata and upload thumbnail after video upload
+ * Runs in background - does not block upload completion
+ */
+async function extractAndUploadVideoMetadata(
+  file: File,
+  fileId: string,
+  authToken: string
+): Promise<void> {
+  try {
+    console.log('🎬 Extracting video metadata for:', file.name);
+    
+    // Extract metadata and generate thumbnail
+    const metadata = await extractVideoMetadata(file, {
+      thumbnailTime: 2, // Capture at 2 seconds
+      thumbnailWidth: 480,
+      thumbnailQuality: 0.8,
+    });
+
+    console.log(`📊 Video metadata: ${metadata.width}x${metadata.height}, ${Math.round(metadata.duration)}s`);
+
+    // Update file record with metadata
+    await updateVideoMetadata(
+      fileId,
+      {
+        thumbnailUrl: metadata.thumbnailDataUrl, // Send data URL, backend will upload to VPS
+        duration: metadata.duration,
+      },
+      authToken
+    );
+
+    console.log('✅ Video metadata updated successfully');
+  } catch (error) {
+    console.warn('Failed to extract video metadata:', error);
+    // Non-critical - don't throw
+  }
+}
+
+/**
  * Upload file with real progress tracking using XMLHttpRequest
  */
 const uploadToVPSWithProgress = (
@@ -466,8 +505,13 @@ const uploadToVPSWithProgress = (
               });
             }
             
-            // Warm video stream cache immediately after upload for instant playback
+            // For video files: extract metadata, generate thumbnail, and warm stream
             if (isVideoFile(uploadedFile.mime_type, uploadedFile.original_name)) {
+              // Extract metadata and thumbnail in background
+              extractAndUploadVideoMetadata(file, uploadedFile.id, sessionData.session!.access_token)
+                .catch((err) => console.warn('Video metadata extraction failed:', err));
+              
+              // Warm stream URL for instant playback
               warmVideoStreamUrl(uploadedFile.id, uploadedFile.storage_path, { priority: 'high' })
                 .then(() => console.log('📹 Video stream pre-warmed after upload'))
                 .catch(() => {}); // Silent fail - not critical
@@ -935,8 +979,17 @@ const uploadChunked = async (
 
       const uploadedFile = result.file as FileItem;
 
-      // Warm video stream cache immediately after upload for instant playback
+      // For video files: extract metadata, generate thumbnail, and warm stream
       if (isVideoFile(uploadedFile.mime_type, uploadedFile.original_name)) {
+        // Get auth token for metadata update
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData.session) {
+          // Extract metadata and thumbnail in background
+          extractAndUploadVideoMetadata(file, uploadedFile.id, sessionData.session.access_token)
+            .catch((err) => console.warn('Video metadata extraction failed:', err));
+        }
+        
+        // Warm stream URL for instant playback
         warmVideoStreamUrl(uploadedFile.id, uploadedFile.storage_path, { priority: 'high' })
           .then(() => console.log('📹 Video stream pre-warmed after upload'))
           .catch(() => {}); // Silent fail - not critical
