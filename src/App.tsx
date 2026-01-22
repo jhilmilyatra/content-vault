@@ -17,7 +17,7 @@ import Auth from "./pages/Auth";
 // Lazy loaded routes - Dashboard
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const FileManager = lazy(() => import("./pages/FileManager"));
-const SharedLinks = lazy(() => import("./pages/SharedLinks"));
+const Sharing = lazy(() => import("./pages/Sharing"));
 const TrashBin = lazy(() => import("./pages/TrashBin"));
 const Analytics = lazy(() => import("./pages/Analytics"));
 const Settings = lazy(() => import("./pages/Settings"));
@@ -114,8 +114,9 @@ function App() {
                   {/* Member Dashboard Routes */}
                   <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                   <Route path="/dashboard/files" element={<ProtectedRoute><FileManager /></ProtectedRoute>} />
-                  <Route path="/dashboard/guests" element={<ProtectedRoute><GuestManagement /></ProtectedRoute>} />
-                  <Route path="/dashboard/links" element={<ProtectedRoute><SharedLinks /></ProtectedRoute>} />
+                  <Route path="/dashboard/links" element={<ProtectedRoute><Sharing /></ProtectedRoute>} />
+                  <Route path="/dashboard/sharing" element={<ProtectedRoute><Sharing /></ProtectedRoute>} />
+                  <Route path="/dashboard/guests" element={<ProtectedRoute><Sharing /></ProtectedRoute>} />
                   <Route path="/dashboard/trash" element={<ProtectedRoute><TrashBin /></ProtectedRoute>} />
                   <Route path="/dashboard/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
                   <Route path="/dashboard/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
