@@ -7,6 +7,8 @@ import { PageTransition } from "@/components/ui/PageTransition";
 import { GlassCard, GlassCardHeader, StatCard } from "@/components/ios/GlassCard";
 import { IosSegmentedControl } from "@/components/ios";
 import { SkeletonStats, SkeletonTable } from "@/components/ios/SkeletonLoader";
+import { useFeatureFlag } from "@/contexts/FeatureFlagsContext";
+import FeatureDisabled from "@/components/FeatureDisabled";
 import {
   BarChart3,
   TrendingUp,
@@ -78,6 +80,9 @@ interface FileTypeDistribution {
 const FILE_TYPE_COLORS = ["#14b8a6", "#8b5cf6", "#f59e0b", "#ef4444", "#6366f1"];
 
 const Analytics = () => {
+  const { user, role } = useAuth();
+  const analyticsEnabled = useFeatureFlag('feature_analytics');
+  
   const [stats, setStats] = useState<AnalyticsData>({
     totalDownloads: 0,
     totalViews: 0,
@@ -92,8 +97,6 @@ const Analytics = () => {
   const [fileTypeDistribution, setFileTypeDistribution] = useState<FileTypeDistribution[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const { user, role } = useAuth();
-
   const timeRangeOptions = [
     { value: "7", label: "7 Days" },
     { value: "14", label: "14 Days" },
@@ -102,10 +105,22 @@ const Analytics = () => {
   ];
 
   useEffect(() => {
-    if (user) {
+    if (user && analyticsEnabled) {
       fetchAllData();
     }
-  }, [user, role, timeRange]);
+  }, [user, role, timeRange, analyticsEnabled]);
+
+  // Show feature disabled message if analytics is turned off
+  if (!analyticsEnabled) {
+    return (
+      <DashboardLayout>
+        <FeatureDisabled
+          featureName="Analytics"
+          message="The analytics feature is currently disabled by the administrator. Please check back later."
+        />
+      </DashboardLayout>
+    );
+  }
 
   const fetchAllData = async () => {
     setLoading(true);
