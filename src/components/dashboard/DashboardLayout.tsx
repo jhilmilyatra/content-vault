@@ -23,6 +23,7 @@ import {
   MessageSquare,
   HelpCircle,
   History,
+  Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -72,6 +73,7 @@ const ownerNavItems: NavItem[] = [
   { icon: LayoutDashboard, label: "Overview", path: "/dashboard" },
   { icon: Activity, label: "System", path: "/dashboard/system-monitoring" },
   { icon: Users, label: "Users", path: "/dashboard/users" },
+  { icon: Send, label: "Telegram", path: "/dashboard/admin/telegram" },
   { icon: Shield, label: "Security", path: "/dashboard/security" },
   { icon: Settings, label: "Settings", path: "/dashboard/settings" },
 ];

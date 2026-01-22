@@ -46,6 +46,7 @@ const SystemMonitoring = lazy(() => import("./pages/owner/SystemMonitoring"));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminUserManagement = lazy(() => import("./pages/admin/AdminUserManagement"));
 const ReportManagement = lazy(() => import("./pages/admin/ReportManagement"));
+const TelegramSettings = lazy(() => import("./pages/admin/TelegramSettings"));
 
 // Lazy loaded routes - Guest
 const GuestAuth = lazy(() => import("./pages/guest/GuestAuth"));
@@ -131,6 +132,7 @@ function App() {
                   <Route path="/dashboard/watch-history" element={<ProtectedRoute><WatchHistory /></ProtectedRoute>} />
                   <Route path="/dashboard/admin/users" element={<ProtectedRoute requiredRole="admin"><AdminUserManagement /></ProtectedRoute>} />
                   <Route path="/dashboard/admin/reports" element={<ProtectedRoute requiredRole="admin"><ReportManagement /></ProtectedRoute>} />
+                  <Route path="/dashboard/admin/telegram" element={<ProtectedRoute requiredRole="owner"><TelegramSettings /></ProtectedRoute>} />
                   
                   {/* Owner routes */}
                   <Route path="/dashboard/users" element={<ProtectedRoute requiredRole="owner"><UserManagement /></ProtectedRoute>} />
