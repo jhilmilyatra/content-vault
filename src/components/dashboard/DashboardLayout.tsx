@@ -22,6 +22,7 @@ import {
   CreditCard,
   MessageSquare,
   HelpCircle,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -361,6 +362,10 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
                 </DropdownMenuItem>
                 {role === "member" && (
                   <>
+                    <DropdownMenuItem onClick={() => navigate("/dashboard/watch-history")}>
+                      <History className="mr-2 h-4 w-4" />
+                      <span>Watch History</span>
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setChatOpen(true)}>
                       <MessageSquare className="mr-2 h-4 w-4" />
                       <span>Support Chat</span>

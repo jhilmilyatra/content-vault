@@ -26,6 +26,7 @@ const Plans = lazy(() => import("./pages/Plans"));
 const SharedFile = lazy(() => import("./pages/SharedFile"));
 const TelegramGuide = lazy(() => import("./pages/TelegramGuide"));
 const UploadHistory = lazy(() => import("./pages/UploadHistory"));
+const WatchHistory = lazy(() => import("./pages/WatchHistory"));
 const Documentation = lazy(() => import("./pages/Documentation"));
 
 // Lazy loaded routes - Owner
@@ -127,6 +128,7 @@ function App() {
                   <Route path="/dashboard/plans" element={<ProtectedRoute><Plans /></ProtectedRoute>} />
                   <Route path="/dashboard/telegram-guide" element={<ProtectedRoute><TelegramGuide /></ProtectedRoute>} />
                   <Route path="/dashboard/upload-history" element={<ProtectedRoute><UploadHistory /></ProtectedRoute>} />
+                  <Route path="/dashboard/watch-history" element={<ProtectedRoute><WatchHistory /></ProtectedRoute>} />
                   <Route path="/dashboard/admin/users" element={<ProtectedRoute requiredRole="admin"><AdminUserManagement /></ProtectedRoute>} />
                   <Route path="/dashboard/admin/reports" element={<ProtectedRoute requiredRole="admin"><ReportManagement /></ProtectedRoute>} />
                   
