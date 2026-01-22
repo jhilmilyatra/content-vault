@@ -58,6 +58,21 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Check if public shares feature is enabled
+    const { data: featureSetting } = await supabaseAdmin
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'feature_public_shares')
+      .eq('category', 'features')
+      .maybeSingle();
+
+    if (featureSetting && featureSetting.value === 'false') {
+      return new Response(
+        JSON.stringify({ error: 'Public file sharing is currently disabled' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     console.log(`Verifying share link: ${shortCode}`);
 
     // ✅ OPTIMIZED: Single RPC call instead of JOIN query
