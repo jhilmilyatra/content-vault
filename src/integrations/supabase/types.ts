@@ -237,6 +237,7 @@ export type Database = {
           created_at: string
           deleted_at: string | null
           description: string | null
+          duration_seconds: number | null
           folder_id: string | null
           id: string
           is_deleted: boolean
@@ -253,6 +254,7 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           description?: string | null
+          duration_seconds?: number | null
           folder_id?: string | null
           id?: string
           is_deleted?: boolean
@@ -269,6 +271,7 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           description?: string | null
+          duration_seconds?: number | null
           folder_id?: string | null
           id?: string
           is_deleted?: boolean
