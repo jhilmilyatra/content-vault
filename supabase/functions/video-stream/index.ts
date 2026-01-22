@@ -2,10 +2,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isFeatureEnabled, featureDisabledResponse } from "../_shared/feature-flags.ts";
 
 /**
- * Video Streaming Endpoint - Netflix/YouTube-level MP4 Streaming via CDN
+ * Video Streaming Endpoint - Direct MP4 Streaming via CDN
  * 
  * Features:
- * - Generates signed CDN URLs for each file
+ * - Generates signed CDN URLs for MP4 streaming
  * - Long TTL (12 hours) for uninterrupted playback
  * - Clean URL structure: /video-stream?id={file_id}
  * - Returns CDN URL for direct MP4 playback with range request support
@@ -171,10 +171,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Generate streaming URLs
+    // Generate MP4 streaming URLs
     const streamUrls: Record<string, unknown> = {
       fileInfo,
       storage: "vps",
+      type: "mp4",
     };
 
     // Primary: CDN URL (HTTPS, optimal for client playback)
@@ -185,41 +186,6 @@ Deno.serve(async (req) => {
       // Fallback: Direct VPS URL (may be HTTP)
       streamUrls.url = await generateSignedStreamUrl(vpsEndpoint, finalStoragePath!, user.id, 43200);
       streamUrls.type = "vps-direct";
-    }
-
-    // Check for HLS availability (adaptive streaming)
-    if (fileInfo?.mimeType?.startsWith("video/") && hasVps) {
-      const pathParts = finalStoragePath!.split('/');
-      const userId = pathParts[0];
-      const fileName = pathParts[1];
-      const baseName = fileName.replace(/\.[^/.]+$/, '');
-      
-      // Check if HLS is available
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2000);
-        
-        const hlsCheckUrl = `${vpsEndpoint}/hls/${userId}/${baseName}/index.m3u8`;
-        const hlsCheck = await fetch(hlsCheckUrl, {
-          method: 'HEAD',
-          headers: { "Authorization": `Bearer ${vpsApiKey}` },
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        
-        if (hlsCheck.ok) {
-          // HLS is available - provide URL
-          if (hasCdnUrl) {
-            streamUrls.hlsUrl = `${vpsCdnUrl}/hls/${userId}/${baseName}/index.m3u8`;
-          } else {
-            streamUrls.hlsUrl = hlsCheckUrl;
-          }
-          streamUrls.hasHls = true;
-        }
-      } catch {
-        // HLS not available, use MP4
-        streamUrls.hasHls = false;
-      }
     }
 
     // Generate Supabase fallback URL
