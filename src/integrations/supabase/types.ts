@@ -1085,6 +1085,7 @@ export type Database = {
       check_guest_file_access: {
         Args: { p_guest_id: string; p_storage_path: string }
         Returns: {
+          duration_seconds: number
           file_id: string
           file_mime_type: string
           file_name: string
