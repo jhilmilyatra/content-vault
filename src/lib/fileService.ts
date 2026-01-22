@@ -14,6 +14,7 @@ export interface FileItem {
   storage_path: string;
   thumbnail_url: string | null;
   description: string | null;
+  duration_seconds: number | null;
   is_deleted: boolean;
   deleted_at: string | null;
   created_at: string;
