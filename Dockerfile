@@ -42,6 +42,10 @@
 #                        Default: /app/storage
 #                        💡 Mount a volume here for persistence
 #
+# VPS_CDN_URL            CDN URL for serving files via HTTPS
+#                        Example: https://cdn.example.com
+#                        💡 Use Cloudflare tunnel for easy HTTPS
+#
 # AUTO_TRANSCODE         Enable auto HLS transcoding for new uploads
 #                        Default: true
 #
@@ -50,6 +54,9 @@
 #
 # AUTO_THUMBNAIL_BACKFILL  Scan and generate thumbnails for videos on startup
 #                        Default: false (set to true to enable)
+#
+# AUTO_IMAGE_THUMBNAIL   Enable automatic image thumbnail generation
+#                        Default: true
 #
 # TRANSCODE_DELAY_MS     Delay between transcodes to avoid CPU overload
 #                        Default: 30000 (30 seconds)
@@ -91,7 +98,7 @@
 # GET  /stats/user/:userId  - Per-user storage stats (owner only)
 # GET  /stats/all-users     - All users overview (owner only)
 # POST /upload              - Multipart file upload
-# POST /upload-base64       - Base64 JSON file upload
+# POST /upload-base64       - Base64 JSON file upload (for thumbnails)
 # GET  /files/:userId/:file - File download with range support
 # DELETE /files/:userId/:file - File deletion
 # POST /chunk-append        - Direct chunk append for large files
@@ -159,6 +166,11 @@ ENV DATA_PATH=/app/data
 # Security keys - CHANGE THESE IN PRODUCTION!
 ENV VPS_STORAGE_API_KEY=change-this-api-key
 ENV VPS_OWNER_API_KEY=kARTOOS007
+
+# Thumbnail and media processing
+ENV AUTO_TRANSCODE=true
+ENV AUTO_IMAGE_THUMBNAIL=true
+ENV ENABLE_THUMBNAIL_CALLBACK=true
 
 # Expose ports
 # 3000: Frontend application

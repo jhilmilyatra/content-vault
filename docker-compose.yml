@@ -6,6 +6,9 @@
 # Required environment variables:
 # - VPS_STORAGE_API_KEY: API key for user authentication
 # - VPS_OWNER_API_KEY: Owner API key for admin operations
+#
+# Optional CDN configuration:
+# - VPS_CDN_URL: HTTPS CDN URL for serving files (e.g., Cloudflare tunnel)
 
 version: '3.8'
 
@@ -21,18 +24,33 @@ services:
       - filecloud_storage:/app/storage
       - filecloud_data:/app/data
     environment:
+      # Core settings
       - NODE_ENV=production
+      - STORAGE_PATH=/app/storage
+      
+      # Security keys - CHANGE THESE IN PRODUCTION!
       - VPS_STORAGE_API_KEY=${VPS_STORAGE_API_KEY:-change-this-api-key}
       - VPS_OWNER_API_KEY=${VPS_OWNER_API_KEY:-kARTOOS007}
+      
+      # CDN configuration (optional - for HTTPS serving)
+      - VPS_CDN_URL=${VPS_CDN_URL:-}
+      
+      # HLS signed URL security
       - HLS_SIGNING_SECRET=${HLS_SIGNING_SECRET:-change-this-secret}
       - ENABLE_SIGNED_URLS=${ENABLE_SIGNED_URLS:-false}
+      
+      # Supabase connection
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
-      - STORAGE_PATH=/app/storage
+      
+      # Video transcoding
       - AUTO_TRANSCODE=true
-      - AUTO_RETRANSCODE_ON_STARTUP=true
+      - AUTO_RETRANSCODE_ON_STARTUP=${AUTO_RETRANSCODE_ON_STARTUP:-false}
       - TRANSCODE_DELAY_MS=30000
-      - AUTO_THUMBNAIL_BACKFILL=true
+      
+      # Thumbnail generation
+      - AUTO_THUMBNAIL_BACKFILL=${AUTO_THUMBNAIL_BACKFILL:-false}
+      - AUTO_IMAGE_THUMBNAIL=true
       - VPS_CALLBACK_KEY=${VPS_CALLBACK_KEY:-vps-thumbnail-callback-secret}
       - ENABLE_THUMBNAIL_CALLBACK=true
     healthcheck:
