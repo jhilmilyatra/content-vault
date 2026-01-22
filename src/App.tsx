@@ -47,6 +47,9 @@ const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminUserManagement = lazy(() => import("./pages/admin/AdminUserManagement"));
 const ReportManagement = lazy(() => import("./pages/admin/ReportManagement"));
 const TelegramSettings = lazy(() => import("./pages/admin/TelegramSettings"));
+const BrandingSettings = lazy(() => import("./pages/admin/BrandingSettings"));
+const EmailSettings = lazy(() => import("./pages/admin/EmailSettings"));
+const FeatureFlags = lazy(() => import("./pages/admin/FeatureFlags"));
 
 // Lazy loaded routes - Guest
 const GuestAuth = lazy(() => import("./pages/guest/GuestAuth"));
@@ -133,6 +136,9 @@ function App() {
                   <Route path="/dashboard/admin/users" element={<ProtectedRoute requiredRole="admin"><AdminUserManagement /></ProtectedRoute>} />
                   <Route path="/dashboard/admin/reports" element={<ProtectedRoute requiredRole="admin"><ReportManagement /></ProtectedRoute>} />
                   <Route path="/dashboard/admin/telegram" element={<ProtectedRoute requiredRole="owner"><TelegramSettings /></ProtectedRoute>} />
+                  <Route path="/dashboard/admin/branding" element={<ProtectedRoute requiredRole="owner"><BrandingSettings /></ProtectedRoute>} />
+                  <Route path="/dashboard/admin/email" element={<ProtectedRoute requiredRole="owner"><EmailSettings /></ProtectedRoute>} />
+                  <Route path="/dashboard/admin/features" element={<ProtectedRoute requiredRole="owner"><FeatureFlags /></ProtectedRoute>} />
                   
                   {/* Owner routes */}
                   <Route path="/dashboard/users" element={<ProtectedRoute requiredRole="owner"><UserManagement /></ProtectedRoute>} />

@@ -24,6 +24,9 @@ import {
   HelpCircle,
   History,
   Send,
+  Palette,
+  Mail,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -73,9 +76,16 @@ const ownerNavItems: NavItem[] = [
   { icon: LayoutDashboard, label: "Overview", path: "/dashboard" },
   { icon: Activity, label: "System", path: "/dashboard/system-monitoring" },
   { icon: Users, label: "Users", path: "/dashboard/users" },
-  { icon: Send, label: "Telegram", path: "/dashboard/admin/telegram" },
   { icon: Shield, label: "Security", path: "/dashboard/security" },
   { icon: Settings, label: "Settings", path: "/dashboard/settings" },
+];
+
+// Owner system settings navigation
+const ownerSettingsNavItems: NavItem[] = [
+  { icon: Send, label: "Telegram", path: "/dashboard/admin/telegram" },
+  { icon: Palette, label: "Branding", path: "/dashboard/admin/branding" },
+  { icon: Mail, label: "Email", path: "/dashboard/admin/email" },
+  { icon: Zap, label: "Features", path: "/dashboard/admin/features" },
 ];
 
 const ownerBottomNavItems: NavItem[] = [
@@ -218,6 +228,24 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
                 isActive={location.pathname === item.path}
               />
             ))}
+            
+            {/* System Settings Section - Owner Only */}
+            {role === "owner" && (
+              <>
+                <div className="pt-4 pb-2">
+                  <span className="px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    System Settings
+                  </span>
+                </div>
+                {ownerSettingsNavItems.map((item) => (
+                  <NavItemComponent
+                    key={item.path}
+                    item={item}
+                    isActive={location.pathname === item.path}
+                  />
+                ))}
+              </>
+            )}
           </nav>
 
           {/* User section */}
@@ -284,6 +312,24 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
                   isActive={location.pathname === item.path}
                 />
               ))}
+              
+              {/* System Settings Section - Owner Only */}
+              {role === "owner" && (
+                <>
+                  <div className="pt-4 pb-2">
+                    <span className="px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      System Settings
+                    </span>
+                  </div>
+                  {ownerSettingsNavItems.map((item) => (
+                    <NavItemComponent
+                      key={item.path}
+                      item={item}
+                      isActive={location.pathname === item.path}
+                    />
+                  ))}
+                </>
+              )}
             </nav>
 
             {/* User section */}
