@@ -3,16 +3,18 @@
  * 
  * Separate route for YouTube/Netflix-style video experience.
  * Supports HLS adaptive streaming and direct MP4 playback.
+ * Includes resume functionality - saves and restores playback position.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { HLSPlayer } from "@/components/media/HLSPlayer";
 import { VideoPlayer } from "@/components/media/VideoPlayer";
 import { useGuestAuth } from "@/contexts/GuestAuthContext";
+import { useGuestVideoProgress } from "@/hooks/useVideoProgress";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, Loader2, AlertTriangle, FileVideo, Wifi } from "lucide-react";
+import { ArrowLeft, Loader2, AlertTriangle, FileVideo, Wifi, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface FileInfo {
@@ -35,11 +37,30 @@ export default function GuestVideoPlayer() {
   const navigate = useNavigate();
   const { guest, loading: authLoading } = useGuestAuth();
   const [showHeader, setShowHeader] = useState(true);
+  const [showResumePrompt, setShowResumePrompt] = useState(false);
+  const [resumePosition, setResumePosition] = useState<number | null>(null);
   
   const [stream, setStream] = useState<StreamData | null>(null);
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const {
+    progress,
+    isLoading: progressLoading,
+    saveProgress,
+    markCompleted,
+  } = useGuestVideoProgress(fileId, guest?.id);
+
+  // Check if we should show resume prompt
+  useEffect(() => {
+    if (progress && !progress.completed && progress.positionSeconds > 10) {
+      setResumePosition(progress.positionSeconds);
+      setShowResumePrompt(true);
+      const timeout = setTimeout(() => setShowResumePrompt(false), 5000);
+      return () => clearTimeout(timeout);
+    }
+  }, [progress]);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -93,7 +114,6 @@ export default function GuestVideoPlayer() {
             const { type, url, hlsAvailable } = hlsResponse.data;
 
             if (type === 'hls' && hlsAvailable && url) {
-              // Get fallback MP4 URL
               let fallbackUrl: string | undefined;
               try {
                 const streamResponse = await supabase.functions.invoke('guest-stream-url', {
@@ -111,7 +131,6 @@ export default function GuestVideoPlayer() {
               return;
             }
 
-            // HLS not available, use returned URL as MP4
             if (url) {
               setStream({ mode: 'mp4', url });
               setIsLoading(false);
@@ -175,6 +194,16 @@ export default function GuestVideoPlayer() {
     };
   }, [fileInfo?.originalName]);
 
+  // Handle time updates (save progress)
+  const handleTimeUpdate = useCallback((currentTime: number, duration: number) => {
+    saveProgress(currentTime, duration);
+  }, [saveProgress]);
+
+  // Handle video ended
+  const handleEnded = useCallback(() => {
+    markCompleted();
+  }, [markCompleted]);
+
   // Handle back navigation
   const handleBack = () => {
     if (window.history.length > 1) {
@@ -184,7 +213,20 @@ export default function GuestVideoPlayer() {
     }
   };
 
-  if (authLoading || isLoading) {
+  // Handle resume
+  const handleResume = () => {
+    setShowResumePrompt(false);
+  };
+
+  // Handle start from beginning
+  const handleStartOver = () => {
+    setResumePosition(null);
+    setShowResumePrompt(false);
+  };
+
+  const isLoadingAll = authLoading || isLoading || progressLoading;
+
+  if (isLoadingAll) {
     return (
       <div className="fixed inset-0 bg-black flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -262,18 +304,60 @@ export default function GuestVideoPlayer() {
         </div>
       </motion.header>
 
+      {/* Resume Prompt */}
+      <AnimatePresence>
+        {showResumePrompt && resumePosition && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="absolute bottom-24 left-1/2 -translate-x-1/2 z-50"
+          >
+            <div className="bg-black/90 backdrop-blur-xl rounded-2xl border border-white/10 px-6 py-4 flex items-center gap-4 shadow-2xl">
+              <RotateCcw className="w-5 h-5 text-primary" />
+              <div className="text-sm">
+                <p className="text-white">Resume from {formatTime(resumePosition)}?</p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleStartOver}
+                  className="text-white/70 hover:text-white"
+                >
+                  Start Over
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleResume}
+                  className="bg-primary hover:bg-primary/90"
+                >
+                  Resume
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Video Player */}
       {stream.mode === 'hls' ? (
         <HLSPlayer
           src={stream.url}
           fallbackSrc={stream.fallbackUrl}
           className="w-full h-full"
+          initialTime={resumePosition || undefined}
+          onTimeUpdate={handleTimeUpdate}
+          onEnded={handleEnded}
           onError={(err) => console.error("Video playback error:", err)}
         />
       ) : (
         <VideoPlayer
           src={stream.url}
           className="w-full h-full"
+          initialTime={resumePosition || undefined}
+          onTimeUpdate={handleTimeUpdate}
+          onEnded={handleEnded}
           onError={() => setError('Unable to play this video')}
           crossOrigin={false}
         />
@@ -288,4 +372,15 @@ function formatFileSize(bytes: number): string {
   const sizes = ["B", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+function formatTime(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  if (mins >= 60) {
+    const hrs = Math.floor(mins / 60);
+    const remainingMins = mins % 60;
+    return `${hrs}:${remainingMins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }

@@ -3,30 +3,54 @@
  * 
  * Opens in a separate tab with its own URL for YouTube/Netflix-style experience.
  * Supports HLS adaptive streaming and direct MP4 playback.
+ * Includes resume functionality - saves and restores playback position.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { HLSPlayer } from "@/components/media/HLSPlayer";
 import { useVideoStream } from "@/hooks/useVideoStream";
-import { ArrowLeft, Loader2, AlertTriangle, FileVideo } from "lucide-react";
+import { useVideoProgress } from "@/hooks/useVideoProgress";
+import { useAuth } from "@/hooks/useAuth";
+import { ArrowLeft, Loader2, AlertTriangle, FileVideo, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function VideoPlayer() {
   const { fileId } = useParams<{ fileId: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [showHeader, setShowHeader] = useState(true);
+  const [showResumePrompt, setShowResumePrompt] = useState(false);
+  const [resumePosition, setResumePosition] = useState<number | null>(null);
   
   const { 
     streamUrl, 
     hlsUrl, 
     fallbackUrl, 
-    isLoading, 
+    isLoading: streamLoading, 
     error, 
     preferHls,
     fileInfo 
   } = useVideoStream(fileId);
+
+  const {
+    progress,
+    isLoading: progressLoading,
+    saveProgress,
+    markCompleted,
+  } = useVideoProgress(fileId, user?.id);
+
+  // Check if we should show resume prompt
+  useEffect(() => {
+    if (progress && !progress.completed && progress.positionSeconds > 10) {
+      setResumePosition(progress.positionSeconds);
+      setShowResumePrompt(true);
+      // Auto-hide after 5 seconds
+      const timeout = setTimeout(() => setShowResumePrompt(false), 5000);
+      return () => clearTimeout(timeout);
+    }
+  }, [progress]);
 
   // Auto-hide header after 3 seconds of inactivity
   useEffect(() => {
@@ -41,7 +65,6 @@ export default function VideoPlayer() {
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("touchstart", handleMouseMove);
     
-    // Initial timeout
     timeout = setTimeout(() => setShowHeader(false), 3000);
 
     return () => {
@@ -61,6 +84,16 @@ export default function VideoPlayer() {
     };
   }, [fileInfo?.originalName]);
 
+  // Handle time updates (save progress)
+  const handleTimeUpdate = useCallback((currentTime: number, duration: number) => {
+    saveProgress(currentTime, duration);
+  }, [saveProgress]);
+
+  // Handle video ended
+  const handleEnded = useCallback(() => {
+    markCompleted();
+  }, [markCompleted]);
+
   // Handle back navigation
   const handleBack = () => {
     if (window.history.length > 1) {
@@ -70,7 +103,18 @@ export default function VideoPlayer() {
     }
   };
 
-  // Determine which URL to use
+  // Handle resume
+  const handleResume = () => {
+    setShowResumePrompt(false);
+  };
+
+  // Handle start from beginning
+  const handleStartOver = () => {
+    setResumePosition(null);
+    setShowResumePrompt(false);
+  };
+
+  const isLoading = streamLoading || progressLoading;
   const videoSrc = preferHls && hlsUrl ? hlsUrl : streamUrl;
   const videoFallback = fallbackUrl || streamUrl;
 
@@ -150,12 +194,51 @@ export default function VideoPlayer() {
         </div>
       </motion.header>
 
+      {/* Resume Prompt */}
+      <AnimatePresence>
+        {showResumePrompt && resumePosition && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="absolute bottom-24 left-1/2 -translate-x-1/2 z-50"
+          >
+            <div className="bg-black/90 backdrop-blur-xl rounded-2xl border border-white/10 px-6 py-4 flex items-center gap-4 shadow-2xl">
+              <RotateCcw className="w-5 h-5 text-primary" />
+              <div className="text-sm">
+                <p className="text-white">Resume from {formatTime(resumePosition)}?</p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleStartOver}
+                  className="text-white/70 hover:text-white"
+                >
+                  Start Over
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleResume}
+                  className="bg-primary hover:bg-primary/90"
+                >
+                  Resume
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Video Player - Full Screen */}
       <HLSPlayer
         src={videoSrc}
         fallbackSrc={videoFallback}
         poster={fileInfo?.thumbnailUrl}
         className="w-full h-full"
+        initialTime={resumePosition || undefined}
+        onTimeUpdate={handleTimeUpdate}
+        onEnded={handleEnded}
         onError={(err) => console.error("Video playback error:", err)}
       />
     </div>
@@ -168,4 +251,15 @@ function formatFileSize(bytes: number): string {
   const sizes = ["B", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+function formatTime(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  if (mins >= 60) {
+    const hrs = Math.floor(mins / 60);
+    const remainingMins = mins % 60;
+    return `${hrs}:${remainingMins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
