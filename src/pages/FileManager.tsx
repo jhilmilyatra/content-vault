@@ -682,11 +682,15 @@ const FileManager = () => {
       const file = actionSheetTarget.item as FileItem;
       return [
         {
-          label: 'Preview',
+          label: file.mime_type.startsWith("video/") ? 'Play Video' : 'Preview',
           icon: <Eye className="w-5 h-5" />,
           onClick: () => {
-            setPreviewFile(file);
-            setPreviewOpen(true);
+            if (file.mime_type.startsWith("video/")) {
+              window.open(`/dashboard/video/${file.id}`, "_blank");
+            } else {
+              setPreviewFile(file);
+              setPreviewOpen(true);
+            }
           }
         },
         {
@@ -1301,6 +1305,9 @@ const FileManager = () => {
                     } else {
                       setSelectedFiles([...selectedFiles, file.id]);
                     }
+                  } else if (file.mime_type.startsWith("video/")) {
+                    // Open videos in dedicated player page (new tab)
+                    window.open(`/dashboard/video/${file.id}`, "_blank");
                   } else {
                     setPreviewFile(file);
                     setPreviewOpen(true);
@@ -1427,12 +1434,16 @@ const FileManager = () => {
                             className="text-white/70 hover:text-white focus:text-white focus:bg-white/10"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setPreviewFile(file);
-                              setPreviewOpen(true);
+                              if (file.mime_type.startsWith("video/")) {
+                                window.open(`/dashboard/video/${file.id}`, "_blank");
+                              } else {
+                                setPreviewFile(file);
+                                setPreviewOpen(true);
+                              }
                             }}
                           >
                             <Eye className="w-4 h-4 mr-2" />
-                            Preview
+                            {file.mime_type.startsWith("video/") ? 'Play Video' : 'Preview'}
                           </DropdownMenuItem>
                           <DropdownMenuItem 
                             className="text-white/70 hover:text-white focus:text-white focus:bg-white/10"
