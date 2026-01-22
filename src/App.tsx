@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { GuestAuthProvider } from "@/contexts/GuestAuthContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
@@ -18,7 +18,7 @@ import Auth from "./pages/Auth";
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const FileManager = lazy(() => import("./pages/FileManager"));
 const Sharing = lazy(() => import("./pages/Sharing"));
-const TrashBin = lazy(() => import("./pages/TrashBin"));
+
 const Analytics = lazy(() => import("./pages/Analytics"));
 const Settings = lazy(() => import("./pages/Settings"));
 const Plans = lazy(() => import("./pages/Plans"));
@@ -117,7 +117,7 @@ function App() {
                   <Route path="/dashboard/links" element={<ProtectedRoute><Sharing /></ProtectedRoute>} />
                   <Route path="/dashboard/sharing" element={<ProtectedRoute><Sharing /></ProtectedRoute>} />
                   <Route path="/dashboard/guests" element={<ProtectedRoute><Sharing /></ProtectedRoute>} />
-                  <Route path="/dashboard/trash" element={<ProtectedRoute><TrashBin /></ProtectedRoute>} />
+                  <Route path="/dashboard/trash" element={<Navigate to="/dashboard/files?tab=trash" replace />} />
                   <Route path="/dashboard/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
                   <Route path="/dashboard/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
                   <Route path="/dashboard/plans" element={<ProtectedRoute><Plans /></ProtectedRoute>} />

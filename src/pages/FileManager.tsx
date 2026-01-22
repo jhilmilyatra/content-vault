@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { supabase } from "@/integrations/supabase/client";
@@ -104,8 +105,24 @@ import { formatDistanceToNow } from "date-fns";
 
 
 const FileManager = () => {
+  // URL search params for tab state
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get("tab");
+  
   // Tab state - "files" or "trash"
-  const [activeTab, setActiveTab] = useState<"files" | "trash">("files");
+  const [activeTab, setActiveTab] = useState<"files" | "trash">(
+    tabFromUrl === "trash" ? "trash" : "files"
+  );
+  
+  // Sync tab with URL
+  const handleTabChange = useCallback((tab: "files" | "trash") => {
+    setActiveTab(tab);
+    if (tab === "trash") {
+      setSearchParams({ tab: "trash" });
+    } else {
+      setSearchParams({});
+    }
+  }, [setSearchParams]);
   
   const [files, setFiles] = useState<FileItem[]>([]);
   const [folders, setFolders] = useState<FolderItem[]>([]);
@@ -936,7 +953,7 @@ const FileManager = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.35 }}
           >
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "files" | "trash")}>
+            <Tabs value={activeTab} onValueChange={(v) => handleTabChange(v as "files" | "trash")}>
               <div className="flex items-center justify-between gap-4">
                 <TabsList className="bg-white/[0.03] border border-white/[0.08]">
                   <TabsTrigger value="files" className="gap-2 data-[state=active]:bg-white/[0.1]">
