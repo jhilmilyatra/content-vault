@@ -49,9 +49,10 @@ interface OwnerMessage {
 interface MemberChatPanelProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpen: () => void;
 }
 
-const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
+const MemberChatPanel = ({ isOpen, onClose, onOpen }: MemberChatPanelProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -489,7 +490,7 @@ const MemberChatPanel = ({ isOpen, onClose }: MemberChatPanelProps) => {
   if (!isOpen) {
     return (
       <Button
-        onClick={onClose}
+        onClick={onOpen}
         className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 h-12 w-12 sm:h-14 sm:w-14 rounded-full shadow-lg touch-manipulation active:scale-95 transition-transform"
         size="icon"
       >
