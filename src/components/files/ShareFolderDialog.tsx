@@ -13,7 +13,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Copy, Loader2, Link2, Users, Check } from 'lucide-react';
+import { Copy, Loader2, Link2, Users, Check, AlertCircle } from 'lucide-react';
+import { useFeatureFlag } from '@/contexts/FeatureFlagsContext';
 
 interface ShareFolderDialogProps {
   open: boolean;
@@ -34,6 +35,10 @@ const ShareFolderDialog = ({ open, onOpenChange, folder, userId }: ShareFolderDi
   const [loading, setLoading] = useState(false);
   const [existingShare, setExistingShare] = useState<FolderShare | null>(null);
   const [copied, setCopied] = useState(false);
+  
+  // Feature flags
+  const publicSharesEnabled = useFeatureFlag('feature_public_shares');
+  const guestRegistrationEnabled = useFeatureFlag('feature_guest_registration');
 
   useEffect(() => {
     const fetchExistingShare = async () => {
@@ -175,6 +180,20 @@ const ShareFolderDialog = ({ open, onOpenChange, folder, userId }: ShareFolderDi
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          {/* Feature disabled warnings */}
+          {(!publicSharesEnabled || !guestRegistrationEnabled) && (
+            <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>
+                {!publicSharesEnabled && !guestRegistrationEnabled
+                  ? 'Public sharing and guest registration are disabled by admin'
+                  : !publicSharesEnabled
+                  ? 'Public sharing is disabled by admin'
+                  : 'Guest registration is disabled by admin'}
+              </span>
+            </div>
+          )}
+
           {existingShare ? (
             <>
               <div className="flex items-center justify-between">
@@ -182,6 +201,7 @@ const ShareFolderDialog = ({ open, onOpenChange, folder, userId }: ShareFolderDi
                 <Switch
                   checked={existingShare.is_active}
                   onCheckedChange={handleToggleActive}
+                  disabled={!publicSharesEnabled || !guestRegistrationEnabled}
                 />
               </div>
 
@@ -197,7 +217,7 @@ const ShareFolderDialog = ({ open, onOpenChange, folder, userId }: ShareFolderDi
                     variant="outline"
                     size="icon"
                     onClick={handleCopyLink}
-                    disabled={!existingShare.is_active}
+                    disabled={!existingShare.is_active || !publicSharesEnabled || !guestRegistrationEnabled}
                   >
                     {copied ? (
                       <Check className="w-4 h-4 text-green-500" />
@@ -223,7 +243,10 @@ const ShareFolderDialog = ({ open, onOpenChange, folder, userId }: ShareFolderDi
               <p className="text-muted-foreground mb-4">
                 Create a shareable link that allows guests to register and access this folder.
               </p>
-              <Button onClick={handleCreateShare} disabled={loading}>
+              <Button 
+                onClick={handleCreateShare} 
+                disabled={loading || !publicSharesEnabled || !guestRegistrationEnabled}
+              >
                 {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Create Guest Share Link
               </Button>

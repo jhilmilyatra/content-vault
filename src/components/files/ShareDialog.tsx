@@ -5,9 +5,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Copy, Link, Loader2, Check } from 'lucide-react';
+import { Copy, Link, Loader2, Check, AlertCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useFeatureFlag } from '@/contexts/FeatureFlagsContext';
 
 interface ShareDialogProps {
   open: boolean;
@@ -20,6 +21,12 @@ const ShareDialog = ({ open, onOpenChange, fileId, fileName }: ShareDialogProps)
   const [loading, setLoading] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  
+  // Feature flags
+  const publicSharesEnabled = useFeatureFlag('feature_public_shares');
+  const passwordSharesEnabled = useFeatureFlag('feature_password_shares');
+  const expiringLinksEnabled = useFeatureFlag('feature_expiring_links');
+  const downloadLimitsEnabled = useFeatureFlag('feature_download_limits');
   
   // Options
   const [usePassword, setUsePassword] = useState(false);
@@ -155,19 +162,30 @@ const ShareDialog = ({ open, onOpenChange, fileId, fileName }: ShareDialogProps)
 
         {!shareUrl ? (
           <div className="space-y-6">
+            {/* Public shares disabled warning */}
+            {!publicSharesEnabled && (
+              <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>Public file sharing is currently disabled by admin</span>
+              </div>
+            )}
+
             {/* Password Protection */}
             <div className="flex items-center justify-between">
-              <div>
+              <div className={!passwordSharesEnabled ? 'opacity-50' : ''}>
                 <Label htmlFor="use-password">Password Protection</Label>
-                <p className="text-sm text-muted-foreground">Require password to download</p>
+                <p className="text-sm text-muted-foreground">
+                  {passwordSharesEnabled ? 'Require password to download' : 'Disabled by admin'}
+                </p>
               </div>
               <Switch
                 id="use-password"
                 checked={usePassword}
                 onCheckedChange={setUsePassword}
+                disabled={!passwordSharesEnabled}
               />
             </div>
-            {usePassword && (
+            {usePassword && passwordSharesEnabled && (
               <Input
                 type="password"
                 placeholder="Enter password"
@@ -178,17 +196,20 @@ const ShareDialog = ({ open, onOpenChange, fileId, fileName }: ShareDialogProps)
 
             {/* Expiration */}
             <div className="flex items-center justify-between">
-              <div>
+              <div className={!expiringLinksEnabled ? 'opacity-50' : ''}>
                 <Label htmlFor="use-expiration">Link Expiration</Label>
-                <p className="text-sm text-muted-foreground">Set when link expires</p>
+                <p className="text-sm text-muted-foreground">
+                  {expiringLinksEnabled ? 'Set when link expires' : 'Disabled by admin'}
+                </p>
               </div>
               <Switch
                 id="use-expiration"
                 checked={useExpiration}
                 onCheckedChange={setUseExpiration}
+                disabled={!expiringLinksEnabled}
               />
             </div>
-            {useExpiration && (
+            {useExpiration && expiringLinksEnabled && (
               <Select value={expirationDays} onValueChange={setExpirationDays}>
                 <SelectTrigger>
                   <SelectValue />
@@ -205,17 +226,20 @@ const ShareDialog = ({ open, onOpenChange, fileId, fileName }: ShareDialogProps)
 
             {/* Max Downloads */}
             <div className="flex items-center justify-between">
-              <div>
+              <div className={!downloadLimitsEnabled ? 'opacity-50' : ''}>
                 <Label htmlFor="use-max-downloads">Download Limit</Label>
-                <p className="text-sm text-muted-foreground">Limit number of downloads</p>
+                <p className="text-sm text-muted-foreground">
+                  {downloadLimitsEnabled ? 'Limit number of downloads' : 'Disabled by admin'}
+                </p>
               </div>
               <Switch
                 id="use-max-downloads"
                 checked={useMaxDownloads}
                 onCheckedChange={setUseMaxDownloads}
+                disabled={!downloadLimitsEnabled}
               />
             </div>
-            {useMaxDownloads && (
+            {useMaxDownloads && downloadLimitsEnabled && (
               <Select value={maxDownloads} onValueChange={setMaxDownloads}>
                 <SelectTrigger>
                   <SelectValue />
@@ -231,7 +255,11 @@ const ShareDialog = ({ open, onOpenChange, fileId, fileName }: ShareDialogProps)
               </Select>
             )}
 
-            <Button onClick={handleCreateLink} className="w-full" disabled={loading}>
+            <Button 
+              onClick={handleCreateLink} 
+              className="w-full" 
+              disabled={loading || !publicSharesEnabled}
+            >
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
