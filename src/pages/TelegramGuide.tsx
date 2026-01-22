@@ -5,8 +5,11 @@ import { Copy, Check, Bot, Code, Key, Send, FolderOpen, Zap } from "lucide-react
 import { useState } from "react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useFeatureFlag } from "@/contexts/FeatureFlagsContext";
+import { FeatureDisabled } from "@/components/FeatureDisabled";
 
 const TelegramGuide = () => {
+  const telegramUploadEnabled = useFeatureFlag("feature_telegram_upload");
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
 
   const copyCode = (code: string, section: string) => {
@@ -15,6 +18,18 @@ const TelegramGuide = () => {
     toast.success("Code copied to clipboard!");
     setTimeout(() => setCopiedSection(null), 2000);
   };
+
+  // Check feature flag - show disabled state
+  if (!telegramUploadEnabled) {
+    return (
+      <DashboardLayout>
+        <FeatureDisabled 
+          featureName="Telegram Uploads" 
+          message="Telegram upload integration has been temporarily disabled by the administrator."
+        />
+      </DashboardLayout>
+    );
+  }
 
   const pythonBasicBotCode = `import os
 import base64

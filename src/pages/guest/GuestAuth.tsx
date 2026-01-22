@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff, FolderOpen, Loader2, ArrowLeft, Cloud } from 'lucide-react';
+import { Eye, EyeOff, FolderOpen, Loader2, ArrowLeft, Cloud, Ban } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { CelestialHorizon } from '@/components/visuals/CelestialHorizon';
+import { useFeatureFlag } from '@/contexts/FeatureFlagsContext';
 
 const GuestAuth = () => {
   const [searchParams] = useSearchParams();
@@ -16,6 +17,7 @@ const GuestAuth = () => {
   const navigate = useNavigate();
   const { guest, signIn, signUp, loading: authLoading } = useGuestAuth();
   const { toast } = useToast();
+  const guestRegistrationEnabled = useFeatureFlag("feature_guest_registration");
 
   const [mode, setMode] = useState<'signin' | 'signup'>(shareCode ? 'signup' : 'signin');
   const [email, setEmail] = useState('');
@@ -24,6 +26,9 @@ const GuestAuth = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [folderInfo, setFolderInfo] = useState<{ name: string; ownerName: string } | null>(null);
+
+  // Block signup if guest registration is disabled
+  const canSignUp = guestRegistrationEnabled;
 
   useEffect(() => {
     if (guest && !authLoading) {
@@ -70,6 +75,17 @@ const GuestAuth = () => {
 
     try {
       if (mode === 'signup') {
+        // Check if guest registration is enabled
+        if (!canSignUp) {
+          toast({
+            title: 'Registration Disabled',
+            description: 'Guest registration has been temporarily disabled. Please try again later.',
+            variant: 'destructive',
+          });
+          setLoading(false);
+          return;
+        }
+
         if (!shareCode) {
           toast({
             title: 'Error',
@@ -305,14 +321,19 @@ const GuestAuth = () => {
                   Need to register with a folder link?{' '}
                   <button
                     onClick={() => setMode('signup')}
-                    className="text-violet-400 hover:text-violet-300 font-medium transition-colors"
-                    disabled={!shareCode}
+                    className="text-violet-400 hover:text-violet-300 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!shareCode || !canSignUp}
                   >
                     Sign up
                   </button>
                   {!shareCode && (
                     <span className="block text-xs mt-1 text-white/30">
                       (Requires a folder share link)
+                    </span>
+                  )}
+                  {shareCode && !canSignUp && (
+                    <span className="block text-xs mt-1 text-amber-400/70">
+                      (Registration temporarily disabled)
                     </span>
                   )}
                 </p>

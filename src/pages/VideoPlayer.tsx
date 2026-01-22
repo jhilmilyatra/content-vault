@@ -13,6 +13,8 @@ import { HLSPlayer } from "@/components/media/HLSPlayer";
 import { useVideoStream } from "@/hooks/useVideoStream";
 import { useVideoProgress } from "@/hooks/useVideoProgress";
 import { useAuth } from "@/hooks/useAuth";
+import { useFeatureFlag } from "@/contexts/FeatureFlagsContext";
+import { FeatureDisabled } from "@/components/FeatureDisabled";
 import { ArrowLeft, Loader2, AlertTriangle, FileVideo, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -20,6 +22,7 @@ export default function VideoPlayer() {
   const { fileId } = useParams<{ fileId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const videoStreamingEnabled = useFeatureFlag("feature_video_streaming");
   const [showHeader, setShowHeader] = useState(true);
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   const [resumePosition, setResumePosition] = useState<number | null>(null);
@@ -93,6 +96,18 @@ export default function VideoPlayer() {
   const handleEnded = useCallback(() => {
     markCompleted();
   }, [markCompleted]);
+
+  // Check feature flag - show disabled state (after all hooks)
+  if (!videoStreamingEnabled) {
+    return (
+      <div className="fixed inset-0 bg-black flex items-center justify-center">
+        <FeatureDisabled 
+          featureName="Video Streaming" 
+          message="Video streaming has been temporarily disabled. Please try again later."
+        />
+      </div>
+    );
+  }
 
   // Handle back navigation
   const handleBack = () => {
