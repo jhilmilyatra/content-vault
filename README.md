@@ -354,8 +354,15 @@ Guest (External, unlimited)
 1. User selects files in `FileManager.tsx`
 2. Small files (<5MB): Direct upload via `vps-upload` edge function
 3. Large files (>5MB): Chunked upload via `vps-chunked-upload` edge function
-4. Files stored on VPS storage server at `http://46.38.232.46:4000`
+4. Files stored on VPS storage server (served via CDN if configured)
 5. Metadata stored in `files` table
+6. **For videos**: Automatic thumbnail extraction and duration metadata
+
+**Video Metadata Extraction:**
+- Client-side thumbnail extraction at 2-second mark (or 10% of duration)
+- Thumbnail uploaded to VPS storage via `update-video-metadata` edge function
+- Duration stored in `duration_seconds` column
+- Thumbnails displayed in file grids with duration badges
 
 **Chunked Upload Flow:**
 1. **Init**: Create upload session with `action=init`
@@ -371,6 +378,7 @@ Guest (External, unlimited)
 - Rename
 - Soft delete (trash)
 - Permanent delete
+- Auto-generate video thumbnails
 
 ### Video Player Features
 
@@ -460,6 +468,7 @@ folders (
 files (
   id, user_id, folder_id, name, original_name,
   storage_path, mime_type, size_bytes,
+  thumbnail_url, duration_seconds,
   is_deleted, deleted_at
 )
 
@@ -542,8 +551,10 @@ audit_logs (
 
 | Function | Route | Purpose |
 |----------|-------|---------|
-| `vps-upload` | POST | Upload file to VPS storage |
+| `vps-upload` | POST | Upload file to VPS storage (CDN-aware) |
 | `vps-file` | GET/DELETE | Get or delete VPS files |
+| `vps-chunked-upload` | POST | Chunked upload for large files |
+| `update-video-metadata` | POST | Update video thumbnail and duration |
 | `shared-download` | GET | Download shared file |
 | `verify-share-link` | POST | Validate share link credentials |
 

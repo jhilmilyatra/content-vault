@@ -1,7 +1,7 @@
 # 🔌 SecureFiles API Documentation
 
-> **Version:** 1.1.0  
-> **Last Updated:** December 2024  
+> **Version:** 1.2.0  
+> **Last Updated:** January 2026  
 > **Base URL:** `https://dgmxndvvsbjjbnoibaid.supabase.co/functions/v1`
 
 ---
@@ -733,10 +733,16 @@ folder-uuid
     "created_at": "2024-12-27T10:30:00.000Z"
   },
   "storageType": "vps",
-  "url": "http://46.38.232.46:4000/files/user-uuid/unique-id.pdf",
-  "node": "http://46.38.232.46:4000"
+  "url": "https://cdn.example.com/files/user-uuid/unique-id.pdf",
+  "node": "https://cdn.example.com"
 }
 ```
+
+**CDN Support:**
+
+- If `VPS_CDN_URL` is configured, file URLs use the CDN endpoint
+- Otherwise, direct VPS IP is used
+- CDN provides HTTPS and caching for improved performance
 
 **Error Responses:**
 
@@ -1174,6 +1180,65 @@ Content-Type: application/json
 ---
 
 ## VPS Storage APIs
+
+### POST `/update-video-metadata`
+
+Update video file metadata including thumbnail and duration.
+
+**Authentication:** JWT (Bearer token)
+
+**Request Body:**
+
+```json
+{
+  "fileId": "file-uuid",
+  "thumbnailDataUrl": "data:image/jpeg;base64,...",
+  "durationSeconds": 120.5
+}
+```
+
+**Field Descriptions:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `fileId` | UUID | The file ID to update (required) |
+| `thumbnailUrl` | string | Direct URL to thumbnail image |
+| `thumbnailDataUrl` | string | Base64 data URL for thumbnail (uploaded to VPS) |
+| `durationSeconds` | number | Video duration in seconds |
+
+**Processing:**
+
+1. If `thumbnailDataUrl` is provided, extracts base64 image data
+2. Uploads thumbnail to VPS storage via `/upload-base64`
+3. Constructs CDN URL if `VPS_CDN_URL` is configured
+4. Updates `files` table with `thumbnail_url` and `duration_seconds`
+
+**Success Response (200):**
+
+```json
+{
+  "success": true,
+  "file": {
+    "id": "file-uuid",
+    "thumbnail_url": "https://cdn.example.com/files/user-uuid/video_thumb.jpg",
+    "duration_seconds": 120.5
+  },
+  "thumbnailUrl": "https://cdn.example.com/files/user-uuid/video_thumb.jpg",
+  "durationSeconds": 120.5
+}
+```
+
+**Error Responses:**
+
+| Status | Error | Cause |
+|--------|-------|-------|
+| 400 | "fileId is required" | Missing file ID |
+| 401 | "No authorization header" | Missing JWT |
+| 401 | "Invalid token" | Expired/invalid JWT |
+| 403 | "Unauthorized - not file owner" | User doesn't own file |
+| 404 | "File not found" | Invalid file ID |
+
+---
 
 ### GET `/vps-owner-stats`
 
