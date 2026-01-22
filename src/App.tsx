@@ -17,6 +17,7 @@ import Auth from "./pages/Auth";
 // Lazy loaded routes - Dashboard
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const FileManager = lazy(() => import("./pages/FileManager"));
+const VideoPlayer = lazy(() => import("./pages/VideoPlayer"));
 const Sharing = lazy(() => import("./pages/Sharing"));
 
 const Analytics = lazy(() => import("./pages/Analytics"));
@@ -114,6 +115,7 @@ function App() {
                   {/* Member Dashboard Routes */}
                   <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                   <Route path="/dashboard/files" element={<ProtectedRoute><FileManager /></ProtectedRoute>} />
+                  <Route path="/dashboard/video/:fileId" element={<ProtectedRoute><VideoPlayer /></ProtectedRoute>} />
                   <Route path="/dashboard/links" element={<ProtectedRoute><Sharing /></ProtectedRoute>} />
                   <Route path="/dashboard/sharing" element={<ProtectedRoute><Sharing /></ProtectedRoute>} />
                   <Route path="/dashboard/guests" element={<ProtectedRoute><Sharing /></ProtectedRoute>} />
