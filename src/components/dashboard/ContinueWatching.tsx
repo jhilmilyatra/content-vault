@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
@@ -59,8 +59,50 @@ export function ContinueWatching() {
   const [videos, setVideos] = useState<VideoWithProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [warmingStatus, setWarmingStatus] = useState<Record<string, boolean>>({});
+  const hoverTimeoutRef = useRef<Record<string, NodeJS.Timeout>>({});
 
-  // Pre-warm video stream URLs for instant playback
+  // Warm a single video URL (used for hover prefetch)
+  const warmSingleVideo = useCallback(async (video: VideoWithProgress) => {
+    const storagePath = video.file.storage_path;
+    if (!storagePath || warmingStatus[video.file_id]) return;
+
+    // Check if already cached
+    const cached = getCachedVideoStreamUrl(storagePath);
+    if (cached.url) {
+      setWarmingStatus(prev => ({ ...prev, [video.file_id]: true }));
+      return;
+    }
+
+    try {
+      await warmVideoStreamUrl(video.file_id, storagePath, { priority: 'high' });
+      setWarmingStatus(prev => ({ ...prev, [video.file_id]: true }));
+    } catch {
+      // Silent fail
+    }
+  }, [warmingStatus]);
+
+  // Hover prefetch handler with 150ms debounce
+  const handleHoverStart = useCallback((video: VideoWithProgress) => {
+    // Clear any existing timeout for this video
+    if (hoverTimeoutRef.current[video.file_id]) {
+      clearTimeout(hoverTimeoutRef.current[video.file_id]);
+    }
+
+    // Start warming after 150ms of hover (debounce quick pass-overs)
+    hoverTimeoutRef.current[video.file_id] = setTimeout(() => {
+      warmSingleVideo(video);
+    }, 150);
+  }, [warmSingleVideo]);
+
+  const handleHoverEnd = useCallback((fileId: string) => {
+    // Cancel warming if user leaves before debounce completes
+    if (hoverTimeoutRef.current[fileId]) {
+      clearTimeout(hoverTimeoutRef.current[fileId]);
+      delete hoverTimeoutRef.current[fileId];
+    }
+  }, []);
+
+  // Pre-warm video stream URLs for instant playback (background batch)
   const warmVideoUrls = useCallback(async (videoList: VideoWithProgress[]) => {
     const warmingPromises = videoList.map(async (video) => {
       const storagePath = video.file.storage_path;
@@ -87,6 +129,13 @@ export function ContinueWatching() {
     for (let i = 0; i < warmingPromises.length; i += BATCH_SIZE) {
       await Promise.all(warmingPromises.slice(i, i + BATCH_SIZE));
     }
+  }, []);
+
+  // Cleanup hover timeouts on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(hoverTimeoutRef.current).forEach(clearTimeout);
+    };
   }, []);
 
   useEffect(() => {
@@ -205,6 +254,10 @@ export function ContinueWatching() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.2, delay: index * 0.05 }}
             onClick={() => navigate(`/dashboard/video/${video.file_id}`)}
+            onMouseEnter={() => handleHoverStart(video)}
+            onMouseLeave={() => handleHoverEnd(video.file_id)}
+            onFocus={() => handleHoverStart(video)}
+            onBlur={() => handleHoverEnd(video.file_id)}
             className={cn(
               "group text-left rounded-lg overflow-hidden",
               "bg-muted/30 hover:bg-muted/50 transition-all",
