@@ -50,6 +50,31 @@ export default function GuestVideoPlayer() {
     markCompleted,
   } = useGuestVideoProgress(fileId, guest?.id);
 
+  // Preload video URLs at page level for faster initial buffering
+  useEffect(() => {
+    if (!stream?.url) return;
+    
+    const preloadLink = document.createElement('link');
+    preloadLink.rel = 'preload';
+    preloadLink.as = 'video';
+    preloadLink.href = stream.url;
+    document.head.appendChild(preloadLink);
+
+    let fallbackPreloadLink: HTMLLinkElement | null = null;
+    if (stream.fallbackUrl) {
+      fallbackPreloadLink = document.createElement('link');
+      fallbackPreloadLink.rel = 'preload';
+      fallbackPreloadLink.as = 'video';
+      fallbackPreloadLink.href = stream.fallbackUrl;
+      document.head.appendChild(fallbackPreloadLink);
+    }
+
+    return () => {
+      preloadLink.remove();
+      fallbackPreloadLink?.remove();
+    };
+  }, [stream]);
+
   // Check if we should show resume prompt
   useEffect(() => {
     if (progress && !progress.completed && progress.positionSeconds > 10) {
