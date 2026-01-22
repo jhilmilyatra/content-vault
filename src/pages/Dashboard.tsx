@@ -6,6 +6,7 @@ import { PageTransition } from "@/components/ui/PageTransition";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { formatFileSize } from "@/lib/fileService";
+import { ContinueWatching } from "@/components/dashboard/ContinueWatching";
 import { 
   HardDrive, 
   Link2, 
@@ -232,6 +233,9 @@ const Dashboard = () => {
               </>
             )}
           </motion.div>
+
+          {/* Continue Watching Section */}
+          <ContinueWatching />
 
           {/* Content Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
