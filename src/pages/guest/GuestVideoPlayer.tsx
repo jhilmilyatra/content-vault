@@ -23,6 +23,7 @@ interface FileInfo {
   mimeType: string;
   size: number;
   storagePath: string;
+  durationSeconds?: number | null;
 }
 
 interface StreamData {
@@ -122,6 +123,7 @@ export default function GuestVideoPlayer() {
           mimeType: file.mime_type,
           size: file.size_bytes,
           storagePath: file.storage_path,
+          durationSeconds: file.duration_seconds,
         });
 
         // Get direct stream URL for MP4 playback
@@ -271,9 +273,17 @@ export default function GuestVideoPlayer() {
               <h1 className="text-white font-medium truncate">
                 {fileInfo?.originalName || "Video"}
               </h1>
-              {fileInfo?.size && (
-                <p className="text-white/60 text-xs">
-                  {formatFileSize(fileInfo.size)}
+              {(fileInfo?.size || fileInfo?.durationSeconds) && (
+                <p className="text-white/60 text-xs flex items-center gap-2">
+                  {fileInfo?.durationSeconds && (
+                    <span>{formatTime(fileInfo.durationSeconds)}</span>
+                  )}
+                  {fileInfo?.durationSeconds && fileInfo?.size && (
+                    <span>•</span>
+                  )}
+                  {fileInfo?.size && (
+                    <span>{formatFileSize(fileInfo.size)}</span>
+                  )}
                 </p>
               )}
             </div>
