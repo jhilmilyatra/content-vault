@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { getCachedVideoStreamUrl, warmVideoStreamUrl } from "@/lib/videoStreamCache";
 
 interface StreamUrls {
   url?: string;
@@ -28,6 +29,7 @@ interface UseVideoStreamResult {
  * Hook to get MP4 streaming URLs for video playback
  * 
  * Features:
+ * - Checks cache first for instant playback
  * - Automatically fetches signed CDN URLs for MP4 streaming
  * - Long TTL (12 hours) for uninterrupted playback
  * - Auto-refresh before URL expiration
@@ -50,6 +52,18 @@ export function useVideoStream(
   const fetchStreamUrls = useCallback(async () => {
     if (!fileId && !storagePath) return;
 
+    // Check cache first for instant playback
+    if (storagePath) {
+      const cached = getCachedVideoStreamUrl(storagePath);
+      if (cached.url) {
+        console.log("📹 Using cached video stream URL");
+        setStreamUrl(cached.url);
+        setFallbackUrl(cached.fallbackUrl);
+        setIsLoading(false);
+        return;
+      }
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -59,6 +73,18 @@ export function useVideoStream(
         throw new Error("Not authenticated");
       }
 
+      // Use cache warming utility which also caches the result
+      if (fileId && storagePath) {
+        const result = await warmVideoStreamUrl(fileId, storagePath, { priority: 'high' });
+        if (result) {
+          setStreamUrl(result.url);
+          setFallbackUrl(result.fallbackUrl || null);
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      // Fallback to direct fetch
       const params = new URLSearchParams();
       if (fileId) params.set("id", fileId);
       if (storagePath) params.set("path", storagePath);
