@@ -50,6 +50,7 @@ const ReportManagement = lazy(() => import("./pages/admin/ReportManagement"));
 const GuestAuth = lazy(() => import("./pages/guest/GuestAuth"));
 const GuestPortal = lazy(() => import("./pages/guest/GuestPortal"));
 const GuestFolderView = lazy(() => import("./pages/guest/GuestFolderView"));
+const GuestVideoPlayer = lazy(() => import("./pages/guest/GuestVideoPlayer"));
 const GuestHelpDesk = lazy(() => import("./pages/guest/GuestHelpDesk"));
 
 // Lazy loaded routes - Dashboard sub-pages
@@ -110,6 +111,7 @@ function App() {
                   <Route path="/guest-auth" element={<GuestAuth />} />
                   <Route path="/guest-portal" element={<GuestPortal />} />
                   <Route path="/guest-portal/folder/:folderId" element={<GuestFolderView />} />
+                  <Route path="/guest-portal/video/:fileId" element={<GuestVideoPlayer />} />
                   <Route path="/guest-portal/help" element={<GuestHelpDesk />} />
                   
                   {/* Member Dashboard Routes */}
