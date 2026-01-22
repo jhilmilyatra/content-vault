@@ -2,19 +2,18 @@
  * GuestVideoPlayer - Dedicated full-screen video playback for guest users
  * 
  * Separate route for YouTube/Netflix-style video experience.
- * Supports HLS adaptive streaming and direct MP4 playback.
+ * Uses direct MP4 streaming for optimal compatibility.
  * Includes resume functionality - saves and restores playback position.
  */
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { HLSPlayer } from "@/components/media/HLSPlayer";
 import { VideoPlayer } from "@/components/media/VideoPlayer";
 import { useGuestAuth } from "@/contexts/GuestAuthContext";
 import { useGuestVideoProgress } from "@/hooks/useVideoProgress";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, Loader2, AlertTriangle, FileVideo, Wifi, RotateCcw } from "lucide-react";
+import { ArrowLeft, Loader2, AlertTriangle, FileVideo, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface FileInfo {
@@ -27,7 +26,6 @@ interface FileInfo {
 }
 
 interface StreamData {
-  mode: 'hls' | 'mp4';
   url: string;
   fallbackUrl?: string;
 }
@@ -101,53 +99,13 @@ export default function GuestVideoPlayer() {
           storagePath: file.storage_path,
         });
 
-        // Try HLS first
-        try {
-          const hlsResponse = await supabase.functions.invoke('guest-hls-url', {
-            body: {
-              guestId: guest.id,
-              storagePath: file.storage_path,
-            },
-          });
-
-          if (!hlsResponse.error && hlsResponse.data) {
-            const { type, url, hlsAvailable } = hlsResponse.data;
-
-            if (type === 'hls' && hlsAvailable && url) {
-              let fallbackUrl: string | undefined;
-              try {
-                const streamResponse = await supabase.functions.invoke('guest-stream-url', {
-                  body: { guestId: guest.id, storagePath: file.storage_path },
-                });
-                if (streamResponse.data?.url) {
-                  fallbackUrl = streamResponse.data.url;
-                }
-              } catch (e) {
-                console.warn('Could not get fallback URL:', e);
-              }
-
-              setStream({ mode: 'hls', url, fallbackUrl });
-              setIsLoading(false);
-              return;
-            }
-
-            if (url) {
-              setStream({ mode: 'mp4', url });
-              setIsLoading(false);
-              return;
-            }
-          }
-        } catch (hlsError) {
-          console.warn('HLS check failed, falling back to direct stream:', hlsError);
-        }
-
-        // Fallback: get direct stream URL
+        // Get direct stream URL for MP4 playback
         const streamResponse = await supabase.functions.invoke('guest-stream-url', {
           body: { guestId: guest.id, storagePath: file.storage_path },
         });
 
         if (streamResponse.data?.url) {
-          setStream({ mode: 'mp4', url: streamResponse.data.url });
+          setStream({ url: streamResponse.data.url, fallbackUrl: streamResponse.data.fallbackUrl });
         } else {
           throw new Error('Failed to get video stream URL');
         }
@@ -294,12 +252,6 @@ export default function GuestVideoPlayer() {
                 </p>
               )}
             </div>
-            {stream.mode === 'hls' && (
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/10 text-xs text-white/90">
-                <Wifi className="w-3 h-3 text-green-400" />
-                <span>Adaptive</span>
-              </div>
-            )}
           </div>
         </div>
       </motion.header>
@@ -341,27 +293,16 @@ export default function GuestVideoPlayer() {
       </AnimatePresence>
 
       {/* Video Player */}
-      {stream.mode === 'hls' ? (
-        <HLSPlayer
-          src={stream.url}
-          fallbackSrc={stream.fallbackUrl}
-          className="w-full h-full"
-          initialTime={resumePosition || undefined}
-          onTimeUpdate={handleTimeUpdate}
-          onEnded={handleEnded}
-          onError={(err) => console.error("Video playback error:", err)}
-        />
-      ) : (
-        <VideoPlayer
-          src={stream.url}
-          className="w-full h-full"
-          initialTime={resumePosition || undefined}
-          onTimeUpdate={handleTimeUpdate}
-          onEnded={handleEnded}
-          onError={() => setError('Unable to play this video')}
-          crossOrigin={false}
-        />
-      )}
+      <VideoPlayer
+        src={stream.url}
+        fallbackSrc={stream.fallbackUrl}
+        className="w-full h-full"
+        initialTime={resumePosition || undefined}
+        onTimeUpdate={handleTimeUpdate}
+        onEnded={handleEnded}
+        onError={() => setError('Unable to play this video')}
+        crossOrigin={false}
+      />
     </div>
   );
 }
