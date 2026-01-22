@@ -94,8 +94,21 @@ Deno.serve(async (req) => {
     const hasVps = vpsEndpoint && vpsApiKey;
 
     const url = new URL(req.url);
-    const fileId = url.searchParams.get("id");
-    const storagePath = url.searchParams.get("path"); // Alternative: direct path access
+    
+    // Support both GET params and POST body
+    let fileId = url.searchParams.get("id");
+    let storagePath = url.searchParams.get("path");
+    
+    // Parse POST body if present
+    if (req.method === "POST") {
+      try {
+        const body = await req.json();
+        fileId = body.fileId || body.id || fileId;
+        storagePath = body.storagePath || body.path || storagePath;
+      } catch {
+        // Body parsing failed, continue with URL params
+      }
+    }
 
     if (!fileId && !storagePath) {
       return new Response(
