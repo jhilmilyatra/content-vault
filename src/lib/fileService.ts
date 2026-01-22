@@ -2,6 +2,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCachedUrl, setCachedUrl, clearUrlCache } from "@/lib/urlCache";
 import { warmVideoStreamUrl, isVideoFile } from "@/lib/videoStreamCache";
 import { extractVideoMetadata, updateVideoMetadata, isVideo } from "@/lib/videoMetadata";
+import { extractImageMetadata, isImage } from "@/lib/imageMetadata";
+import { startThumbnailProcessing, finishThumbnailProcessing } from "@/lib/thumbnailProcessing";
 import { toast } from "@/hooks/use-toast";
 
 export interface FileItem {
@@ -403,6 +405,9 @@ async function extractAndUploadVideoMetadata(
 ): Promise<void> {
   const fileName = file.name.length > 30 ? file.name.slice(0, 27) + '...' : file.name;
   
+  // Mark file as processing
+  startThumbnailProcessing(fileId);
+  
   try {
     console.log('🎬 Extracting video metadata for:', file.name);
     
@@ -448,6 +453,69 @@ async function extractAndUploadVideoMetadata(
       variant: "destructive",
     });
     // Non-critical - don't throw
+  } finally {
+    // Mark file as finished processing
+    finishThumbnailProcessing(fileId);
+  }
+}
+
+/**
+ * Extract image metadata and upload thumbnail after image upload
+ * Runs in background - does not block upload completion
+ */
+async function extractAndUploadImageMetadata(
+  file: File,
+  fileId: string,
+  authToken: string
+): Promise<void> {
+  const fileName = file.name.length > 30 ? file.name.slice(0, 27) + '...' : file.name;
+  
+  // Mark file as processing
+  startThumbnailProcessing(fileId);
+  
+  try {
+    console.log('🖼️ Extracting image metadata for:', file.name);
+    
+    // Extract metadata and generate thumbnail
+    const metadata = await extractImageMetadata(file, {
+      thumbnailWidth: 480,
+      thumbnailQuality: 0.8,
+    });
+
+    // Skip if no thumbnail was generated (image smaller than thumbnail size)
+    if (!metadata.thumbnailDataUrl) {
+      console.log('ℹ️ Image already small, skipping thumbnail generation');
+      return;
+    }
+
+    console.log(`📊 Image metadata: ${metadata.width}x${metadata.height}`);
+
+    // Update file record with thumbnail (using video metadata endpoint)
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const response = await fetch(`${supabaseUrl}/functions/v1/update-video-metadata`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        fileId,
+        thumbnailDataUrl: metadata.thumbnailDataUrl,
+        mediaType: 'image',
+      }),
+    });
+
+    if (response.ok) {
+      console.log('✅ Image thumbnail uploaded successfully');
+    } else {
+      console.warn('Failed to upload image thumbnail:', response.status);
+    }
+  } catch (error) {
+    console.warn('Failed to extract image metadata:', error);
+    // Non-critical - don't throw
+  } finally {
+    // Mark file as finished processing
+    finishThumbnailProcessing(fileId);
   }
 }
 
@@ -538,6 +606,12 @@ const uploadToVPSWithProgress = (
               warmVideoStreamUrl(uploadedFile.id, uploadedFile.storage_path, { priority: 'high' })
                 .then(() => console.log('📹 Video stream pre-warmed after upload'))
                 .catch(() => {}); // Silent fail - not critical
+            }
+            
+            // For image files: extract thumbnail in background
+            if (isImage(uploadedFile.mime_type, uploadedFile.original_name)) {
+              extractAndUploadImageMetadata(file, uploadedFile.id, sessionData.session!.access_token)
+                .catch((err) => console.warn('Image metadata extraction failed:', err));
             }
             
             resolve(uploadedFile);
@@ -1016,6 +1090,15 @@ const uploadChunked = async (
         warmVideoStreamUrl(uploadedFile.id, uploadedFile.storage_path, { priority: 'high' })
           .then(() => console.log('📹 Video stream pre-warmed after upload'))
           .catch(() => {}); // Silent fail - not critical
+      }
+      
+      // For image files: extract thumbnail in background
+      if (isImage(uploadedFile.mime_type, uploadedFile.original_name)) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData.session) {
+          extractAndUploadImageMetadata(file, uploadedFile.id, sessionData.session.access_token)
+            .catch((err) => console.warn('Image metadata extraction failed:', err));
+        }
       }
 
       return uploadedFile;

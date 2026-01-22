@@ -11,6 +11,7 @@ interface UpdateMetadataRequest {
   thumbnailUrl?: string | null;
   thumbnailDataUrl?: string | null; // Base64 data URL for inline thumbnail
   durationSeconds?: number;
+  mediaType?: 'video' | 'image'; // Type of media being processed
 }
 
 Deno.serve(async (req) => {
@@ -47,7 +48,7 @@ Deno.serve(async (req) => {
     }
 
     const body: UpdateMetadataRequest = await req.json();
-    const { fileId, thumbnailUrl, thumbnailDataUrl, durationSeconds } = body;
+    const { fileId, thumbnailUrl, thumbnailDataUrl, durationSeconds, mediaType = 'video' } = body;
 
     if (!fileId) {
       return new Response(
@@ -91,7 +92,8 @@ Deno.serve(async (req) => {
           // Generate thumbnail filename from storage path
           const storagePath = file.storage_path;
           const baseName = storagePath.replace(/\.[^.]+$/, '');
-          const thumbnailFileName = `${baseName.split('/').pop()}_thumb.jpg`;
+          const thumbSuffix = mediaType === 'image' ? '_img_thumb.jpg' : '_thumb.jpg';
+          const thumbnailFileName = `${baseName.split('/').pop()}${thumbSuffix}`;
 
           // Upload thumbnail to VPS using base64 endpoint
           const vpsResponse = await fetch(`${vpsEndpoint}/upload-base64`, {
@@ -170,7 +172,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`✅ Updated video metadata for ${fileId}: thumbnail=${!!finalThumbnailUrl}, duration=${durationSeconds}s`);
+    console.log(`✅ Updated ${mediaType} metadata for ${fileId}: thumbnail=${!!finalThumbnailUrl}, duration=${durationSeconds}s`);
 
     return new Response(
       JSON.stringify({
