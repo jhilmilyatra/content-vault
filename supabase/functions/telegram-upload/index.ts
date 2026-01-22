@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isFeatureEnabled, featureDisabledResponse } from "../_shared/feature-flags.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -45,6 +46,17 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    
+    // Create admin client for feature flag check
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    });
+
+    // Check feature flag for telegram upload
+    const telegramUploadEnabled = await isFeatureEnabled(supabaseAdmin, 'feature_telegram_upload');
+    if (!telegramUploadEnabled) {
+      return featureDisabledResponse('Telegram upload', corsHeaders);
+    }
     
     // Get API token from header
     const apiToken = req.headers.get("x-api-key");

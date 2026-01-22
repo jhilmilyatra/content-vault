@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isFeatureEnabled, featureDisabledResponse } from "../_shared/feature-flags.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -25,6 +26,12 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
+
+    // Check feature flag for member chat
+    const memberChatEnabled = await isFeatureEnabled(supabaseAdmin, 'feature_member_chat');
+    if (!memberChatEnabled) {
+      return featureDisabledResponse('Chat', corsHeaders);
+    }
 
     // Verify guest exists
     const { data: guest, error: guestError } = await supabaseAdmin

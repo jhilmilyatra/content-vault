@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isFeatureEnabled, featureDisabledResponse } from "../_shared/feature-flags.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -50,6 +51,12 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       { auth: { persistSession: false } }
     );
+
+    // Check feature flag for public shares
+    const publicSharesEnabled = await isFeatureEnabled(supabaseAdmin, 'feature_public_shares');
+    if (!publicSharesEnabled) {
+      return featureDisabledResponse('Public file sharing', corsHeaders);
+    }
 
     const url = new URL(req.url);
     const shortCode = url.searchParams.get('code');

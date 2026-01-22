@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isFeatureEnabled, featureDisabledResponse } from "../_shared/feature-flags.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -34,6 +35,12 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
+
+    // Check feature flag for guest registration
+    const guestRegistrationEnabled = await isFeatureEnabled(supabaseAdmin, 'feature_guest_registration');
+    if (!guestRegistrationEnabled) {
+      return featureDisabledResponse('Guest registration', corsHeaders);
+    }
 
     // Verify the share code exists and is active
     const { data: shareData, error: shareError } = await supabaseAdmin
