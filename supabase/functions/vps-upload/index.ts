@@ -158,11 +158,16 @@ Deno.serve(async (req) => {
     
     // Use the path returned by VPS server
     const storagePath = vpsResult.path;
-    const fileUrl = `${vpsEndpoint}${vpsResult.url}`;
-    const storageType = "vps";
-    const usedNode = vpsEndpoint;
     
-    console.log(`✅ VPS upload successful: ${storagePath}`);
+    // Construct file URL using CDN if available
+    const cdnUrl = Deno.env.get("VPS_CDN_URL");
+    const fileUrl = cdnUrl 
+      ? `${cdnUrl}${vpsResult.url}` 
+      : `${vpsEndpoint}${vpsResult.url}`;
+    const storageType = "vps";
+    const usedNode = cdnUrl || vpsEndpoint;
+    
+    console.log(`✅ VPS upload successful: ${storagePath} via ${usedNode}`);
 
     // Create file record in database
     const { data: fileRecord, error: dbError } = await supabase
