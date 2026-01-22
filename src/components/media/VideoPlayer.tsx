@@ -15,9 +15,21 @@ interface VideoPlayerProps {
   className?: string;
   /** Set to true for cross-origin sources that support CORS, false for proxied/guest URLs */
   crossOrigin?: boolean;
+  /** Poster image URL */
+  poster?: string;
+  /** Preload strategy: "none" | "metadata" | "auto" */
+  preload?: "none" | "metadata" | "auto";
 }
 
-export function VideoPlayer({ src, fallbackSrc, onError, className = "", crossOrigin = true }: VideoPlayerProps) {
+export function VideoPlayer({ 
+  src, 
+  fallbackSrc, 
+  onError, 
+  className = "", 
+  crossOrigin = true,
+  poster,
+  preload = "auto"
+}: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
@@ -219,6 +231,20 @@ export function VideoPlayer({ src, fallbackSrc, onError, className = "", crossOr
     
     console.error(`Video error: code=${errorCode}, message=${errorMessage}, src=${currentSrc?.substring(0, 100)}`);
     
+    // Format errors and decode errors - immediately try fallback (don't retry same source)
+    if (errorCode === MediaError.MEDIA_ERR_DECODE || 
+        (errorCode === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED && errorMessage.toLowerCase().includes('format'))) {
+      console.log('Format/decode error detected, trying fallback immediately');
+      if (fallbackSrc && !useFallback) {
+        console.log('Switching to fallback source:', fallbackSrc?.substring(0, 80));
+        setUseFallback(true);
+        setCurrentSrc(fallbackSrc);
+        setRetryCount(0);
+        setIsBuffering(true);
+        return;
+      }
+    }
+    
     // Network errors - retry with exponential backoff
     if (errorCode === MediaError.MEDIA_ERR_NETWORK && retryCount < MAX_RETRIES) {
       const delay = Math.min(1000 * Math.pow(2, retryCount), 8000);
@@ -235,21 +261,20 @@ export function VideoPlayer({ src, fallbackSrc, onError, className = "", crossOr
       return;
     }
     
-    // Source errors (often CORS or 404) - retry once
-    if (errorCode === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED && retryCount < 1) {
-      console.log('Source error, retrying with fresh load...');
-      setRetryCount(prev => prev + 1);
-      setIsBuffering(true);
-      
-      setTimeout(() => {
-        if (video) {
-          video.load();
-        }
-      }, 1500);
-      return;
+    // Source errors (often CORS or 404) - try fallback first
+    if (errorCode === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
+      // Try fallback if available
+      if (fallbackSrc && !useFallback) {
+        console.log('Source not supported, trying fallback:', fallbackSrc?.substring(0, 80));
+        setUseFallback(true);
+        setCurrentSrc(fallbackSrc);
+        setRetryCount(0);
+        setIsBuffering(true);
+        return;
+      }
     }
     
-    // Try fallback if available
+    // Try fallback if available (last resort)
     if (fallbackSrc && !useFallback) {
       console.log('Primary source failed, trying fallback:', fallbackSrc);
       setUseFallback(true);
@@ -442,6 +467,7 @@ export function VideoPlayer({ src, fallbackSrc, onError, className = "", crossOr
           <video
             ref={videoRef}
             src={currentSrc}
+            poster={poster}
             className={`max-w-full max-h-full object-contain ${
               isPortraitVideo ? 'h-full w-auto' : 'w-full h-auto'
             }`}
@@ -457,7 +483,7 @@ export function VideoPlayer({ src, fallbackSrc, onError, className = "", crossOr
             onCanPlayThrough={handleCanPlayThrough}
             playsInline
             crossOrigin={crossOrigin ? "anonymous" : undefined}
-            preload="auto"
+            preload={preload}
             controlsList="nodownload"
           />
         </div>
@@ -602,6 +628,7 @@ export function VideoPlayer({ src, fallbackSrc, onError, className = "", crossOr
         <video
           ref={videoRef}
           src={currentSrc}
+          poster={poster}
           className="max-w-full max-h-full object-contain"
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
@@ -615,7 +642,7 @@ export function VideoPlayer({ src, fallbackSrc, onError, className = "", crossOr
           onCanPlayThrough={handleCanPlayThrough}
           playsInline
           crossOrigin={crossOrigin ? "anonymous" : undefined}
-          preload="auto"
+          preload={preload}
           controlsList="nodownload"
         />
       </div>

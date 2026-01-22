@@ -130,7 +130,41 @@ export function FilePreviewModal({
         }
       }).catch((err) => console.error('Failed to track view:', err));
 
-      // Get base file URL from VPS
+      // For video files - try the new dedicated video-stream endpoint first
+      if (baseFileType === 'mp4') {
+        try {
+          const videoStreamResponse = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/video-stream?id=${file.id}`,
+            {
+              headers: {
+                Authorization: `Bearer ${sessionData.session.access_token}`,
+              },
+            }
+          );
+
+          if (videoStreamResponse.ok) {
+            const streamData = await videoStreamResponse.json();
+            console.log('📹 Using dedicated video stream endpoint:', streamData.type);
+            
+            // Prefer CDN URL for best performance
+            const primaryUrl = streamData.url;
+            const fallbackUrl = streamData.fallbackUrl || streamData.hlsUrl;
+            
+            setStream({ 
+              mode: 'mp4', 
+              url: primaryUrl, 
+              fallbackUrl, 
+              vpsOnline: streamData.type === 'cdn' || streamData.type === 'vps-direct'
+            });
+            setLoading(false);
+            return;
+          }
+        } catch (e) {
+          console.warn('Video stream endpoint failed, falling back:', e);
+        }
+      }
+
+      // Fallback: Get base file URL from VPS
       const fileResponse = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=url`,
         {
@@ -164,10 +198,9 @@ export function FilePreviewModal({
       const fallbackUrl = urlData.fallbackUrl || null;
       const vpsOnline = urlData.storage === 'vps';
 
-      // For video files - SKIP HLS for now since CDN tunnel is unreliable
-      // Use direct MP4 streaming which handles errors better
+      // For video files - use CDN URL
       if (baseFileType === 'mp4') {
-        console.log('📹 Using direct MP4 stream (skipping HLS due to CDN issues)');
+        console.log('📹 Using direct MP4 stream via CDN');
         
         // If VPS URL looks like a Cloudflare tunnel (trycloudflare.com), 
         // prefer fallback or proxy approach
