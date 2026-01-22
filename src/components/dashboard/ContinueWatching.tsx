@@ -3,9 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { Play, Clock } from "lucide-react";
+import { Play, Clock, ArrowUpRight } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface VideoWithProgress {
@@ -101,9 +102,20 @@ export function ContinueWatching() {
   if (loading) {
     return (
       <div className="bg-card border border-border rounded-lg">
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-          <Play className="w-4 h-4 text-muted-foreground" />
-          <h2 className="text-sm font-medium text-foreground">Continue Watching</h2>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Play className="w-4 h-4 text-muted-foreground" />
+            <h2 className="text-sm font-medium text-foreground">Continue Watching</h2>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={() => navigate('/dashboard/watch-history')}
+            className="text-xs text-muted-foreground hover:text-foreground h-8"
+          >
+            View history
+            <ArrowUpRight className="w-3 h-3 ml-1" />
+          </Button>
         </div>
         <div className="p-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
           {[...Array(3)].map((_, i) => (
@@ -129,9 +141,20 @@ export function ContinueWatching() {
       transition={{ duration: 0.3, delay: 0.18 }}
       className="bg-card border border-border rounded-lg"
     >
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-        <Play className="w-4 h-4 text-primary" />
-        <h2 className="text-sm font-medium text-foreground">Continue Watching</h2>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <div className="flex items-center gap-2">
+          <Play className="w-4 h-4 text-primary" />
+          <h2 className="text-sm font-medium text-foreground">Continue Watching</h2>
+        </div>
+        <Button 
+          variant="ghost" 
+          size="sm"
+          onClick={() => navigate('/dashboard/watch-history')}
+          className="text-xs text-muted-foreground hover:text-foreground h-8"
+        >
+          View history
+          <ArrowUpRight className="w-3 h-3 ml-1" />
+        </Button>
       </div>
 
       <div className="p-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
