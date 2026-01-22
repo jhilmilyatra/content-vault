@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCachedUrl, setCachedUrl, clearUrlCache } from "@/lib/urlCache";
 import { warmVideoStreamUrl, isVideoFile } from "@/lib/videoStreamCache";
 import { extractVideoMetadata, updateVideoMetadata, isVideo } from "@/lib/videoMetadata";
+import { toast } from "@/hooks/use-toast";
 
 export interface FileItem {
   id: string;
@@ -400,8 +401,16 @@ async function extractAndUploadVideoMetadata(
   fileId: string,
   authToken: string
 ): Promise<void> {
+  const fileName = file.name.length > 30 ? file.name.slice(0, 27) + '...' : file.name;
+  
   try {
     console.log('🎬 Extracting video metadata for:', file.name);
+    
+    // Show toast notification for thumbnail extraction start
+    toast({
+      title: "Generating thumbnail",
+      description: `Processing ${fileName}...`,
+    });
     
     // Extract metadata and generate thumbnail
     const metadata = await extractVideoMetadata(file, {
@@ -423,8 +432,21 @@ async function extractAndUploadVideoMetadata(
     );
 
     console.log('✅ Video metadata updated successfully');
+    
+    // Show success toast
+    toast({
+      title: "Thumbnail ready",
+      description: `${fileName} thumbnail generated`,
+    });
   } catch (error) {
     console.warn('Failed to extract video metadata:', error);
+    
+    // Show error toast (non-blocking)
+    toast({
+      title: "Thumbnail failed",
+      description: `Could not generate thumbnail for ${fileName}`,
+      variant: "destructive",
+    });
     // Non-critical - don't throw
   }
 }
