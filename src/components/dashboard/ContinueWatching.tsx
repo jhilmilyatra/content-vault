@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { Play, Clock, ArrowUpRight } from "lucide-react";
+import { Play, Clock, ArrowUpRight, Zap } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { warmVideoStreamUrl, getCachedVideoStreamUrl } from "@/lib/videoStreamCache";
 
 interface VideoWithProgress {
   id: string;
@@ -20,7 +21,10 @@ interface VideoWithProgress {
     id: string;
     name: string;
     thumbnail_url: string | null;
+    storage_path: string;
   };
+  // Cache status for UI indicator
+  isCached?: boolean;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -54,6 +58,36 @@ export function ContinueWatching() {
   const navigate = useNavigate();
   const [videos, setVideos] = useState<VideoWithProgress[]>([]);
   const [loading, setLoading] = useState(true);
+  const [warmingStatus, setWarmingStatus] = useState<Record<string, boolean>>({});
+
+  // Pre-warm video stream URLs for instant playback
+  const warmVideoUrls = useCallback(async (videoList: VideoWithProgress[]) => {
+    const warmingPromises = videoList.map(async (video) => {
+      const storagePath = video.file.storage_path;
+      if (!storagePath) return;
+
+      // Check if already cached
+      const cached = getCachedVideoStreamUrl(storagePath);
+      if (cached.url) {
+        setWarmingStatus(prev => ({ ...prev, [video.file_id]: true }));
+        return;
+      }
+
+      // Warm the URL in background
+      try {
+        await warmVideoStreamUrl(video.file_id, storagePath, { priority: 'low' });
+        setWarmingStatus(prev => ({ ...prev, [video.file_id]: true }));
+      } catch {
+        // Silent fail - not critical
+      }
+    });
+
+    // Process in parallel (max 3 at a time)
+    const BATCH_SIZE = 3;
+    for (let i = 0; i < warmingPromises.length; i += BATCH_SIZE) {
+      await Promise.all(warmingPromises.slice(i, i + BATCH_SIZE));
+    }
+  }, []);
 
   useEffect(() => {
     const fetchContinueWatching = async () => {
@@ -72,7 +106,8 @@ export function ContinueWatching() {
             file:files!video_progress_file_id_fkey (
               id,
               name,
-              thumbnail_url
+              thumbnail_url,
+              storage_path
             )
           `)
           .eq("user_id", user.id)
@@ -89,6 +124,11 @@ export function ContinueWatching() {
         ) as VideoWithProgress[];
 
         setVideos(validVideos);
+
+        // Pre-warm video URLs for instant playback
+        if (validVideos.length > 0) {
+          warmVideoUrls(validVideos);
+        }
       } catch (error) {
         console.error("Error fetching continue watching:", error);
       } finally {
@@ -97,7 +137,7 @@ export function ContinueWatching() {
     };
 
     fetchContinueWatching();
-  }, [user]);
+  }, [user, warmVideoUrls]);
 
   if (loading) {
     return (
@@ -196,6 +236,14 @@ export function ContinueWatching() {
               {video.duration_seconds && (
                 <div className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/70 text-[10px] text-white font-medium">
                   {formatDuration(video.duration_seconds - video.position_seconds)} left
+                </div>
+              )}
+
+              {/* Instant playback indicator (cached) */}
+              {warmingStatus[video.file_id] && (
+                <div className="absolute top-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/90 text-[9px] text-primary-foreground font-medium">
+                  <Zap className="w-2.5 h-2.5" />
+                  Instant
                 </div>
               )}
 
