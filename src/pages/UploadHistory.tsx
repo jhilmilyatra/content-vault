@@ -41,6 +41,7 @@ interface FileRecord {
   size_bytes: number;
   mime_type: string;
   duration_seconds: number | null;
+  thumbnail_url: string | null;
   created_at: string;
   folder_id: string | null;
   folder?: { name: string } | null;
@@ -109,7 +110,7 @@ const UploadHistory = () => {
     try {
       let query = supabase
         .from("files")
-        .select("id, name, original_name, size_bytes, mime_type, duration_seconds, created_at, folder_id")
+        .select("id, name, original_name, size_bytes, mime_type, duration_seconds, thumbnail_url, created_at, folder_id")
         .eq("user_id", user.id)
         .eq("is_deleted", false)
         .order(sortField, { ascending: sortOrder === "asc" })
@@ -426,19 +427,27 @@ const UploadHistory = () => {
                             variants={itemVariants}
                             className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/[0.03] transition-all group cursor-pointer"
                           >
-                            <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${
-                              category === "video" ? "bg-primary/20" :
-                              category === "image" ? "bg-emerald-500/20" :
-                              category === "audio" ? "bg-violet-500/20" :
-                              "bg-muted/50"
-                            }`}>
-                              <Icon className={`w-5 h-5 ${
-                                category === "video" ? "text-primary" :
-                                category === "image" ? "text-emerald-400" :
-                                category === "audio" ? "text-violet-400" :
-                                "text-muted-foreground"
-                              }`} />
-                            </div>
+                                            <div className={`w-11 h-11 rounded-xl flex items-center justify-center overflow-hidden ${
+                                              category === "video" ? "bg-primary/20" :
+                                              category === "image" ? "bg-emerald-500/20" :
+                                              category === "audio" ? "bg-violet-500/20" :
+                                              "bg-muted/50"
+                                            }`}>
+                                              {file.thumbnail_url && (category === "video" || category === "image") ? (
+                                                <img 
+                                                  src={file.thumbnail_url} 
+                                                  alt={file.name}
+                                                  className="w-full h-full object-cover"
+                                                />
+                                              ) : (
+                                                <Icon className={`w-5 h-5 ${
+                                                  category === "video" ? "text-primary" :
+                                                  category === "image" ? "text-emerald-400" :
+                                                  category === "audio" ? "text-violet-400" :
+                                                  "text-muted-foreground"
+                                                }`} />
+                                              )}
+                                            </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">
                                 {file.name}

@@ -1626,9 +1626,19 @@ const FileManager = () => {
                             className="border-white/20 data-[state=checked]:bg-gold data-[state=checked]:border-gold"
                           />
                         )}
-                        <div className="w-10 h-10 rounded-lg bg-destructive/20 flex items-center justify-center flex-shrink-0">
-                          <IconComponent className="w-5 h-5 text-destructive" />
-                        </div>
+                        {file.thumbnail_url && (file.mime_type.startsWith('video/') || file.mime_type.startsWith('image/')) ? (
+                          <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 opacity-60">
+                            <img 
+                              src={file.thumbnail_url} 
+                              alt={file.name}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-destructive/20 flex items-center justify-center flex-shrink-0">
+                            <IconComponent className="w-5 h-5 text-destructive" />
+                          </div>
+                        )}
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-white truncate">{file.name}</p>
                           <p className="text-xs text-white/40">
