@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
       // Get file with folder info
       const { data: fileData, error: fileError } = await supabaseAdmin
         .from("files")
-        .select("id, name, original_name, mime_type, size_bytes, storage_path, folder_id")
+        .select("id, name, original_name, mime_type, size_bytes, storage_path, folder_id, duration_seconds, thumbnail_url")
         .eq("id", fileId)
         .eq("is_deleted", false)
         .single();
@@ -124,10 +124,10 @@ Deno.serve(async (req) => {
           .select("id, name, description, parent_id")
           .eq("parent_id", folderId)
           .order("name"),
-        // Get files - only needed columns
+        // Get files - include duration_seconds for video badges
         supabaseAdmin
           .from("files")
-          .select("id, name, original_name, mime_type, size_bytes, storage_path")
+          .select("id, name, original_name, mime_type, size_bytes, storage_path, duration_seconds, thumbnail_url")
           .eq("folder_id", folderId)
           .eq("is_deleted", false)
           .order("name"),

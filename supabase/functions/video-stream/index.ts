@@ -133,7 +133,7 @@ Deno.serve(async (req) => {
     if (fileId) {
       const { data: file, error: fileError } = await supabase
         .from("files")
-        .select("id, name, original_name, mime_type, size_bytes, storage_path, user_id, thumbnail_url")
+        .select("id, name, original_name, mime_type, size_bytes, storage_path, user_id, thumbnail_url, duration_seconds")
         .eq("id", fileId)
         .single();
 
@@ -160,6 +160,7 @@ Deno.serve(async (req) => {
         mimeType: file.mime_type,
         size: file.size_bytes,
         thumbnailUrl: file.thumbnail_url,
+        durationSeconds: file.duration_seconds,
       };
     } else {
       // Direct path access - verify ownership
