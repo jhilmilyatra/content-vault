@@ -201,7 +201,7 @@ Deno.serve(async (req) => {
       console.log("Supabase fallback not available:", e);
     }
 
-    // Return streaming URLs with long cache
+    // Return streaming URLs with CDN-optimized cache headers
     return new Response(
       JSON.stringify(streamUrls),
       { 
@@ -209,8 +209,11 @@ Deno.serve(async (req) => {
         headers: { 
           ...corsHeaders, 
           "Content-Type": "application/json",
-          // Cache the signed URL response for 1 hour (URLs are valid for 12 hours)
-          "Cache-Control": "private, max-age=3600"
+          // Cache the signed URL response for 2 hours (URLs are valid for 12 hours)
+          "Cache-Control": "private, max-age=7200, stale-while-revalidate=3600",
+          // Hint for CDN to avoid caching auth-dependent responses
+          "CDN-Cache-Control": "no-store",
+          "Vary": "Authorization",
         } 
       }
     );
