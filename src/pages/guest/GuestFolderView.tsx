@@ -307,8 +307,13 @@ const GuestFolderView = () => {
   };
 
   const handlePreview = (file: GuestFileItem) => {
-    setPreviewFile(file);
-    setPreviewOpen(true);
+    // Videos open in dedicated player page
+    if (file.mime_type.startsWith('video/')) {
+      navigate(`/guest-portal/video/${file.id}`);
+    } else {
+      setPreviewFile(file);
+      setPreviewOpen(true);
+    }
   };
 
   const getFileIconComponent = (mimeType: string) => {

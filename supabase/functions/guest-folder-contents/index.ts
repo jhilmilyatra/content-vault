@@ -16,7 +16,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { guestId, folderId, action } = await req.json();
+    const body = await req.json();
+    const { guestId, folderId, fileId, action } = body;
 
     if (!guestId) {
       return new Response(
@@ -57,6 +58,41 @@ Deno.serve(async (req) => {
       const hasAccess = await verifyFolderAccess(supabaseAdmin, guestId, folderId);
       return new Response(
         JSON.stringify({ hasAccess }),
+        { 
+          status: 200, 
+          headers: { ...corsHeaders, ...cacheHeaders, "Content-Type": "application/json" } 
+        }
+      );
+    }
+
+    // Get file info by file ID (for video player)
+    if (action === "get-file-info" && fileId) {
+      // Get file with folder info
+      const { data: fileData, error: fileError } = await supabaseAdmin
+        .from("files")
+        .select("id, name, original_name, mime_type, size_bytes, storage_path, folder_id")
+        .eq("id", fileId)
+        .eq("is_deleted", false)
+        .single();
+
+      if (fileError || !fileData) {
+        return new Response(
+          JSON.stringify({ error: "File not found" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Verify guest has access to file's folder
+      const accessResult = await verifyFolderAccess(supabaseAdmin, guestId, fileData.folder_id);
+      if (!accessResult.hasAccess) {
+        return new Response(
+          JSON.stringify({ error: "Access denied" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({ file: fileData }),
         { 
           status: 200, 
           headers: { ...corsHeaders, ...cacheHeaders, "Content-Type": "application/json" } 
