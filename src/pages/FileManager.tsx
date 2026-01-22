@@ -103,6 +103,17 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 
+// Format duration in seconds to MM:SS or HH:MM:SS
+const formatDuration = (seconds: number): string => {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  
+  if (hrs > 0) {
+    return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
 
 const FileManager = () => {
   const navigate = useNavigate();
@@ -1372,7 +1383,7 @@ const FileManager = () => {
                     {/* Thumbnail with lazy loading */}
                     {file.mime_type.startsWith("video/") ? (
                       <div
-                        className={`overflow-hidden rounded-xl ${
+                        className={`overflow-hidden rounded-xl relative ${
                           viewMode === "grid"
                             ? "w-full aspect-square mb-3 mx-auto"
                             : "w-12 h-12 flex-shrink-0"
@@ -1386,6 +1397,12 @@ const FileManager = () => {
                           aspectRatio="square"
                           showPlayIndicator={viewMode === "grid"}
                         />
+                        {/* Duration Badge */}
+                        {file.duration_seconds && file.duration_seconds > 0 && viewMode === "grid" && (
+                          <div className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/80 backdrop-blur-sm text-[10px] font-medium text-white/90 tabular-nums">
+                            {formatDuration(file.duration_seconds)}
+                          </div>
+                        )}
                       </div>
                     ) : file.mime_type.startsWith("image/") ? (
                       <div
