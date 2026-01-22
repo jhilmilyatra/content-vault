@@ -84,6 +84,35 @@ export function VideoPlayer({
     }, isMobile ? 4000 : 3000);
   }, [isMobile, isPlaying]);
 
+  // Preload video source via link hint for faster initial buffering
+  useEffect(() => {
+    if (!src) return;
+    
+    // Create preload link for primary source
+    const preloadLink = document.createElement('link');
+    preloadLink.rel = 'preload';
+    preloadLink.as = 'video';
+    preloadLink.href = src;
+    preloadLink.crossOrigin = crossOrigin ? 'anonymous' : undefined;
+    document.head.appendChild(preloadLink);
+
+    // Also preload fallback if available
+    let fallbackLink: HTMLLinkElement | null = null;
+    if (fallbackSrc) {
+      fallbackLink = document.createElement('link');
+      fallbackLink.rel = 'preload';
+      fallbackLink.as = 'video';
+      fallbackLink.href = fallbackSrc;
+      fallbackLink.crossOrigin = crossOrigin ? 'anonymous' : undefined;
+      document.head.appendChild(fallbackLink);
+    }
+
+    return () => {
+      preloadLink.remove();
+      fallbackLink?.remove();
+    };
+  }, [src, fallbackSrc, crossOrigin]);
+
   // Reset state when source changes
   useEffect(() => {
     setCurrentSrc(src);
