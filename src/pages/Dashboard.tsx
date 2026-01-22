@@ -12,12 +12,8 @@ import {
   Link2, 
   ArrowUpRight,
   FolderOpen,
-  FileVideo,
-  FileImage,
-  FileText as FileTextIcon,
   Upload,
   Plus,
-  Clock,
   Folder,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
@@ -33,46 +29,16 @@ interface UsageMetrics {
   total_downloads: number;
 }
 
-interface RecentFile {
-  id: string;
-  name: string;
-  mime_type: string;
-  size_bytes: number;
-  created_at: string;
-}
-
 interface RecentFolder {
   id: string;
   name: string;
   file_count?: number;
 }
 
-const getFileIcon = (mimeType: string) => {
-  if (mimeType?.startsWith("video/")) return FileVideo;
-  if (mimeType?.startsWith("image/")) return FileImage;
-  return FileTextIcon;
-};
-
-const formatTimeAgo = (dateString: string) => {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
-};
-
 const Dashboard = () => {
   const { user, profile, subscription, daysRemaining } = useAuth();
   const navigate = useNavigate();
   const [usageMetrics, setUsageMetrics] = useState<UsageMetrics | null>(null);
-  const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
   const [recentFolders, setRecentFolders] = useState<RecentFolder[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -81,19 +47,12 @@ const Dashboard = () => {
       if (!user) return;
       
       try {
-        const [metricsRes, filesRes, foldersRes] = await Promise.all([
+        const [metricsRes, foldersRes] = await Promise.all([
           supabase
             .from("usage_metrics")
             .select("*")
             .eq("user_id", user.id)
             .single(),
-          supabase
-            .from("files")
-            .select("id, name, mime_type, size_bytes, created_at")
-            .eq("user_id", user.id)
-            .eq("is_deleted", false)
-            .order("created_at", { ascending: false })
-            .limit(5),
           supabase
             .from("folders")
             .select("id, name")
@@ -104,9 +63,6 @@ const Dashboard = () => {
         
         if (metricsRes.data) {
           setUsageMetrics(metricsRes.data as UsageMetrics);
-        }
-        if (filesRes.data) {
-          setRecentFiles(filesRes.data as RecentFile[]);
         }
         if (foldersRes.data) {
           setRecentFolders(foldersRes.data as RecentFolder[]);
@@ -237,20 +193,19 @@ const Dashboard = () => {
           {/* Continue Watching Section */}
           <ContinueWatching />
 
-          {/* Content Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Activity Feed - 2/3 width on desktop */}
+          {/* Folders & Quick Links */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Folder Shortcuts */}
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: 0.2 }}
-              className="lg:col-span-2"
             >
               <div className="bg-card border border-border rounded-lg">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                   <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-muted-foreground" />
-                    <h2 className="text-sm font-medium text-foreground">Recent Activity</h2>
+                    <Folder className="w-4 h-4 text-muted-foreground" />
+                    <h2 className="text-sm font-medium text-foreground">My Folders</h2>
                   </div>
                   <Button 
                     variant="ghost" 
@@ -263,85 +218,29 @@ const Dashboard = () => {
                   </Button>
                 </div>
 
-                <div className="divide-y divide-border">
+                <div className="p-4">
                   {loading ? (
-                    <div className="p-4 space-y-3">
-                      {[...Array(4)].map((_, i) => (
-                        <div key={i} className="flex items-center gap-3">
-                          <Skeleton className="w-9 h-9 rounded-lg" />
-                          <div className="flex-1">
-                            <Skeleton className="h-4 w-32 mb-1" />
-                            <Skeleton className="h-3 w-20" />
-                          </div>
-                        </div>
-                      ))}
+                    <div className="flex flex-wrap gap-2">
+                      <Skeleton className="h-8 w-24 rounded-full" />
+                      <Skeleton className="h-8 w-20 rounded-full" />
+                      <Skeleton className="h-8 w-28 rounded-full" />
                     </div>
-                  ) : recentFiles.length === 0 ? (
-                    <div className="p-8 text-center">
-                      <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center mx-auto mb-3">
-                        <FolderOpen className="w-6 h-6 text-muted-foreground" />
+                  ) : recentFolders.length === 0 ? (
+                    <div className="text-center py-4">
+                      <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mx-auto mb-2">
+                        <FolderOpen className="w-5 h-5 text-muted-foreground" />
                       </div>
-                      <p className="text-sm text-muted-foreground mb-3">No files yet</p>
+                      <p className="text-sm text-muted-foreground mb-2">No folders yet</p>
                       <Button 
                         variant="outline" 
                         size="sm"
                         onClick={() => navigate('/dashboard/files')}
                       >
-                        Upload your first file
+                        Create folder
                       </Button>
                     </div>
                   ) : (
-                    recentFiles.map((file) => {
-                      const Icon = getFileIcon(file.mime_type);
-                      return (
-                        <div
-                          key={file.id}
-                          className="flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors cursor-pointer"
-                          onClick={() => navigate('/dashboard/files')}
-                        >
-                          <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-                            <Icon className="w-4 h-4 text-muted-foreground" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatFileSize(file.size_bytes)} • Uploaded
-                            </p>
-                          </div>
-                          <span className="text-xs text-muted-foreground flex-shrink-0">
-                            {formatTimeAgo(file.created_at)}
-                          </span>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Folder Shortcuts - 1/3 width */}
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: 0.25 }}
-            >
-              <div className="bg-card border border-border rounded-lg">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-                  <div className="flex items-center gap-2">
-                    <Folder className="w-4 h-4 text-muted-foreground" />
-                    <h2 className="text-sm font-medium text-foreground">My Folders</h2>
-                  </div>
-                </div>
-
-                <div className="p-3 flex flex-wrap gap-2">
-                  {loading ? (
-                    <>
-                      <Skeleton className="h-8 w-24 rounded-full" />
-                      <Skeleton className="h-8 w-20 rounded-full" />
-                      <Skeleton className="h-8 w-28 rounded-full" />
-                    </>
-                  ) : (
-                    <>
+                    <div className="flex flex-wrap gap-2">
                       {recentFolders.map((folder) => (
                         <button
                           key={folder.id}
@@ -365,13 +264,19 @@ const Dashboard = () => {
                         <Plus className="w-3.5 h-3.5" />
                         Add Folder
                       </button>
-                    </>
+                    </div>
                   )}
                 </div>
               </div>
+            </motion.div>
 
-              {/* Quick Links */}
-              <div className="mt-4 bg-card border border-border rounded-lg p-3 space-y-1">
+            {/* Quick Links */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.25 }}
+            >
+              <div className="bg-card border border-border rounded-lg p-3 space-y-1">
                 <button
                   onClick={() => navigate('/dashboard/links')}
                   className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 text-left transition-colors"
