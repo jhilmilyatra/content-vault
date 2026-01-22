@@ -437,7 +437,11 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
 
       {/* Member Chat Panel */}
       {role === "member" && (
-        <MemberChatPanel isOpen={chatOpen} onClose={() => setChatOpen(false)} />
+        <MemberChatPanel 
+          isOpen={chatOpen} 
+          onClose={() => setChatOpen(false)} 
+          onOpen={() => setChatOpen(true)}
+        />
       )}
     </div>
   );
