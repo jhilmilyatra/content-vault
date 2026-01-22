@@ -134,12 +134,9 @@ Deno.serve(async (req) => {
       updateData.thumbnail_url = finalThumbnailUrl;
     }
 
-    // Store duration in description field for now (could add a dedicated column later)
+    // Store duration in dedicated column
     if (durationSeconds !== undefined && durationSeconds > 0) {
-      // Get existing description and append/update duration
-      const durationStr = `duration:${Math.round(durationSeconds)}s`;
-      const existingDesc = file.thumbnail_url ? '' : '';
-      updateData.description = durationStr;
+      updateData.duration_seconds = durationSeconds;
     }
 
     if (Object.keys(updateData).length === 0) {
