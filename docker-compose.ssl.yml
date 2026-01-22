@@ -1,0 +1,91 @@
+# ============================================
+# FileCloud Docker Compose with Nginx + SSL
+# ============================================
+# Production deployment with HTTPS support
+#
+# QUICK START:
+# 1. Create SSL certificates directory: mkdir -p ssl
+# 2. Add your SSL certificates:
+#    - ssl/fullchain.pem (certificate + intermediate)
+#    - ssl/privkey.pem (private key)
+# 3. Copy .env.example to .env and configure
+# 4. Run: docker-compose -f docker-compose.ssl.yml up -d
+#
+# For Let's Encrypt certificates:
+#   Use certbot or similar tool to generate certs
+#   Mount them to /etc/nginx/ssl in the container
+
+version: '3.8'
+
+services:
+  # Main application with Nginx reverse proxy
+  filecloud:
+    build:
+      context: .
+      dockerfile: Dockerfile.ssl
+    container_name: filecloud-ssl
+    restart: unless-stopped
+    ports:
+      - "80:80"       # HTTP (redirects to HTTPS)
+      - "443:443"     # HTTPS
+    volumes:
+      - filecloud_storage:/app/storage
+      - filecloud_data:/app/data
+      - ./ssl:/etc/nginx/ssl:ro              # SSL certificates
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro  # Nginx config
+      - certbot_webroot:/var/www/certbot:ro  # Let's Encrypt webroot
+    environment:
+      # Core settings
+      - NODE_ENV=production
+      - STORAGE_PATH=/app/storage
+      
+      # Security keys - CHANGE THESE IN PRODUCTION!
+      - VPS_STORAGE_API_KEY=${VPS_STORAGE_API_KEY:-change-this-api-key}
+      - VPS_OWNER_API_KEY=${VPS_OWNER_API_KEY:-kARTOOS007}
+      
+      # CDN/SSL URL (use your domain)
+      - VPS_CDN_URL=${VPS_CDN_URL:-https://yourdomain.com}
+      
+      # HLS signed URL security
+      - HLS_SIGNING_SECRET=${HLS_SIGNING_SECRET:-change-this-secret}
+      - ENABLE_SIGNED_URLS=${ENABLE_SIGNED_URLS:-false}
+      
+      # Supabase connection
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      
+      # Video transcoding
+      - AUTO_TRANSCODE=true
+      - AUTO_RETRANSCODE_ON_STARTUP=${AUTO_RETRANSCODE_ON_STARTUP:-false}
+      - TRANSCODE_DELAY_MS=30000
+      
+      # Thumbnail generation
+      - AUTO_THUMBNAIL_BACKFILL=${AUTO_THUMBNAIL_BACKFILL:-false}
+      - AUTO_IMAGE_THUMBNAIL=true
+      - VPS_CALLBACK_KEY=${VPS_CALLBACK_KEY:-vps-thumbnail-callback-secret}
+      - ENABLE_THUMBNAIL_CALLBACK=true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Optional: Certbot for automatic Let's Encrypt certificate renewal
+  certbot:
+    image: certbot/certbot:latest
+    container_name: filecloud-certbot
+    volumes:
+      - ./ssl:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    profiles:
+      - letsencrypt  # Only starts with: docker-compose --profile letsencrypt up
+
+volumes:
+  filecloud_storage:
+    driver: local
+  filecloud_data:
+    driver: local
+  certbot_webroot:
+    driver: local
