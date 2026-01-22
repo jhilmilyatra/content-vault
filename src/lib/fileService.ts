@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getCachedUrl, setCachedUrl, clearUrlCache } from "@/lib/urlCache";
+import { warmVideoStreamUrl, isVideoFile } from "@/lib/videoStreamCache";
 
 export interface FileItem {
   id: string;
@@ -451,6 +452,8 @@ const uploadToVPSWithProgress = (
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const result = JSON.parse(xhr.responseText);
+            const uploadedFile = result.file as FileItem;
+            
             if (onProgress) {
               onProgress({
                 loaded: file.size,
@@ -462,7 +465,15 @@ const uploadToVPSWithProgress = (
                 status: 'complete'
               });
             }
-            resolve(result.file as FileItem);
+            
+            // Warm video stream cache immediately after upload for instant playback
+            if (isVideoFile(uploadedFile.mime_type, uploadedFile.original_name)) {
+              warmVideoStreamUrl(uploadedFile.id, uploadedFile.storage_path, { priority: 'high' })
+                .then(() => console.log('📹 Video stream pre-warmed after upload'))
+                .catch(() => {}); // Silent fail - not critical
+            }
+            
+            resolve(uploadedFile);
           } catch (e) {
             reject(new Error("Failed to parse response"));
           }
@@ -922,7 +933,16 @@ const uploadChunked = async (
         });
       }
 
-      return result.file as FileItem;
+      const uploadedFile = result.file as FileItem;
+
+      // Warm video stream cache immediately after upload for instant playback
+      if (isVideoFile(uploadedFile.mime_type, uploadedFile.original_name)) {
+        warmVideoStreamUrl(uploadedFile.id, uploadedFile.storage_path, { priority: 'high' })
+          .then(() => console.log('📹 Video stream pre-warmed after upload'))
+          .catch(() => {}); // Silent fail - not critical
+      }
+
+      return uploadedFile;
     }
 
     // Handle finalization error
