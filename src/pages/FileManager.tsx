@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { supabase } from "@/integrations/supabase/client";
@@ -105,6 +105,8 @@ import { formatDistanceToNow } from "date-fns";
 
 
 const FileManager = () => {
+  const navigate = useNavigate();
+  
   // URL search params for tab state
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = searchParams.get("tab");
@@ -686,7 +688,7 @@ const FileManager = () => {
           icon: <Eye className="w-5 h-5" />,
           onClick: () => {
             if (file.mime_type.startsWith("video/")) {
-              window.open(`/dashboard/video/${file.id}`, "_blank");
+              navigate(`/dashboard/video/${file.id}`);
             } else {
               setPreviewFile(file);
               setPreviewOpen(true);
@@ -1306,8 +1308,8 @@ const FileManager = () => {
                       setSelectedFiles([...selectedFiles, file.id]);
                     }
                   } else if (file.mime_type.startsWith("video/")) {
-                    // Open videos in dedicated player page (new tab)
-                    window.open(`/dashboard/video/${file.id}`, "_blank");
+                    // Navigate to dedicated video player page (same tab, separate route)
+                    navigate(`/dashboard/video/${file.id}`);
                   } else {
                     setPreviewFile(file);
                     setPreviewOpen(true);
@@ -1435,7 +1437,7 @@ const FileManager = () => {
                             onClick={(e) => {
                               e.stopPropagation();
                               if (file.mime_type.startsWith("video/")) {
-                                window.open(`/dashboard/video/${file.id}`, "_blank");
+                                navigate(`/dashboard/video/${file.id}`);
                               } else {
                                 setPreviewFile(file);
                                 setPreviewOpen(true);
