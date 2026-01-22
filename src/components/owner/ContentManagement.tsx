@@ -727,7 +727,6 @@ const ContentManagement = () => {
               {selectedFile.mime_type.startsWith('video/') ? (
                 <VideoPlayer
                   src={streamUrl}
-                  crossOrigin={false}
                 />
               ) : (
                 <img

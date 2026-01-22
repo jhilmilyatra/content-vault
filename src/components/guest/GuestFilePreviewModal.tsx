@@ -366,7 +366,6 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
                 onError={() => {
                   setMediaError('Unable to play this file. Please try again or download it.');
                 }}
-                crossOrigin={false}
               />
             </div>
           </div>

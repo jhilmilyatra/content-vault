@@ -336,7 +336,6 @@ export default function GuestVideoPlayer() {
         onTimeUpdate={handleTimeUpdate}
         onEnded={handleEnded}
         onError={() => setError('Unable to play this video')}
-        crossOrigin={false}
       />
     </div>
   );
