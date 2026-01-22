@@ -156,12 +156,30 @@ export function VideoPlayer({
             toggleFullscreen();
           }
           break;
+        case 'Comma': // < key
+        case 'Period': // > key
+          e.preventDefault();
+          {
+            const currentIndex = playbackSpeeds.indexOf(playbackSpeed);
+            if (e.code === 'Comma' && currentIndex > 0) {
+              // Decrease speed
+              const newSpeed = playbackSpeeds[currentIndex - 1];
+              video.playbackRate = newSpeed;
+              setPlaybackSpeed(newSpeed);
+            } else if (e.code === 'Period' && currentIndex < playbackSpeeds.length - 1) {
+              // Increase speed
+              const newSpeed = playbackSpeeds[currentIndex + 1];
+              video.playbackRate = newSpeed;
+              setPlaybackSpeed(newSpeed);
+            }
+          }
+          break;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [volume, isPlaying, isFullscreen]);
+  }, [volume, isPlaying, isFullscreen, playbackSpeed]);
 
   const togglePlay = useCallback(() => {
     const video = videoRef.current;
