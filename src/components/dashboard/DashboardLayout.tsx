@@ -1,37 +1,29 @@
 import { useState, useEffect, useCallback, memo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import { 
   LayoutDashboard,
   FolderOpen, 
-  Link2, 
+  Share2, 
   BarChart3, 
   Settings,
   Users,
   Shield,
-  CreditCard,
   FileText,
-  ChevronLeft,
-  ChevronRight,
   LogOut,
-  Search,
-  FileWarning,
-  Trash2,
-  HardDrive,
-  ShieldCheck,
-  UserCheck,
-  MessageSquare,
   Menu,
   X,
   LucideIcon,
   Activity,
-  ArrowLeft,
+  Bell,
   Plus,
   User,
   ChevronDown,
+  CreditCard,
+  MessageSquare,
+  HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,10 +37,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
 import MemberChatPanel from "./MemberChatPanel";
 import NotificationDropdown from "./NotificationDropdown";
-import { VpsStatusIndicator } from "./VpsStatusIndicator";
-import IosTabBar from "@/components/ios/IosTabBar";
 import { cn } from "@/lib/utils";
-import { lightHaptic } from "@/lib/haptics";
 import logo from "@/assets/logo.png";
 
 interface DashboardLayoutProps {
@@ -61,29 +50,42 @@ interface NavItem {
   path: string;
 }
 
+// Consolidated member navigation - max 5 primary items
 const memberNavItems: NavItem[] = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
+  { icon: LayoutDashboard, label: "Overview", path: "/dashboard" },
   { icon: FolderOpen, label: "Files", path: "/dashboard/files" },
-  { icon: UserCheck, label: "Guests", path: "/dashboard/guests" },
-  { icon: Link2, label: "Share Links", path: "/dashboard/links" },
-  { icon: Trash2, label: "Trash", path: "/dashboard/trash" },
+  { icon: Share2, label: "Sharing", path: "/dashboard/links" },
   { icon: BarChart3, label: "Analytics", path: "/dashboard/analytics" },
-  { icon: CreditCard, label: "Plans", path: "/dashboard/plans" },
   { icon: Settings, label: "Settings", path: "/dashboard/settings" },
 ];
 
+// Mobile bottom nav - max 4 items (FAB is separate)
 const memberBottomNavItems: NavItem[] = [
   { icon: LayoutDashboard, label: "Home", path: "/dashboard" },
   { icon: FolderOpen, label: "Files", path: "/dashboard/files" },
-  { icon: Plus, label: "Add", path: "/dashboard/files" },
-  { icon: BarChart3, label: "Stats", path: "/dashboard/analytics" },
-  { icon: Settings, label: "More", path: "/dashboard/settings" },
+  { icon: User, label: "Profile", path: "/dashboard/settings" },
 ];
 
+// Owner navigation
+const ownerNavItems: NavItem[] = [
+  { icon: LayoutDashboard, label: "Overview", path: "/dashboard" },
+  { icon: Activity, label: "System", path: "/dashboard/system-monitoring" },
+  { icon: Users, label: "Users", path: "/dashboard/users" },
+  { icon: Shield, label: "Security", path: "/dashboard/security" },
+  { icon: Settings, label: "Settings", path: "/dashboard/settings" },
+];
+
+const ownerBottomNavItems: NavItem[] = [
+  { icon: LayoutDashboard, label: "Home", path: "/dashboard" },
+  { icon: Activity, label: "System", path: "/dashboard/system-monitoring" },
+  { icon: User, label: "Profile", path: "/dashboard/settings" },
+];
+
+// Admin navigation
 const adminNavItems: NavItem[] = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
+  { icon: LayoutDashboard, label: "Overview", path: "/dashboard" },
   { icon: Users, label: "Users", path: "/dashboard/admin/users" },
-  { icon: FileWarning, label: "Reports", path: "/dashboard/admin/reports" },
+  { icon: FileText, label: "Reports", path: "/dashboard/admin/reports" },
   { icon: BarChart3, label: "Analytics", path: "/dashboard/analytics" },
   { icon: Settings, label: "Settings", path: "/dashboard/settings" },
 ];
@@ -91,78 +93,37 @@ const adminNavItems: NavItem[] = [
 const adminBottomNavItems: NavItem[] = [
   { icon: LayoutDashboard, label: "Home", path: "/dashboard" },
   { icon: Users, label: "Users", path: "/dashboard/admin/users" },
-  { icon: FileWarning, label: "Reports", path: "/dashboard/admin/reports" },
-  { icon: BarChart3, label: "Stats", path: "/dashboard/analytics" },
-  { icon: Settings, label: "More", path: "/dashboard/settings" },
-];
-
-const ownerNavItems: NavItem[] = [
-  { icon: LayoutDashboard, label: "Overview", path: "/dashboard" },
-  { icon: Activity, label: "System Monitor", path: "/dashboard/system-monitoring" },
-  { icon: Users, label: "Users", path: "/dashboard/users" },
-  { icon: UserCheck, label: "Guests", path: "/dashboard/guest-controls" },
-  { icon: MessageSquare, label: "Member Chat", path: "/dashboard/member-chat" },
-  { icon: ShieldCheck, label: "Admin Permissions", path: "/dashboard/admin-permissions" },
-  { icon: HardDrive, label: "Storage", path: "/dashboard/storage" },
-  { icon: Shield, label: "Security", path: "/dashboard/security" },
-  { icon: CreditCard, label: "Billing", path: "/dashboard/billing" },
-  { icon: FileWarning, label: "Reports", path: "/dashboard/admin/reports" },
-  { icon: BarChart3, label: "Analytics", path: "/dashboard/analytics" },
-  { icon: BarChart3, label: "User Stats", path: "/dashboard/user-analytics" },
-  { icon: FileText, label: "Audit Logs", path: "/dashboard/audit" },
-  { icon: Settings, label: "Settings", path: "/dashboard/settings" },
-];
-
-const ownerBottomNavItems: NavItem[] = [
-  { icon: LayoutDashboard, label: "Home", path: "/dashboard" },
-  { icon: Activity, label: "System", path: "/dashboard/system-monitoring" },
-  { icon: Users, label: "Users", path: "/dashboard/users" },
-  { icon: Shield, label: "Security", path: "/dashboard/security" },
-  { icon: Menu, label: "More", path: "/dashboard/settings" },
+  { icon: User, label: "Profile", path: "/dashboard/settings" },
 ];
 
 const NavItemComponent = memo(({ 
   item, 
   isActive, 
-  collapsed, 
-  isMobile 
 }: { 
   item: NavItem; 
   isActive: boolean; 
-  collapsed: boolean;
-  isMobile: boolean;
 }) => (
   <Link
     to={item.path}
-    onClick={() => lightHaptic()}
     className={cn(
-      "flex items-center gap-3 px-3 py-3 rounded-xl",
-      "transition-all duration-200 ease-out",
-      "touch-manipulation min-h-[48px]",
-      "group relative",
-      "active:scale-[0.98]",
+      "flex items-center gap-3 px-3 py-2.5 rounded-lg",
+      "transition-colors duration-150",
+      "min-h-[40px]",
       isActive 
-        ? "bg-[#007AFF]/15 text-[#007AFF]" 
-        : "text-white/60 hover:text-white hover:bg-white/[0.06]"
+        ? "bg-primary/10 text-primary font-medium" 
+        : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
     )}
   >
-    <item.icon className={cn(
-      "w-5 h-5 flex-shrink-0 transition-colors",
-      isActive ? "text-[#007AFF]" : "text-white/50 group-hover:text-white/80"
-    )} />
-    {(!collapsed || isMobile) && (
-      <span className="text-[15px] font-medium">{item.label}</span>
-    )}
+    <item.icon className="w-[18px] h-[18px] flex-shrink-0" />
+    <span className="text-sm">{item.label}</span>
   </Link>
 ));
 
 NavItemComponent.displayName = "NavItemComponent";
 
 const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
-  const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [headerIsGlass, setHeaderIsGlass] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, role, signOut } = useAuth();
@@ -187,16 +148,7 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
     };
   }, [mobileMenuOpen]);
 
-  useEffect(() => {
-    const handleScroll = () => {
-      setHeaderIsGlass(window.scrollY > 20);
-    };
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
   const handleSignOut = useCallback(async () => {
-    lightHaptic();
     await signOut();
     toast({
       title: "Signed out",
@@ -220,40 +172,13 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
     return 'U';
   }, [profile]);
 
-  const toggleMobileMenu = useCallback(() => {
-    lightHaptic();
-    setMobileMenuOpen(prev => !prev);
-  }, []);
-
-  const closeMobileMenu = useCallback(() => {
-    setMobileMenuOpen(false);
-  }, []);
-
-  const toggleCollapsed = useCallback(() => {
-    setCollapsed(prev => !prev);
-  }, []);
-
-  const toggleChat = useCallback(() => {
-    lightHaptic();
-    setChatOpen(prev => !prev);
-  }, []);
-
-  const sidebarWidth = isMobile ? 280 : (collapsed ? 72 : 260);
-
-  // Get current page title
   const getPageTitle = () => {
     const currentItem = navItems.find(item => item.path === location.pathname);
     return currentItem?.label || "Dashboard";
   };
 
   return (
-    <div className="min-h-dvh bg-black flex">
-      {/* iOS-style ambient background */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-[#007AFF]/5 rounded-full blur-[120px]" />
-        <div className="absolute bottom-1/4 right-0 w-[400px] h-[400px] bg-violet-500/5 rounded-full blur-[100px]" />
-      </div>
-
+    <div className="min-h-dvh bg-background flex">
       {/* Mobile Menu Overlay */}
       <AnimatePresence>
         {isMobile && mobileMenuOpen && (
@@ -261,325 +186,253 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="fixed inset-0 bg-black/70 backdrop-blur-md z-40"
-            onClick={closeMobileMenu}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40"
+            onClick={() => setMobileMenuOpen(false)}
           />
         )}
       </AnimatePresence>
 
-      {/* Sidebar */}
-      <AnimatePresence mode="wait">
-        {(!isMobile || mobileMenuOpen) && (
+      {/* Sidebar - Desktop only */}
+      {!isMobile && (
+        <aside className="fixed left-0 top-0 bottom-0 w-[260px] bg-muted/30 border-r border-border flex flex-col z-30">
+          {/* Logo */}
+          <div className="h-14 flex items-center px-4 border-b border-border">
+            <Link to="/" className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-lg bg-primary/10 p-1 flex items-center justify-center">
+                <img src={logo} alt="CloudVault" className="h-full w-full object-contain" />
+              </div>
+              <span className="text-base font-semibold text-foreground">CloudVault</span>
+            </Link>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+            {navItems.map((item) => (
+              <NavItemComponent
+                key={item.path}
+                item={item}
+                isActive={location.pathname === item.path}
+              />
+            ))}
+          </nav>
+
+          {/* User section */}
+          <div className="p-3 border-t border-border">
+            <div className="flex items-center gap-3 px-3 py-2">
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-medium text-sm">
+                {getInitials()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground truncate">
+                  {profile?.full_name || profile?.email || "User"}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {profile?.email}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleSignOut}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              >
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </aside>
+      )}
+
+      {/* Mobile Sidebar */}
+      <AnimatePresence>
+        {isMobile && mobileMenuOpen && (
           <motion.aside
-            initial={isMobile ? { x: -280, opacity: 0 } : false}
-            animate={{ x: 0, opacity: 1, width: isMobile ? 280 : (collapsed ? 72 : 260) }}
-            exit={isMobile ? { x: -280, opacity: 0 } : undefined}
-            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-            className={cn(
-              "fixed left-0 top-0 bottom-0 z-50",
-              "bg-black/90 backdrop-blur-2xl border-r border-white/[0.06]",
-              "flex flex-col"
-            )}
+            initial={{ x: -280 }}
+            animate={{ x: 0 }}
+            exit={{ x: -280 }}
+            transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+            className="fixed left-0 top-0 bottom-0 w-[280px] bg-background border-r border-border flex flex-col z-50"
           >
-            {/* Logo */}
-            <div className="h-16 flex items-center justify-between px-4 border-b border-white/[0.06] safe-area-top">
-              <Link to="/" className="flex items-center gap-3" onClick={() => lightHaptic()}>
-                <div className="h-10 w-10 rounded-lg bg-white p-1 flex items-center justify-center">
+            {/* Header */}
+            <div className="h-14 flex items-center justify-between px-4 border-b border-border">
+              <Link to="/" className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-lg bg-primary/10 p-1 flex items-center justify-center">
                   <img src={logo} alt="CloudVault" className="h-full w-full object-contain" />
                 </div>
-                {(!collapsed || isMobile) && (
-                  <motion.span
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -10 }}
-                    transition={{ duration: 0.2 }}
-                    className="text-[17px] font-semibold text-white"
-                  >
-                    CloudVault
-                  </motion.span>
-                )}
+                <span className="text-base font-semibold text-foreground">CloudVault</span>
               </Link>
-              {isMobile && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9 text-white/50 hover:text-white hover:bg-white/[0.06] active:scale-95"
-                  onClick={closeMobileMenu}
-                >
-                  <X className="w-5 h-5" />
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <X className="w-5 h-5" />
+              </Button>
             </div>
 
-            {/* Role badge */}
-            {(!collapsed || isMobile) && (
-              <div className="px-4 py-3">
-                <div className={cn(
-                  "px-3 py-2.5 rounded-xl text-[13px] font-semibold text-center uppercase tracking-wide",
-                  role === "owner" && "bg-gradient-to-r from-amber-500/15 to-orange-500/15 text-amber-400 border border-amber-500/20",
-                  role === "admin" && "bg-gradient-to-r from-violet-500/15 to-purple-500/15 text-violet-400 border border-violet-500/20",
-                  role === "member" && "bg-gradient-to-r from-[#007AFF]/15 to-[#5856D6]/15 text-[#007AFF] border border-[#007AFF]/20"
-                )}>
-                  {role === "owner" ? "Owner" : role === "admin" ? "Admin" : "Member"}
-                </div>
-              </div>
-            )}
-
             {/* Navigation */}
-            <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto scrollbar-hide">
+            <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
               {navItems.map((item) => (
                 <NavItemComponent
                   key={item.path}
                   item={item}
                   isActive={location.pathname === item.path}
-                  collapsed={collapsed}
-                  isMobile={isMobile}
                 />
               ))}
             </nav>
 
             {/* User section */}
-            {(!collapsed || isMobile) && (
-              <div className="p-3 border-t border-white/[0.06]">
-                <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/[0.04]">
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#007AFF] to-[#5856D6] flex items-center justify-center text-white font-semibold text-sm">
-                    {getInitials()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-medium text-white truncate">
-                      {profile?.full_name || profile?.email || "User"}
-                    </p>
-                    <p className="text-[12px] text-white/40 truncate">
-                      {profile?.email}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleSignOut}
-                    className="h-8 w-8 text-white/40 hover:text-white hover:bg-white/[0.06] active:scale-95"
-                  >
-                    <LogOut className="w-4 h-4" />
-                  </Button>
+            <div className="p-3 border-t border-border">
+              <div className="flex items-center gap-3 px-3 py-2">
+                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-medium text-sm">
+                  {getInitials()}
                 </div>
-              </div>
-            )}
-
-            {/* Collapse toggle - desktop only */}
-            {!isMobile && (
-              <div className="p-3 border-t border-white/[0.06]">
-                <button
-                  onClick={toggleCollapsed}
-                  className={cn(
-                    "w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl",
-                    "text-white/40 hover:text-white hover:bg-white/[0.06]",
-                    "transition-all duration-200 active:scale-95"
-                  )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">
+                    {profile?.full_name || "User"}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleSignOut}
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
                 >
-                  {collapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
-                  {!collapsed && <span className="text-[14px]">Collapse</span>}
-                </button>
+                  <LogOut className="w-4 h-4" />
+                </Button>
               </div>
-            )}
+            </div>
           </motion.aside>
         )}
       </AnimatePresence>
 
       {/* Main content */}
       <div 
-        className="flex-1 transition-all duration-300 ease-out min-w-0 relative z-10"
-        style={{ marginLeft: isMobile ? 0 : sidebarWidth }}
+        className="flex-1 flex flex-col min-w-0"
+        style={{ marginLeft: isMobile ? 0 : 260 }}
       >
-        {/* iOS-style sticky header */}
-        <header 
-          className={cn(
-            "sticky top-0 z-30 transition-all duration-300 safe-area-top",
-            headerIsGlass 
-              ? "bg-black/80 backdrop-blur-2xl border-b border-white/[0.08]" 
-              : "bg-transparent border-b border-transparent"
-          )}
-        >
-          {/* Compact bar */}
-          <div className="h-14 flex items-center justify-between px-4">
-            <div className="flex items-center gap-2">
-              {/* Back button for sub-pages */}
-              {location.pathname !== "/dashboard" && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9 text-[#007AFF] hover:bg-white/[0.06] active:scale-95"
-                  onClick={() => {
-                    lightHaptic();
-                    navigate("/dashboard");
-                  }}
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </Button>
-              )}
-              {/* Mobile menu toggle */}
-              {isMobile && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-10 w-10 text-white/60 hover:text-white hover:bg-white/[0.06] active:scale-95"
-                  onClick={toggleMobileMenu}
-                >
-                  <Menu className="w-5 h-5" />
-                </Button>
-              )}
-              {/* Compact title (visible on scroll) */}
-              <motion.h1
-                initial={false}
-                animate={{
-                  opacity: headerIsGlass ? 1 : 0,
-                  x: headerIsGlass ? 0 : -8,
-                }}
-                transition={{ duration: 0.2 }}
-                className="text-[17px] font-semibold text-white"
+        {/* Clean Header - 56px height */}
+        <header className="sticky top-0 z-20 h-14 bg-background/95 backdrop-blur-sm border-b border-border flex items-center justify-between px-4 gap-4">
+          <div className="flex items-center gap-3">
+            {isMobile && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9"
+                onClick={() => setMobileMenuOpen(true)}
               >
-                {getPageTitle()}
-              </motion.h1>
-            </div>
-
-            <div className="flex items-center gap-1">
-              {/* VPS Status Indicator */}
-              <VpsStatusIndicator compact className="mr-1" />
-              
-              {/* Chat button for members */}
-              {role === "member" && (
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  onClick={toggleChat}
-                  className="h-9 w-9 text-white/50 hover:text-white hover:bg-white/[0.06] active:scale-95"
-                >
-                  <MessageSquare className="w-5 h-5" />
-                </Button>
-              )}
-              
-              <NotificationDropdown />
-              
-              {/* User Dropdown Menu */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button 
-                    variant="ghost" 
-                    className="h-9 px-2 gap-2 text-white/70 hover:text-white hover:bg-white/[0.06] active:scale-95"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#007AFF] to-[#5856D6] flex items-center justify-center text-white font-semibold text-[13px] shadow-lg shadow-[#007AFF]/20">
-                      {getInitials()}
-                    </div>
-                    <ChevronDown className="w-4 h-4 text-white/50" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent 
-                  align="end" 
-                  className="w-56 bg-black/95 backdrop-blur-xl border-white/10"
-                >
-                  <DropdownMenuLabel className="font-normal">
-                    <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium text-white">
-                        {profile?.full_name || "User"}
-                      </p>
-                      <p className="text-xs text-white/50 truncate">
-                        {profile?.email}
-                      </p>
-                    </div>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator className="bg-white/10" />
-                  <DropdownMenuItem 
-                    onClick={() => {
-                      lightHaptic();
-                      navigate("/dashboard/settings");
-                    }}
-                    className="text-white/70 hover:text-white hover:bg-white/[0.06] cursor-pointer"
-                  >
-                    <User className="mr-2 h-4 w-4" />
-                    <span>Profile Settings</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem 
-                    onClick={() => {
-                      lightHaptic();
-                      navigate("/dashboard/settings");
-                    }}
-                    className="text-white/70 hover:text-white hover:bg-white/[0.06] cursor-pointer"
-                  >
-                    <Settings className="mr-2 h-4 w-4" />
-                    <span>Account Settings</span>
-                  </DropdownMenuItem>
-                  {role === "member" && (
-                    <DropdownMenuItem 
-                      onClick={() => {
-                        lightHaptic();
-                        navigate("/dashboard/plans");
-                      }}
-                      className="text-white/70 hover:text-white hover:bg-white/[0.06] cursor-pointer"
-                    >
-                      <CreditCard className="mr-2 h-4 w-4" />
-                      <span>Subscription</span>
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuSeparator className="bg-white/10" />
-                  <DropdownMenuItem 
-                    onClick={handleSignOut}
-                    className="text-red-400 hover:text-red-300 hover:bg-red-500/10 cursor-pointer"
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    <span>Sign Out</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+                <Menu className="w-5 h-5" />
+              </Button>
+            )}
+            <h1 className="text-base font-medium text-foreground">
+              {getPageTitle()}
+            </h1>
           </div>
 
-          {/* Large title (iOS style) */}
-          {!isMobile && (
-            <motion.div
-              initial={false}
-              animate={{
-                opacity: headerIsGlass ? 0 : 1,
-                height: headerIsGlass ? 0 : "auto",
-                paddingBottom: headerIsGlass ? 0 : 16,
-              }}
-              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-              className="px-4 overflow-hidden"
-            >
-              <h1 className="text-[34px] font-bold text-white tracking-tight">
-                {getPageTitle()}
-              </h1>
-            </motion.div>
-          )}
+          <div className="flex items-center gap-1">
+            <NotificationDropdown />
+            
+            {/* Profile Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  className="h-9 px-2 gap-2"
+                >
+                  <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary font-medium text-xs">
+                    {getInitials()}
+                  </div>
+                  {!isMobile && <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium">{profile?.full_name || "User"}</p>
+                    <p className="text-xs text-muted-foreground truncate">{profile?.email}</p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate("/dashboard/settings")}>
+                  <User className="mr-2 h-4 w-4" />
+                  <span>Profile</span>
+                </DropdownMenuItem>
+                {role === "member" && (
+                  <>
+                    <DropdownMenuItem onClick={() => setChatOpen(true)}>
+                      <MessageSquare className="mr-2 h-4 w-4" />
+                      <span>Support Chat</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => navigate("/dashboard/plans")}>
+                      <CreditCard className="mr-2 h-4 w-4" />
+                      <span>Billing</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
+                <DropdownMenuItem onClick={() => navigate("/dashboard/settings")}>
+                  <Settings className="mr-2 h-4 w-4" />
+                  <span>Settings</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Sign Out</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </header>
 
         {/* Page content */}
         <main className={cn(
-          "px-4 py-4",
+          "flex-1 p-4 md:p-6",
           isMobile && "pb-24"
         )}>
-          {/* Large title for mobile (always visible in content) */}
-          {isMobile && (
-            <motion.h1
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-              className="text-[28px] font-bold text-white tracking-tight mb-4"
-            >
-              {getPageTitle()}
-            </motion.h1>
-          )}
           {children}
         </main>
       </div>
 
-      {/* iOS-style Bottom Tab Bar */}
+      {/* Mobile Bottom Navigation */}
       {isMobile && (
-        <IosTabBar items={bottomNavItems} />
+        <nav className="fixed bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur-sm border-t border-border safe-area-bottom">
+          <div className="flex items-center justify-around h-14 px-4">
+            {bottomNavItems.map((item) => {
+              const isActive = location.pathname === item.path;
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={cn(
+                    "flex flex-col items-center justify-center gap-1 min-w-[64px] py-2",
+                    isActive ? "text-primary" : "text-muted-foreground"
+                  )}
+                >
+                  <item.icon className="w-5 h-5" />
+                  <span className="text-[10px] font-medium">{item.label}</span>
+                </Link>
+              );
+            })}
+            {/* FAB placeholder for visual balance */}
+            <div className="min-w-[64px]" />
+          </div>
+        </nav>
+      )}
+
+      {/* Floating Action Button - Mobile */}
+      {isMobile && (
+        <Link
+          to="/dashboard/files"
+          className="fixed bottom-20 right-4 z-40 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center active:scale-95 transition-transform"
+        >
+          <Plus className="w-6 h-6" />
+        </Link>
       )}
 
       {/* Member Chat Panel */}
       {role === "member" && (
-        <MemberChatPanel isOpen={chatOpen} onClose={toggleChat} />
+        <MemberChatPanel isOpen={chatOpen} onClose={() => setChatOpen(false)} />
       )}
     </div>
   );
