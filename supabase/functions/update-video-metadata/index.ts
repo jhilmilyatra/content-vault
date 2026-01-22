@@ -93,7 +93,7 @@ Deno.serve(async (req) => {
           const baseName = storagePath.replace(/\.[^.]+$/, '');
           const thumbnailFileName = `${baseName.split('/').pop()}_thumb.jpg`;
 
-          // Upload thumbnail to VPS
+          // Upload thumbnail to VPS using base64 endpoint
           const vpsResponse = await fetch(`${vpsEndpoint}/upload-base64`, {
             method: "POST",
             headers: {
@@ -106,24 +106,32 @@ Deno.serve(async (req) => {
               mimeType: "image/jpeg",
               data: base64Data,
               userId: user.id,
-              subPath: "thumbnails", // Store in thumbnails subdirectory
             }),
           });
 
           if (vpsResponse.ok) {
             const vpsResult = await vpsResponse.json();
-            finalThumbnailUrl = vpsResult.path || vpsResult.url;
+            // Construct full thumbnail URL using VPS CDN if available
+            const cdnUrl = Deno.env.get("VPS_CDN_URL");
+            const thumbnailPath = vpsResult.path || `${user.id}/${thumbnailFileName}`;
+            
+            if (cdnUrl) {
+              finalThumbnailUrl = `${cdnUrl}/files/${thumbnailPath}`;
+            } else {
+              finalThumbnailUrl = `${vpsEndpoint}/files/${thumbnailPath}`;
+            }
+            
             console.log(`✅ Thumbnail uploaded to VPS: ${finalThumbnailUrl}`);
           } else {
-            console.error("Failed to upload thumbnail to VPS:", await vpsResponse.text());
-            // Use data URL as fallback (stored inline)
-            finalThumbnailUrl = thumbnailDataUrl;
+            const errorText = await vpsResponse.text();
+            console.error("Failed to upload thumbnail to VPS:", errorText);
+            // Don't store data URL in DB - it's too large
+            finalThumbnailUrl = null;
           }
         }
       } catch (uploadError) {
         console.error("Thumbnail upload error:", uploadError);
-        // Use data URL as fallback
-        finalThumbnailUrl = thumbnailDataUrl;
+        finalThumbnailUrl = null;
       }
     }
 
