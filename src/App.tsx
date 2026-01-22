@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { GuestAuthProvider } from "@/contexts/GuestAuthContext";
+import { FeatureFlagsProvider } from "@/contexts/FeatureFlagsContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
 import { useCacheInvalidation } from "@/hooks/useCacheInvalidation";
@@ -103,8 +104,9 @@ function App() {
         <BrowserRouter>
           <AuthProvider>
             <GuestAuthProvider>
-              <GlobalHooks />
-              <Suspense fallback={<PageLoader />}>
+              <FeatureFlagsProvider>
+                <GlobalHooks />
+                <Suspense fallback={<PageLoader />}>
                 <Routes>
                   <Route path="/" element={<Index />} />
                   <Route path="/auth" element={<Auth />} />
@@ -154,6 +156,7 @@ function App() {
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
+              </FeatureFlagsProvider>
             </GuestAuthProvider>
           </AuthProvider>
         </BrowserRouter>
