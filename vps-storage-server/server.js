@@ -1000,33 +1000,74 @@ app.get('/stream', (req, res) => {
     
     console.log(`📺 Stream request: ${storagePath}, guest=${guestId}, range=${range || 'full'}`);
     
-    // Common headers for streaming
+    // Generate ETag for cache validation
+    const etag = `"${stat.mtime.getTime().toString(16)}-${fileSize.toString(16)}"`;
+    
+    // Check If-None-Match for cache revalidation
+    const ifNoneMatch = req.headers['if-none-match'];
+    if (ifNoneMatch && ifNoneMatch === etag) {
+      return res.status(304).end();
+    }
+    
+    // Check If-Range for conditional range requests
+    const ifRange = req.headers['if-range'];
+    const rangeValid = !ifRange || ifRange === etag || ifRange === stat.mtime.toUTCString();
+    
+    // CDN-optimized headers for MP4 streaming
+    const isVideo = contentType.startsWith('video/');
+    const isAudio = contentType.startsWith('audio/');
+    const isMedia = isVideo || isAudio;
+    
+    // Common headers for CDN-optimized streaming
     const commonHeaders = {
       'Content-Type': contentType,
       'Accept-Ranges': 'bytes',
-      'Cache-Control': 'public, max-age=3600',
+      'ETag': etag,
+      'Last-Modified': stat.mtime.toUTCString(),
+      // Long cache for signed URLs (content doesn't change, URL expires)
+      'Cache-Control': isMedia ? 'public, max-age=86400, immutable' : 'public, max-age=3600',
+      // Cloudflare cache hints
+      'CDN-Cache-Control': isMedia ? 'public, max-age=604800' : 'public, max-age=3600',
+      // CORS headers for cross-origin playback
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-      'Access-Control-Allow-Headers': 'Range, Content-Type',
-      'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+      'Access-Control-Allow-Headers': 'Range, Content-Type, If-None-Match, If-Range',
+      'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges, ETag',
+      // Performance hints
+      'X-Content-Type-Options': 'nosniff',
     };
     
     // Handle range requests for video/audio seeking
-    if (range) {
+    if (range && rangeValid) {
       const parts = range.replace(/bytes=/, '').split('-');
       const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      // Support open-ended ranges (bytes=0-)
+      const requestedEnd = parts[1] ? parseInt(parts[1], 10) : undefined;
+      
+      // For video, serve larger chunks (8MB) for better CDN efficiency
+      const maxChunkSize = isVideo ? 8 * 1024 * 1024 : 2 * 1024 * 1024;
+      const end = requestedEnd !== undefined 
+        ? Math.min(requestedEnd, fileSize - 1)
+        : Math.min(start + maxChunkSize - 1, fileSize - 1);
+      
       const chunkSize = end - start + 1;
       
       // Validate range
-      if (start >= fileSize || end >= fileSize || start > end) {
-        res.status(416).json({ error: 'Range not satisfiable' });
-        return;
+      if (start >= fileSize || start > end || start < 0) {
+        res.writeHead(416, {
+          'Content-Range': `bytes */${fileSize}`,
+          'Access-Control-Allow-Origin': '*',
+        });
+        return res.end();
       }
       
-      console.log(`📺 Streaming range: ${start}-${end}/${fileSize} (${chunkSize} bytes)`);
+      console.log(`📺 Streaming range: ${start}-${end}/${fileSize} (${(chunkSize / 1024 / 1024).toFixed(2)} MB)`);
       
-      const stream = fs.createReadStream(pathInfo.fullPath, { start, end });
+      const stream = fs.createReadStream(pathInfo.fullPath, { 
+        start, 
+        end,
+        highWaterMark: 512 * 1024 // 512KB read buffer for smooth streaming
+      });
       
       res.writeHead(206, {
         ...commonHeaders,
@@ -1034,22 +1075,118 @@ app.get('/stream', (req, res) => {
         'Content-Length': chunkSize,
       });
       
+      stream.on('error', (err) => {
+        console.error('Stream read error:', err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Stream failed' });
+        }
+      });
+      
       stream.pipe(res);
-    } else {
-      // Full file streaming
-      console.log(`📺 Streaming full file: ${fileSize} bytes`);
+    } else if (range && !rangeValid) {
+      // If-Range condition failed, return full content
+      console.log(`📺 Range condition failed, streaming full file: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
       
       res.writeHead(200, {
         ...commonHeaders,
         'Content-Length': fileSize,
       });
       
-      const stream = fs.createReadStream(pathInfo.fullPath);
+      const stream = fs.createReadStream(pathInfo.fullPath, {
+        highWaterMark: 512 * 1024
+      });
+      stream.pipe(res);
+    } else {
+      // Full file streaming (initial request or no range support)
+      console.log(`📺 Streaming full file: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
+      
+      res.writeHead(200, {
+        ...commonHeaders,
+        'Content-Length': fileSize,
+      });
+      
+      const stream = fs.createReadStream(pathInfo.fullPath, {
+        highWaterMark: 512 * 1024
+      });
       stream.pipe(res);
     }
   } catch (error) {
     console.error('Stream error:', error);
     res.status(500).json({ error: 'Stream failed', message: error.message });
+  }
+});
+
+// ============================================
+// HEAD request for stream (for preflight/cache validation)
+// ============================================
+app.head('/stream', (req, res) => {
+  try {
+    const { path: storagePath, guest: guestId, expires, sig } = req.query;
+    
+    if (!storagePath || !guestId || !expires || !sig) {
+      return res.status(400).end();
+    }
+    
+    // Check expiration
+    const expiresTimestamp = parseInt(expires);
+    const now = Math.floor(Date.now() / 1000);
+    
+    if (now > expiresTimestamp) {
+      return res.status(403).end();
+    }
+    
+    // Verify HMAC signature
+    const message = `${storagePath}:${guestId}:${expires}`;
+    const expectedSig = crypto.createHmac('sha256', HLS_SIGNING_SECRET)
+      .update(message)
+      .digest('hex');
+    
+    if (sig !== expectedSig) {
+      return res.status(403).end();
+    }
+    
+    // Parse storage path
+    const pathParts = storagePath.split('/');
+    if (pathParts.length !== 2) {
+      return res.status(400).end();
+    }
+    
+    const [userId, fileName] = pathParts;
+    const pathInfo = getSafePath(userId, fileName);
+    
+    if (!pathInfo || !fs.existsSync(pathInfo.fullPath)) {
+      return res.status(404).end();
+    }
+    
+    const stat = fs.statSync(pathInfo.fullPath);
+    const ext = path.extname(fileName).toLowerCase();
+    const mimeTypes = {
+      '.mp4': 'video/mp4',
+      '.webm': 'video/webm',
+      '.mov': 'video/quicktime',
+      '.mkv': 'video/x-matroska',
+      '.mp3': 'audio/mpeg',
+      '.wav': 'audio/wav',
+    };
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+    const isMedia = contentType.startsWith('video/') || contentType.startsWith('audio/');
+    const etag = `"${stat.mtime.getTime().toString(16)}-${stat.size.toString(16)}"`;
+    
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Content-Length': stat.size,
+      'Accept-Ranges': 'bytes',
+      'ETag': etag,
+      'Last-Modified': stat.mtime.toUTCString(),
+      'Cache-Control': isMedia ? 'public, max-age=86400, immutable' : 'public, max-age=3600',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges, ETag',
+    });
+    res.end();
+  } catch (error) {
+    console.error('HEAD stream error:', error);
+    res.status(500).end();
   }
 });
 
