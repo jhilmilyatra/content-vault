@@ -19,8 +19,6 @@ interface VideoPlayerProps {
   /** Initial playback position in seconds */
   initialTime?: number;
   className?: string;
-  /** Set to true for cross-origin sources that support CORS, false for proxied/guest URLs */
-  crossOrigin?: boolean;
   /** Poster image URL */
   poster?: string;
   /** Preload strategy: "none" | "metadata" | "auto" */
@@ -35,7 +33,6 @@ export function VideoPlayer({
   onEnded,
   initialTime,
   className = "", 
-  crossOrigin = true,
   poster,
   preload = "auto"
 }: VideoPlayerProps) {
@@ -85,15 +82,22 @@ export function VideoPlayer({
   }, [isMobile, isPlaying]);
 
   // Preload video source via link hint for faster initial buffering
+  // Note: We don't use crossOrigin for signed URLs to avoid CORS issues
   useEffect(() => {
     if (!src) return;
+    
+    // Log the source for debugging
+    console.log('📹 VideoPlayer loading source:', src?.substring(0, 100));
+    if (fallbackSrc) {
+      console.log('📹 Fallback source available:', fallbackSrc?.substring(0, 100));
+    }
     
     // Create preload link for primary source
     const preloadLink = document.createElement('link');
     preloadLink.rel = 'preload';
     preloadLink.as = 'video';
     preloadLink.href = src;
-    preloadLink.crossOrigin = crossOrigin ? 'anonymous' : undefined;
+    // Don't set crossOrigin for signed URLs - causes CORS issues
     document.head.appendChild(preloadLink);
 
     // Also preload fallback if available
@@ -103,7 +107,6 @@ export function VideoPlayer({
       fallbackLink.rel = 'preload';
       fallbackLink.as = 'video';
       fallbackLink.href = fallbackSrc;
-      fallbackLink.crossOrigin = crossOrigin ? 'anonymous' : undefined;
       document.head.appendChild(fallbackLink);
     }
 
@@ -111,10 +114,11 @@ export function VideoPlayer({
       preloadLink.remove();
       fallbackLink?.remove();
     };
-  }, [src, fallbackSrc, crossOrigin]);
+  }, [src, fallbackSrc]);
 
   // Reset state when source changes
   useEffect(() => {
+    console.log('📹 Source changed, resetting state');
     setCurrentSrc(src);
     setUseFallback(false);
     setMediaError(null);
@@ -296,21 +300,22 @@ export function VideoPlayer({
     
     console.error(`Video error: code=${errorCode}, message=${errorMessage}, src=${currentSrc?.substring(0, 100)}`);
     
-    // Format errors and decode errors - immediately try fallback (don't retry same source)
-    if (errorCode === MediaError.MEDIA_ERR_DECODE || 
-        (errorCode === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED && errorMessage.toLowerCase().includes('format'))) {
-      console.log('Format/decode error detected, trying fallback immediately');
-      if (fallbackSrc && !useFallback) {
-        console.log('Switching to fallback source:', fallbackSrc?.substring(0, 80));
-        setUseFallback(true);
-        setCurrentSrc(fallbackSrc);
-        setRetryCount(0);
-        setIsBuffering(true);
-        return;
+    // Try fallback immediately on any error if available
+    if (fallbackSrc && !useFallback) {
+      console.log('Primary source failed, switching to fallback:', fallbackSrc?.substring(0, 80));
+      setUseFallback(true);
+      setCurrentSrc(fallbackSrc);
+      setRetryCount(0);
+      setIsBuffering(true);
+      
+      // Reset video element to load new source
+      if (video) {
+        video.load();
       }
+      return;
     }
     
-    // Network errors - retry with exponential backoff
+    // Network errors - retry with exponential backoff (only if no fallback)
     if (errorCode === MediaError.MEDIA_ERR_NETWORK && retryCount < MAX_RETRIES) {
       const delay = Math.min(1000 * Math.pow(2, retryCount), 8000);
       console.log(`Network error, retrying in ${delay}ms (${retryCount + 1}/${MAX_RETRIES})...`);
@@ -319,43 +324,20 @@ export function VideoPlayer({
       
       setTimeout(() => {
         if (video) {
-          // Reset video element and reload
           video.load();
         }
       }, delay);
       return;
     }
     
-    // Source errors (often CORS or 404) - try fallback first
-    if (errorCode === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
-      // Try fallback if available
-      if (fallbackSrc && !useFallback) {
-        console.log('Source not supported, trying fallback:', fallbackSrc?.substring(0, 80));
-        setUseFallback(true);
-        setCurrentSrc(fallbackSrc);
-        setRetryCount(0);
-        setIsBuffering(true);
-        return;
-      }
-    }
-    
-    // Try fallback if available (last resort)
-    if (fallbackSrc && !useFallback) {
-      console.log('Primary source failed, trying fallback:', fallbackSrc);
-      setUseFallback(true);
-      setCurrentSrc(fallbackSrc);
-      setRetryCount(0);
-      return;
-    }
-    
     // Build user-friendly error message
-    let displayError = 'Unable to play this file. Please try again or download it.';
+    let displayError = 'Unable to play this file. Please try downloading it instead.';
     if (errorCode === MediaError.MEDIA_ERR_NETWORK) {
       displayError = 'Connection lost. Please check your network and try again.';
     } else if (errorCode === MediaError.MEDIA_ERR_DECODE) {
-      displayError = 'This video could not be decoded. The file may be corrupted.';
+      displayError = 'This video could not be decoded. The file may be corrupted or use an unsupported codec.';
     } else if (errorCode === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
-      displayError = 'This video format is not supported by your browser.';
+      displayError = 'This video format or codec is not supported by your browser. Try downloading it to play locally.';
     }
     
     setMediaError(displayError);
@@ -531,7 +513,6 @@ export function VideoPlayer({
         >
           <video
             ref={videoRef}
-            src={currentSrc}
             poster={poster}
             className={`max-w-full max-h-full object-contain ${
               isPortraitVideo ? 'h-full w-auto' : 'w-full h-auto'
@@ -547,10 +528,15 @@ export function VideoPlayer({
             onCanPlay={handleCanPlay}
             onCanPlayThrough={handleCanPlayThrough}
             playsInline
-            crossOrigin={crossOrigin ? "anonymous" : undefined}
             preload={preload}
             controlsList="nodownload"
-          />
+          >
+            {/* Primary source */}
+            <source src={currentSrc} type="video/mp4" />
+            {/* Fallback sources for broader compatibility */}
+            {fallbackSrc && <source src={fallbackSrc} type="video/mp4" />}
+            Your browser does not support the video tag.
+          </video>
         </div>
 
         {/* Buffering indicator */}
@@ -692,7 +678,6 @@ export function VideoPlayer({
       >
         <video
           ref={videoRef}
-          src={currentSrc}
           poster={poster}
           className="max-w-full max-h-full object-contain"
           onTimeUpdate={handleTimeUpdate}
@@ -706,10 +691,15 @@ export function VideoPlayer({
           onCanPlay={handleCanPlay}
           onCanPlayThrough={handleCanPlayThrough}
           playsInline
-          crossOrigin={crossOrigin ? "anonymous" : undefined}
           preload={preload}
           controlsList="nodownload"
-        />
+        >
+          {/* Primary source */}
+          <source src={currentSrc} type="video/mp4" />
+          {/* Fallback sources for broader compatibility */}
+          {fallbackSrc && <source src={fallbackSrc} type="video/mp4" />}
+          Your browser does not support the video tag.
+        </video>
       </div>
 
       {/* Buffering indicator */}

@@ -544,7 +544,6 @@ export function FilePreviewModal({
                 onError={() => {
                   setMediaError('Unable to play this file. Please try again or download it.');
                 }}
-                crossOrigin={!stream.vpsOnline}
               />
             </div>
           </div>
