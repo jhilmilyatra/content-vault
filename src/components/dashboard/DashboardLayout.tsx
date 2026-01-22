@@ -42,6 +42,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
 import MemberChatPanel from "./MemberChatPanel";
 import NotificationDropdown from "./NotificationDropdown";
+import MaintenanceBanner from "./MaintenanceBanner";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/logo.png";
 
@@ -362,6 +363,9 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
         className="flex-1 flex flex-col min-w-0"
         style={{ marginLeft: isMobile ? 0 : 260 }}
       >
+        {/* Maintenance Mode Banner */}
+        <MaintenanceBanner />
+        
         {/* Clean Header - 56px height */}
         <header className="sticky top-0 z-20 h-14 bg-background/95 backdrop-blur-sm border-b border-border flex items-center justify-between px-4 gap-4">
           <div className="flex items-center gap-3">
