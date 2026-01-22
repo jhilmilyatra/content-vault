@@ -9,11 +9,10 @@ import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { 
   Download, X, File, Loader2,
   Play, Pause, SkipBack, SkipForward,
-  ChevronLeft, ChevronRight, Image, Info, Music, FileVideo, Wifi
+  ChevronLeft, ChevronRight, Image, Info, Music, FileVideo
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { VideoPlayer } from "@/components/media/VideoPlayer";
-import { HLSPlayer } from "@/components/media/HLSPlayer";
 import { UniversalImageViewer } from "@/components/media/UniversalImageViewer";
 
 interface FilePreviewModalProps {
@@ -25,7 +24,7 @@ interface FilePreviewModalProps {
 }
 
 // Stream mode type - decided BEFORE mounting any player
-type StreamMode = 'hls' | 'mp4' | 'audio' | 'image' | 'pdf' | 'other';
+type StreamMode = 'mp4' | 'audio' | 'image' | 'pdf' | 'other';
 
 interface ResolvedStream {
   mode: StreamMode;
@@ -533,29 +532,6 @@ export function FilePreviewModal({
           />
         );
 
-      case "hls":
-        // HLS adaptive streaming - render HLSPlayer only
-        return (
-          <div className="w-full h-full flex items-center justify-center overflow-hidden">
-            <div className="w-full h-full max-h-[70vh] relative">
-              {/* HLS indicator badge */}
-              <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 px-2 py-1 rounded-full bg-black/60 backdrop-blur-sm text-xs text-white/90">
-                <Wifi className="w-3 h-3 text-green-400" />
-                <span>Adaptive</span>
-              </div>
-              <HLSPlayer 
-                key={`hls-${playerKey}`}
-                src={stream.url}
-                fallbackSrc={stream.fallbackUrl}
-                onError={(error) => {
-                  console.error('HLS playback error:', error);
-                  setMediaError('Unable to play this file. Please try again or download it.');
-                }}
-              />
-            </div>
-          </div>
-        );
-
       case "mp4":
         // Direct MP4 stream - render VideoPlayer only
         return (
@@ -788,7 +764,7 @@ export function FilePreviewModal({
     }
   };
 
-  const isVideoOrImage = stream?.mode === "hls" || stream?.mode === "mp4" || stream?.mode === "image";
+  const isVideoOrImage = stream?.mode === "mp4" || stream?.mode === "image";
   const fileType = file ? getBaseFileType(file.mime_type) : "other";
 
   return (

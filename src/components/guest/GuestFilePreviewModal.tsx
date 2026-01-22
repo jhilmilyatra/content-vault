@@ -6,12 +6,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { formatFileSize } from "@/lib/fileService";
 import { 
   Download, X, FileText, File, Loader2,
-  Play, Pause, Volume2, VolumeX, SkipBack, SkipForward,
-  Wifi
+  Play, Pause, Volume2, VolumeX, SkipBack, SkipForward
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { VideoPlayer } from "@/components/media/VideoPlayer";
-import { HLSPlayer } from "@/components/media/HLSPlayer";
 import { UniversalImageViewer } from "@/components/media/UniversalImageViewer";
 
 interface GuestFileItem {
@@ -31,7 +29,7 @@ interface GuestFilePreviewModalProps {
 }
 
 // Stream mode type - decided BEFORE mounting any player
-type StreamMode = 'hls' | 'mp4' | 'audio' | 'image' | 'pdf' | 'other';
+type StreamMode = 'mp4' | 'audio' | 'image' | 'pdf' | 'other';
 
 interface ResolvedStream {
   mode: StreamMode;
@@ -90,61 +88,16 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
     const baseFileType = getFileType(file.mime_type);
     
     try {
-      // For video files, check HLS availability FIRST
+      // For video files - get direct MP4 stream URL
       if (baseFileType === 'mp4') {
-        try {
-          console.log('🎬 Resolving video stream mode...');
-          const hlsResponse = await supabase.functions.invoke('guest-hls-url', {
-            body: {
-              guestId,
-              storagePath: file.storage_path,
-            },
-          });
-
-          if (!hlsResponse.error && hlsResponse.data) {
-            const { type, url, hlsAvailable } = hlsResponse.data;
-            
-            if (type === 'hls' && hlsAvailable && url) {
-              console.log('✅ HLS available - using adaptive streaming');
-              
-              // Get fallback MP4 URL for safety
-              let fallbackUrl: string | undefined;
-              try {
-                const streamResponse = await supabase.functions.invoke('guest-stream-url', {
-                  body: { guestId, storagePath: file.storage_path },
-                });
-                if (streamResponse.data?.url) {
-                  fallbackUrl = streamResponse.data.url;
-                }
-              } catch (e) {
-                console.warn('Could not get fallback URL:', e);
-              }
-              
-              setStream({ mode: 'hls', url, fallbackUrl });
-              setLoading(false);
-              return;
-            }
-            
-            // HLS not available, use the returned URL as MP4
-            if (url) {
-              console.log('📹 HLS not available - using direct MP4 stream');
-              setStream({ mode: 'mp4', url });
-              setLoading(false);
-              return;
-            }
-          }
-        } catch (hlsError) {
-          console.warn('HLS check failed, falling back to direct stream:', hlsError);
-        }
-        
-        // Fallback: get direct stream URL
+        console.log('🎬 Resolving video stream...');
         const streamResponse = await supabase.functions.invoke('guest-stream-url', {
           body: { guestId, storagePath: file.storage_path },
         });
         
         if (streamResponse.data?.url) {
-          console.log('📹 Using fallback MP4 stream');
-          setStream({ mode: 'mp4', url: streamResponse.data.url });
+          console.log('📹 Using MP4 stream');
+          setStream({ mode: 'mp4', url: streamResponse.data.url, fallbackUrl: streamResponse.data.fallbackUrl });
           setLoading(false);
           return;
         }
@@ -401,29 +354,6 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
           />
         );
 
-      case "hls":
-        // HLS adaptive streaming - render HLSPlayer only
-        return (
-          <div className="w-full h-full flex items-center justify-center overflow-hidden">
-            <div className="w-full h-full max-h-[70vh] relative">
-              {/* HLS indicator badge */}
-              <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 px-2 py-1 rounded-full bg-black/60 backdrop-blur-sm text-xs text-white/90">
-                <Wifi className="w-3 h-3 text-green-400" />
-                <span>Adaptive</span>
-              </div>
-              <HLSPlayer 
-                key={`hls-${playerKey}`}
-                src={stream.url}
-                fallbackSrc={stream.fallbackUrl}
-                onError={(error) => {
-                  console.error('HLS playback error:', error);
-                  setMediaError('Unable to play this file. Please try again or download it.');
-                }}
-              />
-            </div>
-          </div>
-        );
-
       case "mp4":
         // Direct MP4 stream - render VideoPlayer only
         return (
@@ -431,7 +361,8 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
             <div className="w-full h-full max-h-[70vh]">
               <VideoPlayer 
                 key={`mp4-${playerKey}`}
-                src={stream.url} 
+                src={stream.url}
+                fallbackSrc={stream.fallbackUrl}
                 onError={() => {
                   setMediaError('Unable to play this file. Please try again or download it.');
                 }}
@@ -616,7 +547,7 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
     }
   };
 
-  const isVideoOrImage = stream?.mode === "hls" || stream?.mode === "mp4" || stream?.mode === "image";
+  const isVideoOrImage = stream?.mode === "mp4" || stream?.mode === "image";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
