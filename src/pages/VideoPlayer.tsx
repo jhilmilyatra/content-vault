@@ -2,14 +2,14 @@
  * VideoPlayer Page - Dedicated full-screen video playback
  * 
  * Opens in a separate tab with its own URL for YouTube/Netflix-style experience.
- * Supports HLS adaptive streaming and direct MP4 playback.
+ * Uses direct MP4 streaming for optimal compatibility.
  * Includes resume functionality - saves and restores playback position.
  */
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { HLSPlayer } from "@/components/media/HLSPlayer";
+import { VideoPlayer as VideoPlayerComponent } from "@/components/media/VideoPlayer";
 import { useVideoStream } from "@/hooks/useVideoStream";
 import { useVideoProgress } from "@/hooks/useVideoProgress";
 import { useAuth } from "@/hooks/useAuth";
@@ -29,11 +29,9 @@ export default function VideoPlayer() {
   
   const { 
     streamUrl, 
-    hlsUrl, 
     fallbackUrl, 
     isLoading: streamLoading, 
     error, 
-    preferHls,
     fileInfo 
   } = useVideoStream(fileId);
 
@@ -130,8 +128,8 @@ export default function VideoPlayer() {
   };
 
   const isLoading = streamLoading || progressLoading;
-  const videoSrc = preferHls && hlsUrl ? hlsUrl : streamUrl;
-  const videoFallback = fallbackUrl || streamUrl;
+  const videoSrc = streamUrl;
+  const videoFallback = fallbackUrl;
 
   if (isLoading) {
     return (
@@ -246,7 +244,7 @@ export default function VideoPlayer() {
       </AnimatePresence>
 
       {/* Video Player - Full Screen */}
-      <HLSPlayer
+      <VideoPlayerComponent
         src={videoSrc}
         fallbackSrc={videoFallback}
         poster={fileInfo?.thumbnailUrl}
@@ -254,7 +252,7 @@ export default function VideoPlayer() {
         initialTime={resumePosition || undefined}
         onTimeUpdate={handleTimeUpdate}
         onEnded={handleEnded}
-        onError={(err) => console.error("Video playback error:", err)}
+        onError={() => console.error("Video playback error")}
       />
     </div>
   );

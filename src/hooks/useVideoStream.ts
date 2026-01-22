@@ -3,10 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 
 interface StreamUrls {
   url?: string;
-  hlsUrl?: string;
   fallbackUrl?: string;
-  hasHls?: boolean;
-  type?: "cdn" | "vps-direct";
+  type?: "cdn" | "vps-direct" | "mp4";
   fileInfo?: {
     id: string;
     name: string;
@@ -19,41 +17,35 @@ interface StreamUrls {
 
 interface UseVideoStreamResult {
   streamUrl: string | null;
-  hlsUrl: string | null;
   fallbackUrl: string | null;
   isLoading: boolean;
   error: string | null;
-  preferHls: boolean;
   fileInfo: StreamUrls["fileInfo"] | null;
   refresh: () => Promise<void>;
 }
 
 /**
- * Hook to get optimal streaming URLs for video playback
+ * Hook to get MP4 streaming URLs for video playback
  * 
  * Features:
- * - Automatically fetches signed CDN URLs
+ * - Automatically fetches signed CDN URLs for MP4 streaming
  * - Long TTL (12 hours) for uninterrupted playback
- * - Supports both MP4 direct streaming and HLS adaptive
  * - Auto-refresh before URL expiration
  */
 export function useVideoStream(
   fileId?: string,
   storagePath?: string,
   options?: {
-    preferHls?: boolean;
     autoFetch?: boolean;
   }
 ): UseVideoStreamResult {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
-  const [hlsUrl, setHlsUrl] = useState<string | null>(null);
   const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasHls, setHasHls] = useState(false);
   const [fileInfo, setFileInfo] = useState<StreamUrls["fileInfo"] | null>(null);
 
-  const { preferHls = true, autoFetch = true } = options || {};
+  const { autoFetch = true } = options || {};
 
   const fetchStreamUrls = useCallback(async () => {
     if (!fileId && !storagePath) return;
@@ -89,9 +81,7 @@ export function useVideoStream(
       const data: StreamUrls = await response.json();
       
       setStreamUrl(data.url || null);
-      setHlsUrl(data.hlsUrl || null);
       setFallbackUrl(data.fallbackUrl || null);
-      setHasHls(data.hasHls || false);
       setFileInfo(data.fileInfo || null);
     } catch (err) {
       console.error("Failed to get stream URLs:", err);
@@ -122,11 +112,9 @@ export function useVideoStream(
 
   return {
     streamUrl,
-    hlsUrl,
     fallbackUrl,
     isLoading,
     error,
-    preferHls: preferHls && hasHls,
     fileInfo,
     refresh: fetchStreamUrls,
   };
