@@ -23,6 +23,8 @@ import {
   formatFileSize,
   updateBandwidthUsage,
   updateStorageUsage,
+  restoreFile,
+  permanentDeleteFile,
   type FileItem,
   type FolderItem,
   type UploadProgress,
@@ -57,6 +59,8 @@ import {
   Sparkles,
   HardDrive,
   Clock,
+  RotateCcw,
+  AlertTriangle,
 } from "lucide-react";
 import ShareDialog from "@/components/files/ShareDialog";
 import ShareFolderDialog from "@/components/files/ShareFolderDialog";
@@ -68,6 +72,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -83,11 +88,28 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
+import { formatDistanceToNow } from "date-fns";
+
 
 const FileManager = () => {
+  // Tab state - "files" or "trash"
+  const [activeTab, setActiveTab] = useState<"files" | "trash">("files");
+  
   const [files, setFiles] = useState<FileItem[]>([]);
   const [folders, setFolders] = useState<FolderItem[]>([]);
+  const [deletedFiles, setDeletedFiles] = useState<FileItem[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<{ id: string | null; name: string }[]>([
     { id: null, name: "My Files" },
@@ -115,6 +137,11 @@ const FileManager = () => {
   const [shareFolderOpen, setShareFolderOpen] = useState(false);
   const [folderToShare, setFolderToShare] = useState<FolderItem | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  
+  // Trash-specific state
+  const [trashDeleteDialogOpen, setTrashDeleteDialogOpen] = useState(false);
+  const [fileToPermDelete, setFileToPermDelete] = useState<FileItem | null>(null);
+  const [emptyTrashDialogOpen, setEmptyTrashDialogOpen] = useState(false);
   
   // Mobile long-press action sheet state
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
@@ -204,9 +231,77 @@ const FileManager = () => {
     }
   }, [user, currentFolderId]);
 
+  // Fetch deleted files for trash tab
+  const fetchDeletedFiles = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("files")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("is_deleted", true)
+        .order("deleted_at", { ascending: false });
+
+      if (error) throw error;
+      setDeletedFiles((data as FileItem[]) || []);
+    } catch (error) {
+      console.error("Error fetching deleted files:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
   useEffect(() => {
-    fetchContents();
-  }, [fetchContents]);
+    if (activeTab === "files") {
+      fetchContents();
+    } else {
+      fetchDeletedFiles();
+    }
+  }, [activeTab, fetchContents, fetchDeletedFiles]);
+
+  // Trash handlers
+  const handleRestoreFile = async (file: FileItem) => {
+    try {
+      await restoreFile(file.id);
+      lightHaptic();
+      toast({ title: "File restored", description: `${file.name} has been restored` });
+      fetchDeletedFiles();
+    } catch (error) {
+      console.error("Error restoring file:", error);
+      toast({ title: "Error", description: "Failed to restore file", variant: "destructive" });
+    }
+  };
+
+  const handlePermanentDelete = async (file: FileItem) => {
+    try {
+      await permanentDeleteFile(file.id, file.storage_path);
+      lightHaptic();
+      toast({ title: "Deleted", description: `${file.name} permanently deleted` });
+      setTrashDeleteDialogOpen(false);
+      setFileToPermDelete(null);
+      fetchDeletedFiles();
+    } catch (error) {
+      console.error("Error deleting file:", error);
+      toast({ title: "Error", description: "Failed to delete file", variant: "destructive" });
+    }
+  };
+
+  const handleEmptyTrash = async () => {
+    try {
+      for (const file of deletedFiles) {
+        await permanentDeleteFile(file.id, file.storage_path);
+      }
+      lightHaptic();
+      toast({ title: "Trash emptied" });
+      setEmptyTrashDialogOpen(false);
+      fetchDeletedFiles();
+    } catch (error) {
+      console.error("Error emptying trash:", error);
+      toast({ title: "Error", description: "Failed to empty trash", variant: "destructive" });
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
@@ -835,13 +930,55 @@ const FileManager = () => {
             />
           )}
 
-          {/* Breadcrumbs & Search */}
-          <motion.div 
+          {/* Tabs: My Files / Trash */}
+          <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+            transition={{ delay: 0.35 }}
           >
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "files" | "trash")}>
+              <div className="flex items-center justify-between gap-4">
+                <TabsList className="bg-white/[0.03] border border-white/[0.08]">
+                  <TabsTrigger value="files" className="gap-2 data-[state=active]:bg-white/[0.1]">
+                    <FolderOpen className="w-4 h-4" />
+                    My Files
+                  </TabsTrigger>
+                  <TabsTrigger value="trash" className="gap-2 data-[state=active]:bg-white/[0.1]">
+                    <Trash2 className="w-4 h-4" />
+                    Trash
+                    {deletedFiles.length > 0 && (
+                      <span className="ml-1 text-xs bg-destructive/20 text-destructive px-1.5 rounded-full">
+                        {deletedFiles.length}
+                      </span>
+                    )}
+                  </TabsTrigger>
+                </TabsList>
+                
+                {activeTab === "trash" && deletedFiles.length > 0 && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setEmptyTrashDialogOpen(true)}
+                    className="rounded-xl"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Empty Trash
+                  </Button>
+                )}
+              </div>
+            </Tabs>
+          </motion.div>
+
+          {/* === FILES TAB CONTENT === */}
+          {activeTab === "files" && (
+            <>
+              {/* Breadcrumbs & Search */}
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+              >
             <div className="flex items-center gap-1 text-sm overflow-x-auto pb-2 sm:pb-0">
               {breadcrumbs.map((crumb, index) => (
                 <div key={crumb.id || "root"} className="flex items-center">
@@ -1266,6 +1403,93 @@ const FileManager = () => {
               })}
             </motion.div>
           )}
+            </>
+          )}
+
+          {/* === TRASH TAB CONTENT === */}
+          {activeTab === "trash" && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className="space-y-4"
+            >
+              {/* Trash Search */}
+              <div className="relative max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search deleted files..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+
+              {/* Trash Content */}
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+              ) : deletedFiles.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
+                <div className="text-center py-12 bg-card border border-border rounded-lg">
+                  <Trash2 className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
+                  <h3 className="text-base font-medium text-foreground mb-1">Trash is empty</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {searchQuery ? "No deleted files match your search" : "No deleted files"}
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-card border border-border rounded-lg divide-y divide-border">
+                  {deletedFiles
+                    .filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                    .map((file) => {
+                      const IconComponent = getFileIconComponent(file.mime_type);
+                      const deletedDate = file.deleted_at ? new Date(file.deleted_at) : null;
+
+                      return (
+                        <div
+                          key={file.id}
+                          className="flex items-center gap-4 px-4 py-3 hover:bg-muted/30 transition-colors group"
+                        >
+                          <div className="w-10 h-10 rounded-lg bg-destructive/10 flex items-center justify-center flex-shrink-0">
+                            <IconComponent className="w-5 h-5 text-destructive" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatFileSize(file.size_bytes)} • Deleted{" "}
+                              {deletedDate
+                                ? formatDistanceToNow(deletedDate, { addSuffix: true })
+                                : "unknown"}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRestoreFile(file)}
+                            >
+                              <RotateCcw className="w-4 h-4 mr-1" />
+                              Restore
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => {
+                                setFileToPermDelete(file);
+                                setTrashDeleteDialogOpen(true);
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </motion.div>
+          )}
 
           {/* Create Folder Dialog */}
           <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>
@@ -1396,6 +1620,54 @@ const FileManager = () => {
               userId={user.id}
             />
           )}
+
+          {/* Trash: Permanent Delete Confirmation */}
+          <AlertDialog open={trashDeleteDialogOpen} onOpenChange={setTrashDeleteDialogOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-destructive" />
+                  Permanently Delete?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete "{fileToPermDelete?.name}". This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  onClick={() => fileToPermDelete && handlePermanentDelete(fileToPermDelete)}
+                >
+                  Delete Forever
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {/* Trash: Empty Trash Confirmation */}
+          <AlertDialog open={emptyTrashDialogOpen} onOpenChange={setEmptyTrashDialogOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-destructive" />
+                  Empty Trash?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete all {deletedFiles.length} file(s) in the trash. This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  onClick={handleEmptyTrash}
+                >
+                  Empty Trash
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {/* Mobile Long-Press Action Sheet */}
           <IosActionSheet
