@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { useGuestUnreadCount } from '@/hooks/useGuestUnreadCount';
+import { GuestContinueWatching } from '@/components/guest/GuestContinueWatching';
 import {
   FolderOpen,
   Loader2,
@@ -229,6 +230,11 @@ const GuestPortal = () => {
             />
           </div>
         </motion.div>
+
+        {/* Continue Watching Section */}
+        <div className="mb-8">
+          <GuestContinueWatching />
+        </div>
 
         {/* Folders Grid */}
         <AnimatePresence mode="wait">
