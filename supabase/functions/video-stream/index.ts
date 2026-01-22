@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isFeatureEnabled, featureDisabledResponse } from "../_shared/feature-flags.ts";
 
 /**
  * Video Streaming Endpoint - Netflix/YouTube-level MP4 Streaming via CDN
@@ -8,6 +9,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
  * - Long TTL (12 hours) for uninterrupted playback
  * - Clean URL structure: /video-stream?id={file_id}
  * - Returns CDN URL for direct MP4 playback with range request support
+ * - Feature flag check for video streaming
  */
 
 const corsHeaders = {
@@ -72,6 +74,16 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    });
+
+    // Check feature flag
+    const videoStreamingEnabled = await isFeatureEnabled(supabaseAdmin, 'feature_video_streaming');
+    if (!videoStreamingEnabled) {
+      return featureDisabledResponse('Video streaming', corsHeaders);
+    }
     
     // VPS CDN URL for HTTPS streaming
     const vpsCdnUrl = Deno.env.get("VPS_CDN_URL") || "";
