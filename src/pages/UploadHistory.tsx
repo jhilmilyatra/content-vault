@@ -40,10 +40,23 @@ interface FileRecord {
   original_name: string;
   size_bytes: number;
   mime_type: string;
+  duration_seconds: number | null;
   created_at: string;
   folder_id: string | null;
   folder?: { name: string } | null;
 }
+
+// Format duration in seconds to MM:SS or HH:MM:SS
+const formatDuration = (seconds: number): string => {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  
+  if (hrs > 0) {
+    return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
 
 const getFileIcon = (mimeType: string) => {
   if (mimeType?.startsWith("video/")) return FileVideo;
@@ -96,7 +109,7 @@ const UploadHistory = () => {
     try {
       let query = supabase
         .from("files")
-        .select("id, name, original_name, size_bytes, mime_type, created_at, folder_id")
+        .select("id, name, original_name, size_bytes, mime_type, duration_seconds, created_at, folder_id")
         .eq("user_id", user.id)
         .eq("is_deleted", false)
         .order(sortField, { ascending: sortOrder === "asc" })
@@ -432,6 +445,12 @@ const UploadHistory = () => {
                               </p>
                               <p className="text-xs text-muted-foreground flex items-center gap-2">
                                 <span>{formatFileSize(file.size_bytes)}</span>
+                                {file.duration_seconds && file.duration_seconds > 0 && (
+                                  <>
+                                    <span className="w-1 h-1 rounded-full bg-muted-foreground/30" />
+                                    <span className="text-primary font-medium">{formatDuration(file.duration_seconds)}</span>
+                                  </>
+                                )}
                                 <span className="w-1 h-1 rounded-full bg-muted-foreground/30" />
                                 <span>{formatDate(file.created_at)}</span>
                               </p>
