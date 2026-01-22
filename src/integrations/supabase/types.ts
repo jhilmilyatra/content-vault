@@ -498,6 +498,60 @@ export type Database = {
         }
         Relationships: []
       }
+      guest_video_progress: {
+        Row: {
+          completed: boolean
+          created_at: string
+          duration_seconds: number | null
+          file_id: string
+          guest_id: string
+          id: string
+          last_watched_at: string
+          position_seconds: number
+          progress_percent: number | null
+          updated_at: string
+        }
+        Insert: {
+          completed?: boolean
+          created_at?: string
+          duration_seconds?: number | null
+          file_id: string
+          guest_id: string
+          id?: string
+          last_watched_at?: string
+          position_seconds?: number
+          progress_percent?: number | null
+          updated_at?: string
+        }
+        Update: {
+          completed?: boolean
+          created_at?: string
+          duration_seconds?: number | null
+          file_id?: string
+          guest_id?: string
+          id?: string
+          last_watched_at?: string
+          position_seconds?: number
+          progress_percent?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "guest_video_progress_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "guest_video_progress_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "guest_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       manual_overrides: {
         Row: {
           created_at: string
@@ -899,6 +953,53 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      video_progress: {
+        Row: {
+          completed: boolean
+          created_at: string
+          duration_seconds: number | null
+          file_id: string
+          id: string
+          last_watched_at: string
+          position_seconds: number
+          progress_percent: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed?: boolean
+          created_at?: string
+          duration_seconds?: number | null
+          file_id: string
+          id?: string
+          last_watched_at?: string
+          position_seconds?: number
+          progress_percent?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed?: boolean
+          created_at?: string
+          duration_seconds?: number | null
+          file_id?: string
+          id?: string
+          last_watched_at?: string
+          position_seconds?: number
+          progress_percent?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_progress_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "files"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

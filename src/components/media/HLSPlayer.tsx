@@ -31,6 +31,12 @@ interface HLSPlayerProps {
   poster?: string;
   /** Error callback */
   onError?: (error: string) => void;
+  /** Time update callback (fires every second) */
+  onTimeUpdate?: (currentTime: number, duration: number) => void;
+  /** Video ended callback */
+  onEnded?: () => void;
+  /** Initial playback position in seconds */
+  initialTime?: number;
   /** Additional CSS classes */
   className?: string;
 }
@@ -46,7 +52,10 @@ export function HLSPlayer({
   src, 
   fallbackSrc,
   poster,
-  onError, 
+  onError,
+  onTimeUpdate,
+  onEnded,
+  initialTime,
   className = "" 
 }: HLSPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -459,8 +468,12 @@ export function HLSPlayer({
       if (video.buffered.length > 0) {
         setBuffered(video.buffered.end(video.buffered.length - 1));
       }
+      // Fire external callback
+      if (onTimeUpdate && video.duration) {
+        onTimeUpdate(video.currentTime, video.duration);
+      }
     }
-  }, []);
+  }, [onTimeUpdate]);
 
   const handleLoadedMetadata = useCallback(() => {
     const video = videoRef.current;
@@ -470,13 +483,18 @@ export function HLSPlayer({
       if (videoWidth && videoHeight) {
         setIsPortraitVideo(videoHeight > videoWidth);
       }
+      // Seek to initial time if provided
+      if (initialTime && initialTime > 0 && video.duration > initialTime) {
+        video.currentTime = initialTime;
+      }
     }
-  }, []);
+  }, [initialTime]);
 
   const handleMediaEnded = useCallback(() => {
     setIsPlaying(false);
     setShowControls(true);
-  }, []);
+    onEnded?.();
+  }, [onEnded]);
 
   const handleMediaError = useCallback(() => {
     setMediaError('Unable to play this file.');
