@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useThumbnailProcessing } from "@/hooks/useThumbnailProcessing";
 import { PageTransition } from "@/components/ui/PageTransition";
 import { LazyImage } from "@/components/ui/LazyImage";
 import { VideoThumbnail } from "@/components/media/VideoThumbnail";
@@ -184,6 +185,7 @@ const FileManager = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const isMobile = useIsMobile();
+  const { isProcessing: isThumbnailProcessing } = useThumbnailProcessing();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Scroll container ref for prefetching
@@ -1403,10 +1405,19 @@ const FileManager = () => {
                             {formatDuration(file.duration_seconds)}
                           </div>
                         )}
+                        {/* Processing Indicator */}
+                        {isThumbnailProcessing(file.id) && (
+                          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center rounded-xl">
+                            <div className="flex flex-col items-center gap-1">
+                              <Loader2 className="w-5 h-5 text-gold animate-spin" />
+                              <span className="text-[10px] text-white/80 font-medium">Processing</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : file.mime_type.startsWith("image/") ? (
                       <div
-                        className={`overflow-hidden rounded-xl ${
+                        className={`overflow-hidden rounded-xl relative ${
                           viewMode === "grid"
                             ? "w-full aspect-square mb-3 mx-auto"
                             : "w-12 h-12 flex-shrink-0"
@@ -1419,6 +1430,15 @@ const FileManager = () => {
                           aspectRatio="square"
                           placeholderColor="rgba(236,72,153,0.1)"
                         />
+                        {/* Processing Indicator for Images */}
+                        {isThumbnailProcessing(file.id) && viewMode === "grid" && (
+                          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center rounded-xl">
+                            <div className="flex flex-col items-center gap-1">
+                              <Loader2 className="w-5 h-5 text-gold animate-spin" />
+                              <span className="text-[10px] text-white/80 font-medium">Processing</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div
