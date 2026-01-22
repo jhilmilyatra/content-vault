@@ -42,6 +42,19 @@ interface GuestFileItem {
   mime_type: string;
   size_bytes: number;
   storage_path: string;
+  duration_seconds?: number | null;
+  thumbnail_url?: string | null;
+}
+
+// Helper to format duration
+function formatDuration(seconds: number): string {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  if (hrs > 0) {
+    return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
 interface FolderItem {
@@ -503,14 +516,19 @@ const GuestFolderView = () => {
                         <CardContent className="p-0">
                           {/* Thumbnail area for images/videos */}
                           {file.mime_type.startsWith('video/') ? (
-                            <div className="w-full aspect-square">
+                            <div className="w-full aspect-square relative">
                               <VideoThumbnail
-                                thumbnailUrl={null}
+                                thumbnailUrl={file.thumbnail_url || null}
                                 alt={file.name}
                                 aspectRatio="square"
                                 showPlayIndicator={true}
                                 onClick={() => handlePreview(file)}
                               />
+                              {file.duration_seconds && (
+                                <div className="absolute bottom-2 right-2 bg-black/80 text-white text-[10px] sm:text-xs px-1.5 py-0.5 rounded font-medium">
+                                  {formatDuration(file.duration_seconds)}
+                                </div>
+                              )}
                             </div>
                           ) : file.mime_type.startsWith('image/') ? (
                             <div className="w-full aspect-square">
@@ -530,8 +548,14 @@ const GuestFolderView = () => {
                           {/* File info and actions */}
                           <div className="p-3 sm:p-4">
                             <p className="text-xs sm:text-sm font-medium truncate mb-1">{file.name}</p>
-                            <p className="text-[10px] sm:text-xs text-muted-foreground mb-2 sm:mb-3">
-                              {formatFileSize(file.size_bytes)}
+                            <p className="text-[10px] sm:text-xs text-muted-foreground mb-2 sm:mb-3 flex items-center gap-1">
+                              {file.mime_type.startsWith('video/') && file.duration_seconds && (
+                                <>
+                                  <span className="text-primary font-medium">{formatDuration(file.duration_seconds)}</span>
+                                  <span>•</span>
+                                </>
+                              )}
+                              <span>{formatFileSize(file.size_bytes)}</span>
                             </p>
                             <div className="flex items-center gap-1 sm:gap-2">
                               <Button
@@ -571,9 +595,9 @@ const GuestFolderView = () => {
                         >
                           <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                             {file.mime_type.startsWith('video/') ? (
-                              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg overflow-hidden flex-shrink-0">
+                              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg overflow-hidden flex-shrink-0 relative">
                                 <VideoThumbnail
-                                  thumbnailUrl={null}
+                                  thumbnailUrl={file.thumbnail_url || null}
                                   alt={file.name}
                                   aspectRatio="square"
                                   showPlayIndicator={false}
@@ -593,8 +617,14 @@ const GuestFolderView = () => {
                             )}
                             <div className="min-w-0">
                               <p className="font-medium text-sm truncate">{file.name}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {formatFileSize(file.size_bytes)}
+                              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                {file.mime_type.startsWith('video/') && file.duration_seconds && (
+                                  <>
+                                    <span className="text-primary font-medium">{formatDuration(file.duration_seconds)}</span>
+                                    <span>•</span>
+                                  </>
+                                )}
+                                <span>{formatFileSize(file.size_bytes)}</span>
                               </p>
                             </div>
                           </div>
