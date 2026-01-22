@@ -8,6 +8,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { GuestAuthProvider } from "@/contexts/GuestAuthContext";
 import { FeatureFlagsProvider } from "@/contexts/FeatureFlagsContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import { MaintenanceGate } from "@/components/MaintenanceGate";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
 import { useCacheInvalidation } from "@/hooks/useCacheInvalidation";
 
@@ -105,9 +106,10 @@ function App() {
           <AuthProvider>
             <GuestAuthProvider>
               <FeatureFlagsProvider>
-                <GlobalHooks />
-                <Suspense fallback={<PageLoader />}>
-                <Routes>
+                <MaintenanceGate>
+                  <GlobalHooks />
+                  <Suspense fallback={<PageLoader />}>
+                  <Routes>
                   <Route path="/" element={<Index />} />
                   <Route path="/auth" element={<Auth />} />
                   <Route path="/login" element={<Auth />} />
@@ -156,6 +158,7 @@ function App() {
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
+              </MaintenanceGate>
               </FeatureFlagsProvider>
             </GuestAuthProvider>
           </AuthProvider>

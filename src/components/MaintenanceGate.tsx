@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { useMaintenanceMode, useFeatureFlags } from "@/contexts/FeatureFlagsContext";
+import { useAuth } from "@/hooks/useAuth";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
@@ -8,20 +9,18 @@ interface MaintenanceGateProps {
   children: ReactNode;
   /** If true, bypass maintenance mode (for owner access) */
   bypassForOwner?: boolean;
-  /** Current user role */
-  userRole?: string | null;
 }
 
 export function MaintenanceGate({ 
   children, 
   bypassForOwner = true,
-  userRole 
 }: MaintenanceGateProps) {
   const { isMaintenanceMode, maintenanceMessage, loading } = useMaintenanceMode();
   const { refetch } = useFeatureFlags();
+  const { role } = useAuth();
 
   // Allow owners to bypass maintenance mode
-  if (bypassForOwner && userRole === "owner") {
+  if (bypassForOwner && role === "owner") {
     return <>{children}</>;
   }
 
