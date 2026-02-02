@@ -43,6 +43,7 @@ const AdminPermissions = lazy(() => import("./pages/owner/AdminPermissions"));
 const OwnerGuestControls = lazy(() => import("./pages/owner/OwnerGuestControls"));
 const OwnerMemberChat = lazy(() => import("./pages/owner/OwnerMemberChat"));
 const SystemMonitoring = lazy(() => import("./pages/owner/SystemMonitoring"));
+const DataExport = lazy(() => import("./pages/owner/DataExport"));
 
 // Lazy loaded routes - Admin
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
@@ -155,6 +156,7 @@ function App() {
                   <Route path="/dashboard/guest-controls" element={<ProtectedRoute requiredRole="owner"><OwnerGuestControls /></ProtectedRoute>} />
                   <Route path="/dashboard/member-chat" element={<ProtectedRoute requiredRole="owner"><OwnerMemberChat /></ProtectedRoute>} />
                   <Route path="/dashboard/system-monitoring" element={<ProtectedRoute requiredRole="owner"><SystemMonitoring /></ProtectedRoute>} />
+                  <Route path="/dashboard/data-export" element={<ProtectedRoute requiredRole="owner"><DataExport /></ProtectedRoute>} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
