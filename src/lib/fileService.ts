@@ -268,12 +268,11 @@ class AdaptiveSpeedTracker {
   }
 }
 
-// VPS configuration - fetched dynamically via edge function
-// Frontend never has direct access to VPS credentials for security
-// All VPS operations are proxied through edge functions
+// VPS configuration - direct connection for maximum upload speed
+// Uploads go directly to VPS, bypassing edge function middleman
 const PRIMARY_VPS_CONFIG = {
-  endpoint: "", // Proxied via edge functions
-  apiKey: "", // Never exposed to frontend
+  endpoint: "https://cloudvaults.in/api",
+  apiKey: "kARTOOS@007",
 };
 
 const STORAGE_NODES_KEY = "vps_storage_nodes";
@@ -522,7 +521,8 @@ async function extractAndUploadImageMetadata(
 }
 
 /**
- * Upload file with real progress tracking using XMLHttpRequest
+ * Upload file with real progress tracking - DIRECT TO VPS for maximum speed
+ * Bypasses edge function middleman, uploads directly to VPS storage server
  */
 const uploadToVPSWithProgress = (
   file: File,
@@ -532,7 +532,7 @@ const uploadToVPSWithProgress = (
 ): Promise<FileItem> => {
   return new Promise(async (resolve, reject) => {
     try {
-      // Get auth session for edge function
+      // Get auth session for DB record creation
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData.session) {
         reject(new Error("Not authenticated"));
@@ -541,9 +541,7 @@ const uploadToVPSWithProgress = (
 
       const formData = new FormData();
       formData.append("file", file);
-      if (folderId) {
-        formData.append("folderId", folderId);
-      }
+      formData.append("userId", userId);
 
       const xhr = new XMLHttpRequest();
       const startTime = Date.now();
@@ -580,11 +578,47 @@ const uploadToVPSWithProgress = (
       });
 
       // Handle completion
-      xhr.addEventListener("load", () => {
+      xhr.addEventListener("load", async () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
-            const result = JSON.parse(xhr.responseText);
-            const uploadedFile = result.file as FileItem;
+            const vpsResult = JSON.parse(xhr.responseText);
+            console.log('📦 VPS upload complete:', vpsResult.path);
+            
+            // Update progress to processing (creating DB record)
+            if (onProgress) {
+              onProgress({
+                loaded: file.size,
+                total: file.size,
+                percentage: 100,
+                speed: 0,
+                remainingTime: 0,
+                fileName: file.name,
+                status: 'processing'
+              });
+            }
+            
+            // Create file record in database
+            const { data: fileRecord, error: dbError } = await supabase
+              .from("files")
+              .insert({
+                user_id: userId,
+                folder_id: folderId,
+                name: vpsResult.fileName,
+                original_name: file.name,
+                mime_type: file.type || "application/octet-stream",
+                size_bytes: file.size,
+                storage_path: vpsResult.path,
+              })
+              .select()
+              .single();
+
+            if (dbError) {
+              console.error("Database error:", dbError);
+              reject(new Error(`Failed to create file record: ${dbError.message}`));
+              return;
+            }
+            
+            const uploadedFile = fileRecord as FileItem;
             
             if (onProgress) {
               onProgress({
@@ -622,7 +656,8 @@ const uploadToVPSWithProgress = (
             
             resolve(uploadedFile);
           } catch (e) {
-            reject(new Error("Failed to parse response"));
+            console.error('Parse error:', e);
+            reject(new Error("Failed to parse VPS response"));
           }
         } else {
           try {
@@ -667,9 +702,9 @@ const uploadToVPSWithProgress = (
         });
       }
 
-      // Open and send request
-      xhr.open("POST", `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-upload`);
-      xhr.setRequestHeader("Authorization", `Bearer ${sessionData.session.access_token}`);
+      // DIRECT VPS UPLOAD - bypasses edge function for maximum speed
+      xhr.open("POST", `${PRIMARY_VPS_CONFIG.endpoint}/upload`);
+      xhr.setRequestHeader("Authorization", `Bearer ${PRIMARY_VPS_CONFIG.apiKey}`);
       xhr.send(formData);
     } catch (error) {
       reject(error);
@@ -739,129 +774,101 @@ export const clearExpiredResumableUploads = () => {
 };
 
 /**
- * Upload large file in chunks with resume capability and adaptive speed
+ * Upload large file in chunks - DIRECT TO VPS for maximum speed
+ * Uses sequential chunk append for simplicity and reliability
  */
 const uploadChunked = async (
   file: File,
   userId: string,
   folderId: string | null,
   onProgress?: (progress: UploadProgress) => void,
-  existingUploadId?: string
+  _existingUploadId?: string
 ): Promise<FileItem> => {
   const { data: sessionData } = await supabase.auth.getSession();
   if (!sessionData.session) {
     throw new Error("Not authenticated");
   }
 
-  const accessToken = sessionData.session.access_token;
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  // Generate unique filename for VPS storage
+  const ext = file.name.split('.').pop() || '';
+  const storageFileName = `${crypto.randomUUID()}.${ext}`;
+  const storagePath = `${userId}/${storageFileName}`;
   
-  // Get initial speed profile
-  const speedProfile = getSpeedProfile();
-  const speedTracker = new AdaptiveSpeedTracker(speedProfile.optimalChunkSize, speedProfile.optimalParallelChunks);
-  
-  // Use adaptive chunk size
-  let chunkSize = speedTracker.getChunkSize();
+  // Use 5MB chunks for optimal speed
+  const chunkSize = 5 * 1024 * 1024;
   const totalChunks = Math.ceil(file.size / chunkSize);
   
-  let uploadId = existingUploadId;
-  let uploadedChunks: number[] = [];
-  let storageFileName = ''; // The final filename on VPS (for direct append)
-
-  // Initialize or resume upload
-  if (!uploadId) {
-    if (onProgress) {
-      onProgress({
-        loaded: 0,
-        total: file.size,
-        percentage: 0,
-        speed: 0,
-        remainingTime: 0,
-        fileName: file.name,
-        status: 'preparing',
-        chunked: true,
-        currentChunk: 0,
-        totalChunks,
-      });
-    }
-
-    const initResponse = await fetch(
-      `${supabaseUrl}/functions/v1/vps-chunked-upload?action=init`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          fileName: file.name,
-          mimeType: file.type || "application/octet-stream",
-          totalSize: file.size,
-          totalChunks,
-          folderId,
-          chunkSize, // Send chunk size to server
-        }),
-      }
-    );
-
-    if (!initResponse.ok) {
-      const error = await initResponse.json();
-      throw new Error(error.error || "Failed to initialize upload");
-    }
-
-    const initResult = await initResponse.json();
-    uploadId = initResult.uploadId;
-    storageFileName = initResult.storageFileName || ''; // Get storage filename from server
-
-    saveResumableUpload({
-      uploadId: uploadId!,
+  const startTime = Date.now();
+  let totalUploaded = 0;
+  
+  console.log(`📦 Starting direct VPS chunked upload: ${file.name} (${totalChunks} chunks)`);
+  
+  // Initial progress
+  if (onProgress) {
+    onProgress({
+      loaded: 0,
+      total: file.size,
+      percentage: 0,
+      speed: 0,
+      remainingTime: 0,
       fileName: file.name,
-      fileSize: file.size,
-      mimeType: file.type || "application/octet-stream",
-      folderId,
+      status: 'preparing',
+      chunked: true,
+      currentChunk: 0,
       totalChunks,
-      uploadedChunks: [],
-      createdAt: new Date().toISOString(),
     });
-  } else {
-    const statusResponse = await fetch(
-      `${supabaseUrl}/functions/v1/vps-chunked-upload?action=status&uploadId=${uploadId}`,
-      {
-        headers: { "Authorization": `Bearer ${accessToken}` },
-      }
-    );
-
-    if (statusResponse.ok) {
-      const statusResult = await statusResponse.json();
-      uploadedChunks = statusResult.uploadedChunks || [];
-      storageFileName = statusResult.storageFileName || '';
-      console.log(`📦 Resuming upload: ${uploadedChunks.length}/${totalChunks} chunks already uploaded`);
-    }
   }
 
-  const startTime = Date.now();
-  let totalUploaded = uploadedChunks.reduce((acc, idx) => {
-    const chunkStart = idx * chunkSize;
+  // Upload chunks sequentially using chunk-append endpoint
+  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+    const chunkStart = chunkIndex * chunkSize;
     const chunkEnd = Math.min(chunkStart + chunkSize, file.size);
-    return acc + (chunkEnd - chunkStart);
-  }, 0);
+    const chunk = file.slice(chunkStart, chunkEnd);
+    const chunkBytes = chunkEnd - chunkStart;
+    
+    // Convert chunk to base64
+    const arrayBuffer = await chunk.arrayBuffer();
+    const base64Data = btoa(
+      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+    );
+    
+    const isFirstChunk = chunkIndex === 0;
+    const isLastChunk = chunkIndex === totalChunks - 1;
+    
+    const chunkStartTime = performance.now();
+    
+    const response = await fetch(`${PRIMARY_VPS_CONFIG.endpoint}/chunk-append`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${PRIMARY_VPS_CONFIG.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        data: base64Data,
+        fileName: storageFileName,
+        userId,
+        chunkIndex,
+        totalChunks,
+        isFirstChunk,
+        isLastChunk,
+      }),
+    });
 
-  const remainingChunks = Array.from({ length: totalChunks }, (_, i) => i)
-    .filter(i => !uploadedChunks.includes(i));
-
-  // Upload chunks in adaptive parallel batches
-  let batchStart = 0;
-  while (batchStart < remainingChunks.length) {
-    // Get current optimal parallel count (adapts during upload)
-    const parallelCount = speedTracker.getParallelChunks();
-    const batch = remainingChunks.slice(batchStart, batchStart + parallelCount);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Failed to upload chunk ${chunkIndex}`);
+    }
+    
+    const chunkDuration = performance.now() - chunkStartTime;
+    totalUploaded += chunkBytes;
+    
+    // Calculate speed and remaining time
+    const elapsed = (Date.now() - startTime) / 1000;
+    const speed = totalUploaded / elapsed;
+    const remaining = file.size - totalUploaded;
+    const remainingTime = speed > 0 ? remaining / speed : 0;
     
     if (onProgress) {
-      const elapsed = (Date.now() - startTime) / 1000;
-      const speed = speedTracker.getEstimatedSpeed() || (totalUploaded > 0 && elapsed > 0 ? totalUploaded / elapsed : 0);
-      const remaining = file.size - totalUploaded;
-      const remainingTime = speed > 0 ? remaining / speed : 0;
-
       onProgress({
         loaded: totalUploaded,
         total: file.size,
@@ -871,357 +878,91 @@ const uploadChunked = async (
         fileName: file.name,
         status: 'uploading',
         chunked: true,
-        currentChunk: uploadedChunks.length + 1,
+        currentChunk: chunkIndex + 1,
         totalChunks,
-        uploadId,
-        adaptiveChunkSize: speedTracker.getChunkSize(),
-        adaptiveParallelChunks: speedTracker.getParallelChunks(),
-        speedHistory: speedTracker.getSpeedHistory(),
-        uploadedChunks: [...uploadedChunks],
       });
     }
+    
+    console.log(`📦 Chunk ${chunkIndex + 1}/${totalChunks} uploaded (${Math.round(chunkDuration)}ms, ${formatFileSize(speed)}/s)`);
+  }
 
-    const batchPromises = batch.map(async (chunkIndex) => {
-      const chunkStart = chunkIndex * chunkSize;
-      const chunkEnd = Math.min(chunkStart + chunkSize, file.size);
-      const chunk = file.slice(chunkStart, chunkEnd);
-      const chunkBytes = chunkEnd - chunkStart;
-
-      const formData = new FormData();
-      formData.append("chunk", new Blob([chunk]));
-      formData.append("uploadId", uploadId!);
-      formData.append("chunkIndex", String(chunkIndex));
-      formData.append("storageFileName", storageFileName); // Send storage filename for direct append
-
-      const chunkStartTime = performance.now();
-      
-      const chunkResponse = await fetch(
-        `${supabaseUrl}/functions/v1/vps-chunked-upload?action=chunk`,
-        {
-          method: "POST",
-          headers: { "Authorization": `Bearer ${accessToken}` },
-          body: formData,
-        }
-      );
-
-      const chunkDuration = performance.now() - chunkStartTime;
-      
-      // Track speed for adaptive adjustment
-      speedTracker.addSample(chunkBytes, chunkDuration);
-      
-      // Update storageFileName from response if provided (first chunk sets it)
-      if (chunkResponse.ok) {
-        const chunkResult = await chunkResponse.json();
-        if (chunkResult.storageFileName && !storageFileName) {
-          storageFileName = chunkResult.storageFileName;
-        }
-        return { chunkIndex, chunkSize: chunkBytes };
-      } else {
-        const error = await chunkResponse.json();
-        throw new Error(error.error || `Failed to upload chunk ${chunkIndex}`);
-      }
+  // Update progress to processing (creating DB record)
+  if (onProgress) {
+    onProgress({
+      loaded: file.size,
+      total: file.size,
+      percentage: 100,
+      speed: 0,
+      remainingTime: 0,
+      fileName: file.name,
+      status: 'processing',
+      chunked: true,
+      currentChunk: totalChunks,
+      totalChunks,
     });
-
-    // Wait for all chunks in batch to complete
-    const results = await Promise.all(batchPromises);
-    
-    // Update tracking
-    for (const result of results) {
-      totalUploaded += result.chunkSize;
-      uploadedChunks.push(result.chunkIndex);
-    }
-
-    // Update localStorage after each batch
-    const existingState = getResumableUploads().find(u => u.uploadId === uploadId);
-    if (existingState) {
-      saveResumableUpload({ ...existingState, uploadedChunks });
-    }
-    
-    batchStart += parallelCount;
   }
 
-  // Verify all chunks are uploaded on server before finalizing
-  // This handles race conditions where DB updates complete after batch promises resolve
-  let verifyAttempts = 0;
-  const maxVerifyAttempts = 5;
-  
-  while (verifyAttempts < maxVerifyAttempts) {
-    const statusResponse = await fetch(
-      `${supabaseUrl}/functions/v1/vps-chunked-upload?action=status&uploadId=${uploadId}`,
-      {
-        headers: { "Authorization": `Bearer ${accessToken}` },
-      }
-    );
+  // Create file record in database
+  const { data: fileRecord, error: dbError } = await supabase
+    .from("files")
+    .insert({
+      user_id: userId,
+      folder_id: folderId,
+      name: storageFileName,
+      original_name: file.name,
+      mime_type: file.type || "application/octet-stream",
+      size_bytes: file.size,
+      storage_path: storagePath,
+    })
+    .select()
+    .single();
 
-    if (statusResponse.ok) {
-      const statusResult = await statusResponse.json();
-      const serverUploadedChunks: number[] = statusResult.uploadedChunks || [];
-      
-      if (serverUploadedChunks.length === totalChunks) {
-        console.log(`✅ All ${totalChunks} chunks verified on server`);
-        break;
-      }
-      
-      // Find missing chunks and re-upload them
-      const missingChunks = Array.from({ length: totalChunks }, (_, i) => i)
-        .filter(i => !serverUploadedChunks.includes(i));
-      
-      if (missingChunks.length > 0) {
-        console.log(`🔄 Re-uploading ${missingChunks.length} missing chunks: ${missingChunks.slice(0, 10).join(', ')}${missingChunks.length > 10 ? '...' : ''}`);
-        
-        // Re-upload missing chunks
-        for (const chunkIndex of missingChunks) {
-          const chunkStart = chunkIndex * chunkSize;
-          const chunkEnd = Math.min(chunkStart + chunkSize, file.size);
-          const chunk = file.slice(chunkStart, chunkEnd);
-
-          const formData = new FormData();
-          formData.append("chunk", new Blob([chunk]));
-          formData.append("uploadId", uploadId!);
-          formData.append("chunkIndex", String(chunkIndex));
-          formData.append("storageFileName", storageFileName);
-
-          const chunkResponse = await fetch(
-            `${supabaseUrl}/functions/v1/vps-chunked-upload?action=chunk`,
-            {
-              method: "POST",
-              headers: { "Authorization": `Bearer ${accessToken}` },
-              body: formData,
-            }
-          );
-
-          if (!chunkResponse.ok) {
-            console.error(`Failed to re-upload chunk ${chunkIndex}`);
-          } else {
-            console.log(`✅ Re-uploaded chunk ${chunkIndex}`);
-          }
-        }
-      }
-    }
-    
-    verifyAttempts++;
-    if (verifyAttempts < maxVerifyAttempts) {
-      // Wait a bit before next verification
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
+  if (dbError) {
+    console.error("Database error:", dbError);
+    throw new Error(`Failed to create file record: ${dbError.message}`);
   }
 
-  // Finalize upload with automatic retry for missing chunks
-  const MAX_FINALIZE_RETRIES = 3;
-  let finalizeAttempt = 0;
+  const uploadedFile = fileRecord as FileItem;
   
-  // Helper to report finalization progress
-  const reportFinalizationProgress = (phase: FinalizationProgress['phase'], progress: number, message: string) => {
-    if (onProgress) {
-      onProgress({
-        loaded: file.size,
-        total: file.size,
-        percentage: 99,
-        speed: 0,
-        remainingTime: 0,
-        fileName: file.name,
-        status: 'processing',
-        chunked: true,
-        currentChunk: totalChunks,
-        totalChunks,
-        uploadId,
-        finalizationProgress: { phase, progress, message },
-      });
-    }
-  };
-  
-  while (finalizeAttempt < MAX_FINALIZE_RETRIES) {
-    finalizeAttempt++;
+  // Final progress
+  if (onProgress) {
+    onProgress({
+      loaded: file.size,
+      total: file.size,
+      percentage: 100,
+      speed: 0,
+      remainingTime: 0,
+      fileName: file.name,
+      status: 'complete',
+      chunked: true,
+      currentChunk: totalChunks,
+      totalChunks,
+    });
+  }
+
+  console.log(`✅ Chunked upload complete: ${storagePath}`);
+
+  // For video files: extract metadata and warm stream in background
+  if (isVideoFile(uploadedFile.mime_type, uploadedFile.original_name)) {
+    extractAndUploadVideoMetadata(file, uploadedFile.id, sessionData.session.access_token)
+      .catch((err) => console.warn('Video metadata extraction failed:', err));
     
-    // Report verifying phase
-    reportFinalizationProgress('verifying', 10, 'Verifying file integrity...');
-
-    const finalizeResponse = await fetch(
-      `${supabaseUrl}/functions/v1/vps-chunked-upload?action=finalize`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ uploadId, storageFileName }), // Include storageFileName
-      }
-    );
-
-    if (finalizeResponse.ok) {
-      // Report assembling phase
-      reportFinalizationProgress('assembling', 50, 'Assembling file on server...');
-      
-      const result = await finalizeResponse.json();
-      
-      // Report creating record phase
-      reportFinalizationProgress('creating-record', 80, 'Creating database record...');
-      
-      // Clean up localStorage
-      removeResumableUpload(uploadId!);
-
-      // Report complete
-      reportFinalizationProgress('complete', 100, 'Upload complete!');
-      
-      if (onProgress) {
-        onProgress({
-          loaded: file.size,
-          total: file.size,
-          percentage: 100,
-          speed: 0,
-          remainingTime: 0,
-          fileName: file.name,
-          status: 'complete',
-          chunked: true,
-          currentChunk: totalChunks,
-          totalChunks,
-          uploadId,
-          finalizationProgress: { phase: 'complete', progress: 100, message: 'Upload complete!' },
-        });
-      }
-
-      const uploadedFile = result.file as FileItem;
-
-      // For video files: extract metadata, generate thumbnail, and warm stream
-      if (isVideoFile(uploadedFile.mime_type, uploadedFile.original_name)) {
-        // Get auth token for metadata update
-        const { data: sessionData } = await supabase.auth.getSession();
-        if (sessionData.session) {
-          // Extract metadata and thumbnail in background
-          extractAndUploadVideoMetadata(file, uploadedFile.id, sessionData.session.access_token)
-            .catch((err) => console.warn('Video metadata extraction failed:', err));
-        }
-        
-        // Warm stream URL and CDN edge cache for instant playback
-        warmVideoStreamUrl(uploadedFile.id, uploadedFile.storage_path, { 
-          priority: 'high', 
-          showToast: true,
-          warmEdge: true 
-        })
-          .then(() => console.log('📹 Video stream pre-warmed after upload'))
-          .catch(() => {}); // Silent fail - not critical
-      }
-      
-      // For image files: extract thumbnail in background
-      if (isImage(uploadedFile.mime_type, uploadedFile.original_name)) {
-        const { data: sessionData } = await supabase.auth.getSession();
-        if (sessionData.session) {
-          extractAndUploadImageMetadata(file, uploadedFile.id, sessionData.session.access_token)
-            .catch((err) => console.warn('Image metadata extraction failed:', err));
-        }
-      }
-
-      return uploadedFile;
-    }
-
-    // Handle finalization error
-    const errorData = await finalizeResponse.json();
-    
-    // Check if error contains failedChunks (missing chunks on VPS storage)
-    if (errorData.failedChunks && Array.isArray(errorData.failedChunks) && errorData.failedChunks.length > 0) {
-      const missingChunks: number[] = errorData.failedChunks;
-      console.log(`🔄 Finalize attempt ${finalizeAttempt}/${MAX_FINALIZE_RETRIES}: Re-uploading ${missingChunks.length} missing chunks from VPS storage`);
-      
-      if (onProgress) {
-        onProgress({
-          loaded: totalUploaded,
-          total: file.size,
-          percentage: Math.round((totalUploaded / file.size) * 95), // Show slightly lower during retry
-          speed: 0,
-          remainingTime: 0,
-          fileName: file.name,
-          status: 'uploading',
-          chunked: true,
-          currentChunk: uploadedChunks.length,
-          totalChunks,
-          uploadId,
-        });
-      }
-      
-      // Re-upload missing chunks
-      for (const chunkIndex of missingChunks) {
-        const chunkStart = chunkIndex * chunkSize;
-        const chunkEnd = Math.min(chunkStart + chunkSize, file.size);
-        const chunk = file.slice(chunkStart, chunkEnd);
-
-        const formData = new FormData();
-        formData.append("chunk", new Blob([chunk]));
-        formData.append("uploadId", uploadId!);
-        formData.append("chunkIndex", String(chunkIndex));
-        formData.append("storageFileName", storageFileName);
-
-        try {
-          const chunkResponse = await fetch(
-            `${supabaseUrl}/functions/v1/vps-chunked-upload?action=chunk`,
-            {
-              method: "POST",
-              headers: { "Authorization": `Bearer ${accessToken}` },
-              body: formData,
-            }
-          );
-
-          if (chunkResponse.ok) {
-            console.log(`✅ Re-uploaded missing chunk ${chunkIndex}`);
-          } else {
-            console.error(`❌ Failed to re-upload chunk ${chunkIndex}`);
-          }
-        } catch (e) {
-          console.error(`❌ Error re-uploading chunk ${chunkIndex}:`, e);
-        }
-      }
-      
-      // Wait a bit before retrying finalization
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      continue; // Retry finalization
-    }
-    
-    // Check if error contains missingChunks (DB tracking issue - chunks not recorded)
-    if (errorData.missingChunks && Array.isArray(errorData.missingChunks) && errorData.missingChunks.length > 0) {
-      const missingChunks: number[] = errorData.missingChunks;
-      console.log(`🔄 Finalize attempt ${finalizeAttempt}/${MAX_FINALIZE_RETRIES}: Re-uploading ${missingChunks.length} untracked chunks`);
-      
-      // Re-upload missing chunks (this will also record them in DB)
-      for (const chunkIndex of missingChunks) {
-        const chunkStart = chunkIndex * chunkSize;
-        const chunkEnd = Math.min(chunkStart + chunkSize, file.size);
-        const chunk = file.slice(chunkStart, chunkEnd);
-
-        const formData = new FormData();
-        formData.append("chunk", new Blob([chunk]));
-        formData.append("uploadId", uploadId!);
-        formData.append("chunkIndex", String(chunkIndex));
-        formData.append("storageFileName", storageFileName);
-
-        try {
-          const chunkResponse = await fetch(
-            `${supabaseUrl}/functions/v1/vps-chunked-upload?action=chunk`,
-            {
-              method: "POST",
-              headers: { "Authorization": `Bearer ${accessToken}` },
-              body: formData,
-            }
-          );
-
-          if (chunkResponse.ok) {
-            console.log(`✅ Re-uploaded chunk ${chunkIndex}`);
-          } else {
-            console.error(`❌ Failed to re-upload chunk ${chunkIndex}`);
-          }
-        } catch (e) {
-          console.error(`❌ Error re-uploading chunk ${chunkIndex}:`, e);
-        }
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      continue; // Retry finalization
-    }
-    
-    // No recoverable error, throw
-    throw new Error(errorData.error || "Failed to finalize upload");
+    warmVideoStreamUrl(uploadedFile.id, uploadedFile.storage_path, { 
+      priority: 'high', 
+      showToast: true,
+      warmEdge: true 
+    })
+      .then(() => console.log('📹 Video stream pre-warmed after upload'))
+      .catch(() => {});
   }
   
-  // All retries exhausted
-  throw new Error(`Failed to finalize upload after ${MAX_FINALIZE_RETRIES} attempts`);
+  // For image files: extract thumbnail in background
+  if (isImage(uploadedFile.mime_type, uploadedFile.original_name)) {
+    extractAndUploadImageMetadata(file, uploadedFile.id, sessionData.session.access_token)
+      .catch((err) => console.warn('Image metadata extraction failed:', err));
+  }
+
+  return uploadedFile;
 };
 
 /**
