@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Upload, FolderPlus, X, CloudUpload, Sparkles } from "lucide-react";
+import { Plus, FolderPlus, CloudUpload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 
@@ -52,7 +52,7 @@ const UploadFAB = ({ onUploadClick, onNewFolderClick, disabled }: UploadFABProps
   return (
     <div 
       ref={fabRef}
-      className="fixed right-4 bottom-28 z-50 flex flex-col-reverse items-center gap-3 sm:bottom-6 sm:right-6"
+      className="fixed right-4 bottom-20 z-50 flex flex-col-reverse items-center gap-3 sm:bottom-6 sm:right-6"
       style={{ pointerEvents: 'auto' }}
     >
       {/* Action items - appear above main FAB */}
@@ -73,17 +73,17 @@ const UploadFAB = ({ onUploadClick, onNewFolderClick, disabled }: UploadFABProps
               onClick={handleUpload}
               className={cn(
                 "flex items-center gap-3 px-4 py-3 rounded-2xl",
-                "bg-black/80 backdrop-blur-2xl border border-white/10",
+                "bg-background/90 backdrop-blur-xl border border-border/50",
                 "touch-manipulation active:scale-95 transition-transform",
-                "shadow-2xl shadow-gold/20"
+                "shadow-2xl shadow-black/30"
               )}
             >
-              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-gold to-gold-dark flex items-center justify-center shadow-lg shadow-gold/30">
-                <CloudUpload className="w-5 h-5 text-black" />
+              <div className="w-11 h-11 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                <CloudUpload className="w-5 h-5 text-primary" />
               </div>
               <div className="pr-2">
-                <span className="text-sm font-semibold text-white block">Upload Files</span>
-                <span className="text-[10px] text-white/40">Drag & drop or browse</span>
+                <span className="text-sm font-semibold text-foreground block">Upload Files</span>
+                <span className="text-[10px] text-muted-foreground">Tap to browse</span>
               </div>
             </motion.button>
 
@@ -101,65 +101,47 @@ const UploadFAB = ({ onUploadClick, onNewFolderClick, disabled }: UploadFABProps
               onClick={handleNewFolder}
               className={cn(
                 "flex items-center gap-3 px-4 py-3 rounded-2xl",
-                "bg-black/80 backdrop-blur-2xl border border-white/10",
+                "bg-background/90 backdrop-blur-xl border border-border/50",
                 "touch-manipulation active:scale-95 transition-transform",
-                "shadow-2xl"
+                "shadow-2xl shadow-black/30"
               )}
             >
-              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 flex items-center justify-center">
-                <FolderPlus className="w-5 h-5 text-amber-400" />
+              <div className="w-11 h-11 rounded-xl bg-muted border border-border flex items-center justify-center">
+                <FolderPlus className="w-5 h-5 text-muted-foreground" />
               </div>
               <div className="pr-2">
-                <span className="text-sm font-semibold text-white block">New Folder</span>
-                <span className="text-[10px] text-white/40">Organize your files</span>
+                <span className="text-sm font-semibold text-foreground block">New Folder</span>
+                <span className="text-[10px] text-muted-foreground">Organize your files</span>
               </div>
             </motion.button>
           </>
         )}
       </AnimatePresence>
 
-      {/* Main FAB */}
+      {/* Main FAB - Glass morphism style */}
       <motion.button
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.9 }}
         onClick={toggleMenu}
         disabled={disabled}
         className={cn(
-          "relative w-16 h-16 rounded-2xl overflow-hidden",
+          "relative w-14 h-14 rounded-full overflow-hidden",
           "flex items-center justify-center",
           "touch-manipulation",
           "transition-all duration-300",
+          "bg-background/80 backdrop-blur-xl",
+          "border-2",
+          isOpen ? "border-destructive/50" : "border-primary/30",
+          "shadow-2xl shadow-black/40",
           disabled && "opacity-50 cursor-not-allowed"
         )}
       >
-        {/* Gradient background */}
+        {/* Subtle glow effect */}
         <div className={cn(
-          "absolute inset-0 transition-all duration-300",
+          "absolute inset-0 rounded-full transition-all duration-300",
           isOpen 
-            ? "bg-gradient-to-br from-red-500 to-rose-600" 
-            : "bg-gradient-to-br from-gold via-gold-light to-amber-400"
-        )} />
-        
-        {/* Shimmer effect */}
-        <motion.div
-          animate={!isOpen ? { 
-            x: ['-100%', '100%']
-          } : {}}
-          transition={{ 
-            duration: 2, 
-            repeat: Infinity, 
-            ease: "linear",
-            repeatDelay: 1
-          }}
-          className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent"
-        />
-        
-        {/* Shadow */}
-        <div className={cn(
-          "absolute inset-0 transition-all duration-300",
-          isOpen 
-            ? "shadow-lg shadow-red-500/30" 
-            : "shadow-lg shadow-gold/40"
+            ? "bg-destructive/10" 
+            : "bg-primary/10"
         )} />
 
         {/* Icon */}
@@ -168,15 +150,18 @@ const UploadFAB = ({ onUploadClick, onNewFolderClick, disabled }: UploadFABProps
           transition={{ type: "spring", stiffness: 400, damping: 25 }}
           className="relative z-10"
         >
-          <Plus className="w-7 h-7 text-black" />
+          <Plus className={cn(
+            "w-6 h-6 transition-colors duration-300",
+            isOpen ? "text-destructive" : "text-primary"
+          )} />
         </motion.div>
         
         {/* Pulse ring when closed */}
         {!isOpen && !disabled && (
           <motion.div
-            animate={{ scale: [1, 1.3], opacity: [0.5, 0] }}
-            transition={{ duration: 1.5, repeat: Infinity }}
-            className="absolute inset-0 rounded-2xl border-2 border-gold"
+            animate={{ scale: [1, 1.4], opacity: [0.4, 0] }}
+            transition={{ duration: 2, repeat: Infinity }}
+            className="absolute inset-0 rounded-full border-2 border-primary/50"
           />
         )}
       </motion.button>
