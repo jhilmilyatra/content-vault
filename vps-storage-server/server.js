@@ -2220,14 +2220,16 @@ app.post('/chunk-append', authenticate, (req, res) => {
 });
 
 // ============================================
-// Chunked Upload: Store chunk temporarily
+// Chunked Upload: Store chunk temporarily (Binary FormData - FAST)
+// Supports parallel uploads - each chunk goes to separate temp file
 // ============================================
-app.post('/chunk-upload', authenticate, (req, res) => {
+app.post('/chunk-upload', authenticate, chunkUploadMulter.single('chunk'), (req, res) => {
   try {
-    const { data, uploadId, chunkIndex, totalChunks, fileName, userId } = req.body;
+    const { uploadId, chunkIndex, totalChunks, fileName, userId } = req.body;
+    const chunk = req.file;
     
-    if (!data) {
-      return res.status(400).json({ error: 'Missing chunk data' });
+    if (!chunk) {
+      return res.status(400).json({ error: 'Missing chunk file' });
     }
     
     if (!uploadId) {
@@ -2247,18 +2249,20 @@ app.post('/chunk-upload', authenticate, (req, res) => {
       return res.status(400).json({ error: 'Invalid user ID format' });
     }
     
+    const chunkIdx = parseInt(chunkIndex, 10);
+    const totalChunksNum = parseInt(totalChunks, 10);
+    
     // Create temp chunks directory
     const chunksDir = path.join(STORAGE_PATH, '.chunks', uploadId);
     if (!fs.existsSync(chunksDir)) {
       fs.mkdirSync(chunksDir, { recursive: true });
     }
     
-    // Write chunk to temp file
-    const chunkPath = path.join(chunksDir, `chunk_${String(chunkIndex).padStart(5, '0')}`);
-    const buffer = Buffer.from(data, 'base64');
-    fs.writeFileSync(chunkPath, buffer);
+    // Write chunk to temp file (with zero-padded index for proper sorting)
+    const chunkPath = path.join(chunksDir, `chunk_${String(chunkIdx).padStart(5, '0')}`);
+    fs.writeFileSync(chunkPath, chunk.buffer);
     
-    console.log(`📦 Chunk ${chunkIndex}/${totalChunks - 1} stored for upload ${uploadId}`);
+    console.log(`📦 Chunk ${chunkIdx}/${totalChunksNum - 1} stored for upload ${uploadId} [${(chunk.size / 1024 / 1024).toFixed(2)} MB]`);
     
     // Write metadata for finalization
     const metaPath = path.join(chunksDir, 'meta.json');
@@ -2266,17 +2270,18 @@ app.post('/chunk-upload', authenticate, (req, res) => {
       uploadId,
       userId,
       fileName,
-      totalChunks,
-      lastChunk: chunkIndex,
+      totalChunks: totalChunksNum,
+      lastChunk: chunkIdx,
       updatedAt: new Date().toISOString()
     };
     fs.writeFileSync(metaPath, JSON.stringify(meta));
     
     res.json({
       success: true,
-      chunkIndex,
-      totalChunks,
-      uploadId
+      chunkIndex: chunkIdx,
+      totalChunks: totalChunksNum,
+      uploadId,
+      chunkSize: chunk.size
     });
   } catch (error) {
     console.error('Chunk upload error:', error);
