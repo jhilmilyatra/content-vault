@@ -15,6 +15,7 @@
 #     -v ./ssl:/etc/nginx/ssl/custom:ro \
 #     -v filecloud_storage:/app/storage \
 #     -e VPS_STORAGE_API_KEY=your-secure-key \
+#     -e VPS_CDN_URL=https://yourdomain.com \
 #     filecloud-ssl
 #
 # ============================================
@@ -24,9 +25,11 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Install dependencies
 COPY package*.json ./
 RUN npm ci
 
+# Build frontend
 COPY . .
 RUN npm run build
 
@@ -70,8 +73,8 @@ WORKDIR /app
 # Copy nginx configuration
 COPY nginx/nginx.conf /etc/nginx/conf.d/default.conf
 
-# Remove default nginx config
-RUN rm -f /etc/nginx/http.d/default.conf
+# Remove default nginx config to avoid conflicts
+RUN rm -f /etc/nginx/http.d/default.conf 2>/dev/null || true
 
 # Generate self-signed certificate as fallback
 RUN openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
@@ -97,6 +100,7 @@ ENV DATA_PATH=/app/data
 ENV VPS_STORAGE_API_KEY=change-this-api-key
 ENV VPS_OWNER_API_KEY=change-this-owner-key
 ENV HLS_SIGNING_SECRET=change-this-signing-secret
+ENV VPS_CALLBACK_KEY=vps-thumbnail-callback-secret
 
 # CDN URL (set to your domain with HTTPS)
 ENV VPS_CDN_URL=
@@ -105,7 +109,6 @@ ENV VPS_CDN_URL=
 ENV AUTO_TRANSCODE=true
 ENV AUTO_IMAGE_THUMBNAIL=true
 ENV ENABLE_THUMBNAIL_CALLBACK=true
-ENV VPS_CALLBACK_KEY=vps-thumbnail-callback-secret
 
 # ============================================
 # Expose only HTTP/HTTPS ports
@@ -114,8 +117,8 @@ ENV VPS_CALLBACK_KEY=vps-thumbnail-callback-secret
 # All traffic goes through Nginx SSL termination
 EXPOSE 80 443
 
-# Health check via Nginx
-HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
+# Health check via internal frontend
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD curl -sf http://127.0.0.1:3000/health || exit 1
 
 # Copy and prepare entrypoint

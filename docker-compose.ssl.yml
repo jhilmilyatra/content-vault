@@ -8,11 +8,11 @@
 #   Internet (80/443) -> Nginx -> Internal Services
 #
 # QUICK START:
-#   1. Create SSL directory: mkdir -p ssl
-#   2. Add certificates:
+#   1. Copy .env.example to .env and configure
+#   2. Create SSL directory: mkdir -p ssl
+#   3. Add certificates (Cloudflare Origin or Let's Encrypt):
 #      - ssl/fullchain.pem
 #      - ssl/privkey.pem
-#   3. Copy .env.example to .env and configure
 #   4. Run: docker-compose -f docker-compose.ssl.yml up -d
 #
 # ============================================
@@ -22,7 +22,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.ssl
-    container_name: filecloud-ssl
+    image: filecloud-ssl:latest
+    container_name: filecloud
     restart: unless-stopped
     
     # Only expose HTTP/HTTPS through Nginx
@@ -31,17 +32,17 @@ services:
       - "443:443"
     
     volumes:
-      # Persistent storage
+      # Persistent storage for files
       - filecloud_storage:/app/storage
       - filecloud_data:/app/data
       
       # SSL certificates (mount your certs here)
       - ./ssl:/etc/nginx/ssl/custom:ro
       
-      # Optional: custom nginx config
+      # Custom nginx config (optional override)
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       
-      # Let's Encrypt webroot (for certbot)
+      # Let's Encrypt webroot (for certbot renewal)
       - certbot_webroot:/var/www/certbot:ro
     
     environment:
@@ -53,11 +54,12 @@ services:
       - DATA_PATH=/app/data
       
       # ========================================
-      # Security Keys (CHANGE IN PRODUCTION!)
+      # Security Keys (from .env file)
       # ========================================
       - VPS_STORAGE_API_KEY=${VPS_STORAGE_API_KEY:-change-this-api-key}
       - VPS_OWNER_API_KEY=${VPS_OWNER_API_KEY:-change-this-owner-key}
       - HLS_SIGNING_SECRET=${HLS_SIGNING_SECRET:-change-this-signing-secret}
+      - VPS_CALLBACK_KEY=${VPS_CALLBACK_KEY:-vps-thumbnail-callback-secret}
       
       # ========================================
       # CDN/SSL URL (your HTTPS domain)
@@ -83,11 +85,10 @@ services:
       # ========================================
       - AUTO_THUMBNAIL_BACKFILL=${AUTO_THUMBNAIL_BACKFILL:-false}
       - AUTO_IMAGE_THUMBNAIL=${AUTO_IMAGE_THUMBNAIL:-true}
-      - VPS_CALLBACK_KEY=${VPS_CALLBACK_KEY:-vps-thumbnail-callback-secret}
       - ENABLE_THUMBNAIL_CALLBACK=${ENABLE_THUMBNAIL_CALLBACK:-true}
       
       # ========================================
-      # HLS Streaming Security
+      # Streaming Security
       # ========================================
       - ENABLE_SIGNED_URLS=${ENABLE_SIGNED_URLS:-true}
     
@@ -102,12 +103,12 @@ services:
       driver: "json-file"
       options:
         max-size: "10m"
-        max-file: "3"
+        max-file: "5"
 
   # ==========================================
   # Optional: Let's Encrypt Auto-Renewal
   # ==========================================
-  # Start with: docker-compose --profile letsencrypt up
+  # Start with: docker-compose -f docker-compose.ssl.yml --profile letsencrypt up -d
   certbot:
     image: certbot/certbot:latest
     container_name: filecloud-certbot
@@ -117,6 +118,8 @@ services:
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done;'"
     profiles:
       - letsencrypt
+    depends_on:
+      - filecloud
 
 volumes:
   filecloud_storage:
@@ -125,3 +128,24 @@ volumes:
     driver: local
   certbot_webroot:
     driver: local
+
+# ============================================
+# Usage Examples
+# ============================================
+#
+# Build and start:
+#   docker-compose -f docker-compose.ssl.yml up -d --build
+#
+# View logs:
+#   docker-compose -f docker-compose.ssl.yml logs -f
+#
+# Restart after config changes:
+#   docker-compose -f docker-compose.ssl.yml restart
+#
+# Stop and remove:
+#   docker-compose -f docker-compose.ssl.yml down
+#
+# With Let's Encrypt renewal:
+#   docker-compose -f docker-compose.ssl.yml --profile letsencrypt up -d
+#
+# ============================================

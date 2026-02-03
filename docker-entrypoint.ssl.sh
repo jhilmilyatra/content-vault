@@ -40,6 +40,9 @@ echo ""
 echo "🔧 Testing Nginx configuration..."
 if ! nginx -t 2>&1; then
     echo "❌ Nginx configuration test failed!"
+    echo ""
+    echo "Debug info:"
+    cat /etc/nginx/conf.d/default.conf | head -50
     exit 1
 fi
 echo "   ✓ Nginx configuration valid"
@@ -51,12 +54,13 @@ echo "   ✓ Nginx configuration valid"
 # Start Nginx (SSL termination for all traffic)
 echo ""
 echo "🌐 Starting Nginx (HTTP:80 → HTTPS:443)..."
-nginx -g "daemon off;" &
+nginx &
 NGINX_PID=$!
 sleep 2
 
 if ! kill -0 $NGINX_PID 2>/dev/null; then
     echo "❌ Nginx failed to start!"
+    cat /var/log/nginx/error.log 2>/dev/null || echo "No error log available"
     exit 1
 fi
 echo "   ✓ Nginx running (PID: $NGINX_PID)"
@@ -100,7 +104,7 @@ echo ""
 echo "📍 Access Points (via Nginx SSL):"
 echo "   ├─ HTTP:  http://localhost:80 (→ HTTPS redirect)"
 echo "   ├─ HTTPS: https://localhost:443"
-echo "   └─ Health: https://localhost:443/health"
+echo "   └─ Health: http://localhost:3000/health (internal)"
 echo ""
 echo "🔗 API Endpoints (all HTTPS):"
 echo "   ├─ /api/*        - Storage API"
@@ -112,6 +116,9 @@ echo ""
 echo "🔒 SSL Status:"
 if [ -f "/etc/nginx/ssl/custom/fullchain.pem" ]; then
     echo "   └─ Using: Custom certificates"
+    # Show certificate info
+    CERT_EXPIRY=$(openssl x509 -enddate -noout -in /etc/nginx/ssl/fullchain.pem 2>/dev/null | cut -d= -f2)
+    echo "   └─ Expires: ${CERT_EXPIRY:-unknown}"
 else
     echo "   └─ Using: Self-signed (mount custom certs to /etc/nginx/ssl/custom/)"
 fi
@@ -126,7 +133,7 @@ cleanup() {
     echo "🛑 Shutting down gracefully..."
     kill $FRONTEND_PID 2>/dev/null
     kill $STORAGE_PID 2>/dev/null
-    kill $NGINX_PID 2>/dev/null
+    nginx -s quit 2>/dev/null || kill $NGINX_PID 2>/dev/null
     echo "   ✓ All services stopped"
     exit 0
 }
