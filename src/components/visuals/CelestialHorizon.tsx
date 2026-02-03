@@ -155,6 +155,7 @@ const CSSFallback = () => (
 
 export const CelestialHorizon = ({ isWarping = false }: HemisphereProps) => {
   const [webglAvailable, setWebglAvailable] = useState<boolean | null>(null);
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     setWebglAvailable(isWebGLAvailable());
@@ -165,8 +166,8 @@ export const CelestialHorizon = ({ isWarping = false }: HemisphereProps) => {
     return <div className="fixed inset-0 z-0 pointer-events-none bg-[#0b0b0d]" />;
   }
 
-  // Use CSS fallback if WebGL not available
-  if (!webglAvailable) {
+  // Use CSS fallback if WebGL not available or if Canvas errored
+  if (!webglAvailable || hasError) {
     return <CSSFallback />;
   }
 
@@ -180,9 +181,10 @@ export const CelestialHorizon = ({ isWarping = false }: HemisphereProps) => {
         gl={{ 
           antialias: false, 
           powerPreference: 'low-power',
-          failIfMajorPerformanceCaveat: true,
+          failIfMajorPerformanceCaveat: false, // Don't throw, just degrade gracefully
         }}
-        dpr={[1, 1.5]} // Limit pixel ratio for performance
+        dpr={[1, 1.5]}
+        onError={() => setHasError(true)}
       >
         <group rotation={[-0.2, 0, 0]}>
           <ambientLight intensity={0.2} />
@@ -191,7 +193,7 @@ export const CelestialHorizon = ({ isWarping = false }: HemisphereProps) => {
           <Stars 
             radius={50} 
             depth={50} 
-            count={1500} // Reduced from 3000
+            count={1500}
             factor={4} 
             saturation={0} 
             fade 
