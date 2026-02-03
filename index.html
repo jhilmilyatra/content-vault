@@ -39,8 +39,33 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   </head>
 
-  <body>
-    <div id="root"></div>
+  <body style="background-color: hsl(225, 25%, 3%); min-height: 100vh; margin: 0;">
+    <div id="root">
+      <!-- Initial loading state to prevent black flash on refresh -->
+      <div id="initial-loader" style="
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: hsl(225, 25%, 3%);
+        z-index: 9999;
+      ">
+        <div style="
+          width: 40px;
+          height: 40px;
+          border: 3px solid hsl(225, 16%, 14%);
+          border-top-color: hsl(43, 100%, 50%);
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
+        "></div>
+      </div>
+      <style>
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      </style>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
