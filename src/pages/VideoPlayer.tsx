@@ -29,7 +29,8 @@ export default function VideoPlayer() {
   
   const { 
     streamUrl, 
-    fallbackUrl, 
+    fallbackUrl,
+    qualities,
     isLoading: streamLoading, 
     error, 
     fileInfo,
@@ -275,6 +276,7 @@ export default function VideoPlayer() {
       <VideoPlayerComponent
         src={videoSrc}
         fallbackSrc={videoFallback}
+        qualities={qualities.length > 1 ? qualities : undefined}
         poster={fileInfo?.thumbnailUrl}
         className="w-full h-full"
         initialTime={resumePosition || undefined}
