@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, memo } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
 import { 
   LayoutDashboard,
   FolderOpen, 
@@ -193,19 +192,16 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
 
   return (
     <div className="min-h-dvh bg-background flex">
-      {/* Mobile Menu Overlay */}
-      <AnimatePresence>
-        {isMobile && mobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40"
-            onClick={() => setMobileMenuOpen(false)}
-          />
-        )}
-      </AnimatePresence>
+      {/* Mobile Menu Overlay - CSS transition */}
+      {isMobile && (
+        <div
+          className={cn(
+            "fixed inset-0 bg-background/80 backdrop-blur-sm z-40 transition-opacity duration-200",
+            mobileMenuOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+          )}
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
 
       {/* Sidebar - Desktop only */}
       {!isMobile && (
@@ -276,87 +272,85 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
         </aside>
       )}
 
-      {/* Mobile Sidebar */}
-      <AnimatePresence>
-        {isMobile && mobileMenuOpen && (
-          <motion.aside
-            initial={{ x: -280 }}
-            animate={{ x: 0 }}
-            exit={{ x: -280 }}
-            transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
-            className="fixed left-0 top-0 bottom-0 w-[280px] bg-background border-r border-border flex flex-col z-50"
-          >
-            {/* Header */}
-            <div className="h-14 flex items-center justify-between px-4 border-b border-border">
-              <Link to="/" className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-lg bg-primary/10 p-1 flex items-center justify-center">
-                  <img src={logo} alt="CloudVault" className="h-full w-full object-contain" />
+      {/* Mobile Sidebar - CSS transition */}
+      {isMobile && (
+        <aside
+          className={cn(
+            "fixed left-0 top-0 bottom-0 w-[280px] bg-background border-r border-border flex flex-col z-50",
+            "transition-transform duration-250 ease-out",
+            mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+          )}
+        >
+          {/* Header */}
+          <div className="h-14 flex items-center justify-between px-4 border-b border-border">
+            <Link to="/" className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-lg bg-primary/10 p-1 flex items-center justify-center">
+                <img src={logo} alt="CloudVault" className="h-full w-full object-contain" />
+              </div>
+              <span className="text-base font-semibold text-foreground">CloudVault</span>
+            </Link>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+            {navItems.map((item) => (
+              <NavItemComponent
+                key={item.path}
+                item={item}
+                isActive={location.pathname === item.path}
+              />
+            ))}
+            
+            {/* System Settings Section - Owner Only */}
+            {role === "owner" && (
+              <>
+                <div className="pt-4 pb-2">
+                  <span className="px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    System Settings
+                  </span>
                 </div>
-                <span className="text-base font-semibold text-foreground">CloudVault</span>
-              </Link>
+                {ownerSettingsNavItems.map((item) => (
+                  <NavItemComponent
+                    key={item.path}
+                    item={item}
+                    isActive={location.pathname === item.path}
+                  />
+                ))}
+              </>
+            )}
+          </nav>
+
+          {/* User section */}
+          <div className="p-3 border-t border-border">
+            <div className="flex items-center gap-3 px-3 py-2">
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-medium text-sm">
+                {getInitials()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground truncate">
+                  {profile?.full_name || "User"}
+                </p>
+              </div>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9"
-                onClick={() => setMobileMenuOpen(false)}
+                onClick={handleSignOut}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
               >
-                <X className="w-5 h-5" />
+                <LogOut className="w-4 h-4" />
               </Button>
             </div>
-
-            {/* Navigation */}
-            <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-              {navItems.map((item) => (
-                <NavItemComponent
-                  key={item.path}
-                  item={item}
-                  isActive={location.pathname === item.path}
-                />
-              ))}
-              
-              {/* System Settings Section - Owner Only */}
-              {role === "owner" && (
-                <>
-                  <div className="pt-4 pb-2">
-                    <span className="px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      System Settings
-                    </span>
-                  </div>
-                  {ownerSettingsNavItems.map((item) => (
-                    <NavItemComponent
-                      key={item.path}
-                      item={item}
-                      isActive={location.pathname === item.path}
-                    />
-                  ))}
-                </>
-              )}
-            </nav>
-
-            {/* User section */}
-            <div className="p-3 border-t border-border">
-              <div className="flex items-center gap-3 px-3 py-2">
-                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-medium text-sm">
-                  {getInitials()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">
-                    {profile?.full_name || "User"}
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleSignOut}
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                >
-                  <LogOut className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-          </motion.aside>
-        )}
-      </AnimatePresence>
+          </div>
+        </aside>
+      )}
 
       {/* Main content */}
       <div 
