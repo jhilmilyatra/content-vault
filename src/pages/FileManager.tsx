@@ -394,8 +394,12 @@ const FileManager = () => {
   };
 
   const processFileUpload = async (fileList: File[]) => {
-    if (!fileList.length || !user) return;
+    if (!fileList.length || !user) {
+      console.log('[Upload] No files or no user, aborting');
+      return;
+    }
 
+    console.log(`[Upload] Starting upload of ${fileList.length} files`);
     setUploading(true);
     mediumHaptic();
     
@@ -410,11 +414,13 @@ const FileManager = () => {
     }));
     setUploadProgressList(initialProgress);
 
+    // Track completed count outside the worker function for proper closure
+    let completedCount = 0;
+    const results: FileItem[] = [];
+    
     try {
       // Parallel upload configuration
       const PARALLEL_UPLOADS = 3;
-      const results: FileItem[] = [];
-      let completedCount = 0;
 
       // Create indexed queue for proper tracking
       const queue: { file: File; index: number }[] = fileList.map((file, index) => ({ file, index }));
@@ -426,6 +432,7 @@ const FileManager = () => {
           queueIndex++; // Atomically grab next item
           
           const { file, index: fileIndex } = queue[currentIndex];
+          console.log(`[Upload] Worker starting upload for file ${fileIndex + 1}/${queue.length}: ${file.name}`);
 
           try {
             const result = await uploadFile(file, user.id, currentFolderId, (progress) => {
@@ -437,6 +444,8 @@ const FileManager = () => {
                 });
               }
             });
+            
+            console.log(`[Upload] File ${fileIndex + 1} uploaded successfully: ${file.name}`);
             results.push(result);
             completedCount++;
             
@@ -446,8 +455,8 @@ const FileManager = () => {
               updateStorageUsage(user.id, file.size),
             ]);
           } catch (error) {
-            console.error(`Upload error for ${file.name}:`, error);
-            // Still increment to track failures
+            console.error(`[Upload] Error uploading ${file.name}:`, error);
+            // Still update progress to show error
             setUploadProgressList((prev) => {
               const updated = [...prev];
               updated[fileIndex] = {
@@ -461,12 +470,15 @@ const FileManager = () => {
       };
 
       // Start parallel upload workers
+      console.log(`[Upload] Starting ${Math.min(PARALLEL_UPLOADS, fileList.length)} parallel workers`);
       const workers = Array.from(
         { length: Math.min(PARALLEL_UPLOADS, fileList.length) },
         () => uploadNext()
       );
 
       await Promise.all(workers);
+      
+      console.log(`[Upload] All workers complete. Completed: ${completedCount}/${fileList.length}`);
 
       toast({
         title: "Success",
@@ -475,7 +487,7 @@ const FileManager = () => {
 
       fetchContents();
     } catch (error) {
-      console.error("Upload error:", error);
+      console.error("[Upload] Overall upload error:", error);
       toast({
         title: "Error",
         description: "Failed to upload files",
