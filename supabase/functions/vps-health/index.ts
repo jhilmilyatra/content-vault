@@ -6,9 +6,9 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
 
-// VPS Configuration
-const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "http://46.38.232.46:4000";
-const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "kARTOOS007";
+// VPS Configuration - uses environment variables only
+const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "";
+const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "";
 const VPS_TIMEOUT = 5000;
 
 Deno.serve(async (req) => {

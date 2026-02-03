@@ -6,9 +6,9 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// Primary VPS storage - hardcoded
-const VPS_ENDPOINT = "http://46.38.232.46:4000";
-const VPS_API_KEY = "kARTOOS007";
+// Primary VPS storage - from environment variables
+const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "";
+const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "";
 
 // Chunk size: 5MB
 const CHUNK_SIZE = 5 * 1024 * 1024;
