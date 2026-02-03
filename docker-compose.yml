@@ -30,7 +30,7 @@ services:
       
       # Security keys - CHANGE THESE IN PRODUCTION!
       - VPS_STORAGE_API_KEY=${VPS_STORAGE_API_KEY:-change-this-api-key}
-      - VPS_OWNER_API_KEY=${VPS_OWNER_API_KEY:-kARTOOS007}
+      - VPS_OWNER_API_KEY=${VPS_OWNER_API_KEY:-change-this-owner-key}
       
       # CDN configuration (optional - for HTTPS serving)
       - VPS_CDN_URL=${VPS_CDN_URL:-}
