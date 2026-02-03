@@ -414,17 +414,18 @@ const FileManager = () => {
       // Parallel upload configuration
       const PARALLEL_UPLOADS = 3;
       const results: FileItem[] = [];
-      const queue = [...fileList];
-      let activeUploads = 0;
       let completedCount = 0;
 
+      // Create indexed queue for proper tracking
+      const queue: { file: File; index: number }[] = fileList.map((file, index) => ({ file, index }));
+      let queueIndex = 0;
+
       const uploadNext = async (): Promise<void> => {
-        while (queue.length > 0 && activeUploads < PARALLEL_UPLOADS) {
-          const file = queue.shift();
-          if (!file) break;
+        while (queueIndex < queue.length) {
+          const currentIndex = queueIndex;
+          queueIndex++; // Atomically grab next item
           
-          const fileIndex = fileList.indexOf(file);
-          activeUploads++;
+          const { file, index: fileIndex } = queue[currentIndex];
 
           try {
             const result = await uploadFile(file, user.id, currentFolderId, (progress) => {
@@ -446,8 +447,15 @@ const FileManager = () => {
             ]);
           } catch (error) {
             console.error(`Upload error for ${file.name}:`, error);
-          } finally {
-            activeUploads--;
+            // Still increment to track failures
+            setUploadProgressList((prev) => {
+              const updated = [...prev];
+              updated[fileIndex] = {
+                ...updated[fileIndex],
+                status: 'error',
+              };
+              return updated;
+            });
           }
         }
       };
