@@ -471,13 +471,13 @@ const DashboardLayout = memo(({ children }: DashboardLayoutProps) => {
         </nav>
       )}
 
-      {/* Floating Action Button - Mobile */}
-      {isMobile && (
+      {/* Floating Action Button - Mobile (hide on Files page which has its own FAB) */}
+      {isMobile && location.pathname !== "/dashboard/files" && (
         <Link
           to="/dashboard/files"
-          className="fixed bottom-20 right-4 z-40 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center active:scale-95 transition-transform"
+          className="fixed bottom-20 right-4 z-40 w-14 h-14 rounded-full bg-background/80 backdrop-blur-xl border border-white/20 shadow-2xl shadow-black/40 flex items-center justify-center active:scale-95 transition-transform"
         >
-          <Plus className="w-6 h-6" />
+          <Plus className="w-6 h-6 text-foreground" />
         </Link>
       )}
 
