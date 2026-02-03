@@ -20,7 +20,6 @@ rm -f /etc/nginx/http.d/default.conf 2>/dev/null || true
 # Verify only our config exists
 echo "📁 Nginx configs:"
 ls -la /etc/nginx/http.d/ 2>/dev/null || echo "   No http.d directory"
-ls -la /etc/nginx/conf.d/ 2>/dev/null || echo "   No conf.d directory (good)"
 
 # Setup SSL certificates
 echo ""
@@ -40,28 +39,34 @@ echo "🔧 Testing Nginx..."
 nginx -t 2>&1
 if [ $? -ne 0 ]; then
     echo "❌ Nginx config failed!"
-    echo ""
-    echo "http.d contents:"
-    ls -la /etc/nginx/http.d/
-    echo ""
-    echo "conf.d contents:"
-    ls -la /etc/nginx/conf.d/ 2>/dev/null || echo "(empty)"
     exit 1
 fi
 echo "   ✓ Nginx config OK"
 
-# Start Nginx
+# Start Nginx (foreground first to capture errors, then daemonize)
 echo ""
 echo "🌐 Starting Nginx..."
-nginx &
-NGINX_PID=$!
-sleep 2
 
-if ! kill -0 $NGINX_PID 2>/dev/null; then
-    echo "❌ Nginx failed!"
+# Clear any old error logs
+> /var/log/nginx/error.log 2>/dev/null || true
+
+# Start nginx
+nginx 2>&1
+sleep 3
+
+# Check if nginx is running
+if pgrep -x nginx > /dev/null; then
+    echo "   ✓ Nginx running (PID: $(pgrep -o nginx))"
+else
+    echo "❌ Nginx failed to start!"
+    echo ""
+    echo "Error log:"
+    cat /var/log/nginx/error.log 2>/dev/null || echo "   (no error log)"
+    echo ""
+    echo "Checking ports:"
+    netstat -tlnp 2>/dev/null || ss -tlnp 2>/dev/null || echo "   (netstat not available)"
     exit 1
 fi
-echo "   ✓ Nginx running (PID: $NGINX_PID)"
 
 # Start Storage Server
 echo ""
@@ -72,7 +77,7 @@ sleep 3
 
 if ! kill -0 $STORAGE_PID 2>/dev/null; then
     echo "❌ Storage server failed!"
-    kill $NGINX_PID 2>/dev/null
+    nginx -s quit 2>/dev/null
     exit 1
 fi
 echo "   ✓ Storage server running (PID: $STORAGE_PID)"
@@ -86,7 +91,8 @@ sleep 2
 
 if ! kill -0 $FRONTEND_PID 2>/dev/null; then
     echo "❌ Frontend failed!"
-    kill $NGINX_PID $STORAGE_PID 2>/dev/null
+    kill $STORAGE_PID 2>/dev/null
+    nginx -s quit 2>/dev/null
     exit 1
 fi
 echo "   ✓ Frontend running (PID: $FRONTEND_PID)"
@@ -103,14 +109,14 @@ echo ""
 cleanup() {
     echo "🛑 Shutting down..."
     kill $FRONTEND_PID $STORAGE_PID 2>/dev/null
-    nginx -s quit 2>/dev/null || kill $NGINX_PID 2>/dev/null
+    nginx -s quit 2>/dev/null
     exit 0
 }
 trap cleanup SIGTERM SIGINT
 
 # Monitor processes
 while true; do
-    if ! kill -0 $NGINX_PID 2>/dev/null; then
+    if ! pgrep -x nginx > /dev/null; then
         echo "⚠️ Nginx stopped"
         cleanup
     fi
