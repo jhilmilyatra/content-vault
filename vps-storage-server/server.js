@@ -52,11 +52,9 @@ if (!fs.existsSync(STORAGE_PATH)) {
 const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
 
 // Quality presets for adaptive bitrate streaming
+// Only 480p to save storage - original MP4 is served directly for playback
 const HLS_QUALITIES = [
-  { name: '360p', height: 360, videoBitrate: '800k', audioBitrate: '64k', bandwidth: 900000 },
   { name: '480p', height: 480, videoBitrate: '1400k', audioBitrate: '96k', bandwidth: 1500000 },
-  { name: '720p', height: 720, videoBitrate: '2800k', audioBitrate: '128k', bandwidth: 3000000 },
-  { name: '1080p', height: 1080, videoBitrate: '5000k', audioBitrate: '192k', bandwidth: 5500000 },
 ];
 
 /**
@@ -231,19 +229,15 @@ async function sendThumbnailCallback(userId, fileName, thumbnailResult, animated
 }
 
 /**
- * Transcode to a specific quality
+ * Transcode to a specific quality - outputs web-compatible MP4 (H.264 + AAC)
+ * This creates a direct MP4 file for streaming, NOT HLS segments
  */
 function transcodeQuality(fullPath, hlsDir, quality, sourceResolution) {
   return new Promise((resolve, reject) => {
     const { exec } = require('child_process');
     
-    const qualityDir = path.join(hlsDir, quality.name);
-    if (!fs.existsSync(qualityDir)) {
-      fs.mkdirSync(qualityDir, { recursive: true });
-    }
-    
-    const segmentPath = path.join(qualityDir, 'segment_%03d.ts');
-    const outputPlaylist = path.join(qualityDir, 'index.m3u8');
+    // Output directly to the hlsDir (not in subdirectory) for simpler access
+    const outputMp4 = path.join(hlsDir, `${quality.name}.mp4`);
     
     // Calculate width maintaining aspect ratio
     const aspectRatio = sourceResolution.width / sourceResolution.height;
@@ -251,14 +245,15 @@ function transcodeQuality(fullPath, hlsDir, quality, sourceResolution) {
     // Ensure width is even for h264
     const width = targetWidth % 2 === 0 ? targetWidth : targetWidth + 1;
     
+    // Transcode to web-compatible MP4 (H.264 baseline/main + AAC)
+    // -movflags +faststart enables progressive download for instant playback
     const ffmpegCmd = `ffmpeg -i "${fullPath}" \
       -c:v libx264 -preset fast -b:v ${quality.videoBitrate} \
+      -profile:v main -level 4.0 \
       -vf "scale=${width}:${quality.height}" \
       -c:a aac -b:a ${quality.audioBitrate} \
-      -hls_time 4 \
-      -hls_playlist_type vod \
-      -hls_segment_filename "${segmentPath}" \
-      "${outputPlaylist}" 2>&1`;
+      -movflags +faststart \
+      -y "${outputMp4}" 2>&1`;
     
     exec(ffmpegCmd, { maxBuffer: 50 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
@@ -269,7 +264,8 @@ function transcodeQuality(fullPath, hlsDir, quality, sourceResolution) {
           height: quality.height, 
           width,
           bandwidth: quality.bandwidth,
-          playlist: outputPlaylist 
+          mp4Path: outputMp4,
+          mp4Url: `${quality.name}.mp4`
         });
       }
     });

@@ -192,27 +192,69 @@ Deno.serve(async (req) => {
       type: "mp4",
     };
 
-    // Primary: CDN URL (HTTPS, optimal for client playback)
-    if (hasCdnUrl) {
-      streamUrls.url = await generateSignedStreamUrl(vpsCdnUrl, finalStoragePath!, user.id, 43200);
-      streamUrls.type = "cdn";
-    } else if (hasVps) {
-      // Fallback: Direct VPS URL (may be HTTP)
-      streamUrls.url = await generateSignedStreamUrl(vpsEndpoint, finalStoragePath!, user.id, 43200);
-      streamUrls.type = "vps-direct";
+    // Check if transcoded 480p.mp4 exists (web-compatible H.264)
+    // This is preferred over original as it's guaranteed to play in all browsers
+    const fileName = finalStoragePath!.split('/').pop() || '';
+    const baseName = fileName.replace(/\.[^.]+$/, '');
+    const userId = finalStoragePath!.split('/')[0];
+    const transcodedPath = `${userId}/hls/${baseName}/480p.mp4`;
+    
+    // Try to check if 480p transcoded version exists on VPS
+    let useTranscoded = false;
+    if (hasVps) {
+      try {
+        const vpsApiKey = Deno.env.get("VPS_API_KEY") || "";
+        const checkUrl = `${vpsEndpoint}/verify-file`;
+        const checkResp = await fetch(checkUrl, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${vpsApiKey}`
+          },
+          body: JSON.stringify({ path: transcodedPath }),
+        });
+        if (checkResp.ok) {
+          const checkData = await checkResp.json();
+          useTranscoded = checkData.exists === true;
+        }
+      } catch (e) {
+        console.log("Could not check for transcoded version:", e);
+      }
     }
 
-    // Generate Supabase fallback URL
-    try {
-      const { data: supabaseData, error: supabaseError } = await supabase.storage
-        .from("user-files")
-        .createSignedUrl(finalStoragePath!, 43200);
+    // Primary: Use transcoded 480p if available, otherwise original
+    const primaryPath = useTranscoded ? transcodedPath : finalStoragePath!;
+    
+    if (hasCdnUrl) {
+      streamUrls.url = await generateSignedStreamUrl(vpsCdnUrl, primaryPath, user.id, 43200);
+      streamUrls.type = "cdn";
       
-      if (!supabaseError && supabaseData?.signedUrl) {
-        streamUrls.fallbackUrl = supabaseData.signedUrl;
+      // If using transcoded, provide original as fallback for full quality
+      if (useTranscoded) {
+        streamUrls.fallbackUrl = await generateSignedStreamUrl(vpsCdnUrl, finalStoragePath!, user.id, 43200);
       }
-    } catch (e) {
-      console.log("Supabase fallback not available:", e);
+    } else if (hasVps) {
+      streamUrls.url = await generateSignedStreamUrl(vpsEndpoint, primaryPath, user.id, 43200);
+      streamUrls.type = "vps-direct";
+      
+      if (useTranscoded) {
+        streamUrls.fallbackUrl = await generateSignedStreamUrl(vpsEndpoint, finalStoragePath!, user.id, 43200);
+      }
+    }
+
+    // If no transcoded version and no fallback yet, try Supabase storage
+    if (!streamUrls.fallbackUrl) {
+      try {
+        const { data: supabaseData, error: supabaseError } = await supabase.storage
+          .from("user-files")
+          .createSignedUrl(finalStoragePath!, 43200);
+        
+        if (!supabaseError && supabaseData?.signedUrl) {
+          streamUrls.fallbackUrl = supabaseData.signedUrl;
+        }
+      } catch (e) {
+        console.log("Supabase fallback not available:", e);
+      }
     }
 
     // Return streaming URLs with CDN-optimized cache headers
