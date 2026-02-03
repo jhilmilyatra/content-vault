@@ -1,6 +1,5 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, memo } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Play, Clock, ArrowUpRight, Zap } from "lucide-react";
@@ -224,12 +223,7 @@ export function ContinueWatching() {
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: 0.18 }}
-      className="bg-card border border-border rounded-lg"
-    >
+    <div className="bg-card border border-border rounded-lg">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <div className="flex items-center gap-2">
           <Play className="w-4 h-4 text-primary" />
@@ -247,12 +241,9 @@ export function ContinueWatching() {
       </div>
 
       <div className="p-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {videos.map((video, index) => (
-          <motion.button
+        {videos.map((video) => (
+          <button
             key={video.id}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.2, delay: index * 0.05 }}
             onClick={() => navigate(`/dashboard/video/${video.file_id}`)}
             onMouseEnter={() => handleHoverStart(video)}
             onMouseLeave={() => handleHoverEnd(video.file_id)}
@@ -260,7 +251,7 @@ export function ContinueWatching() {
             onBlur={() => handleHoverEnd(video.file_id)}
             className={cn(
               "group text-left rounded-lg overflow-hidden",
-              "bg-muted/30 hover:bg-muted/50 transition-all",
+              "bg-muted/30 hover:bg-muted/50 transition-colors",
               "focus:outline-none focus:ring-2 focus:ring-primary/50"
             )}
           >
@@ -271,6 +262,7 @@ export function ContinueWatching() {
                   src={video.file.thumbnail_url}
                   alt={video.file.name}
                   className="w-full h-full object-cover"
+                  loading="lazy"
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
@@ -321,10 +313,10 @@ export function ContinueWatching() {
                 </span>
               </div>
             </div>
-          </motion.button>
+          </button>
         ))}
       </div>
-    </motion.div>
+    </div>
   );
 }
 
