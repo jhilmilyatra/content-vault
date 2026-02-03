@@ -291,6 +291,7 @@ export function getSystemMetrics(): {
 // VPS Configuration - uses environment variables only
 export const VPS_CONFIG = {
   endpoint: Deno.env.get("VPS_ENDPOINT") || "",
+  cdnUrl: Deno.env.get("VPS_CDN_URL") || "",
   apiKey: Deno.env.get("VPS_API_KEY") || "",
 } as const;
 
