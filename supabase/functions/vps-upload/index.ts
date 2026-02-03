@@ -38,11 +38,14 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     
     // Primary VPS storage - from environment variables
-    // VPS_ENDPOINT should be the internal/direct VPS URL (e.g., http://IP:4000 or https://domain.com/api)
-    // VPS_CDN_URL is the public-facing URL for file access
+    // VPS_CDN_URL is the preferred endpoint (e.g., https://cloudvaults.in/api) for HTTPS access
+    // VPS_ENDPOINT is fallback for direct access (may not be reachable from edge functions)
+    const envVpsCdnUrl = Deno.env.get("VPS_CDN_URL") || "";
     const envVpsEndpoint = Deno.env.get("VPS_ENDPOINT") || "";
     const envVpsApiKey = Deno.env.get("VPS_API_KEY") || "";
-    const envVpsCdnUrl = Deno.env.get("VPS_CDN_URL") || "";
+    
+    // Prefer CDN URL for uploads as it's accessible via HTTPS
+    const primaryEndpoint = envVpsCdnUrl || envVpsEndpoint;
     
     // Custom VPS from headers (for additional nodes)
     const headerVpsEndpoint = req.headers.get("x-vps-endpoint");
@@ -115,13 +118,14 @@ Deno.serve(async (req) => {
     }
 
     // VPS storage only - no cloud fallback
-    const vpsEndpoint = customVpsEndpoint || headerVpsEndpoint || envVpsEndpoint;
+    // Prefer: custom endpoint > header > CDN URL > direct VPS endpoint
+    const vpsEndpoint = customVpsEndpoint || headerVpsEndpoint || primaryEndpoint;
     const vpsApiKey = customVpsApiKey || headerVpsApiKey || envVpsApiKey;
 
     if (!vpsEndpoint || !vpsApiKey) {
-      console.error("VPS storage not configured. VPS_ENDPOINT:", vpsEndpoint ? "set" : "missing", "VPS_API_KEY:", vpsApiKey ? "set" : "missing");
+      console.error("VPS storage not configured. VPS_CDN_URL:", envVpsCdnUrl ? "set" : "missing", "VPS_ENDPOINT:", envVpsEndpoint ? "set" : "missing", "VPS_API_KEY:", vpsApiKey ? "set" : "missing");
       return new Response(
-        JSON.stringify({ error: "VPS storage not configured. Please set VPS_ENDPOINT and VPS_API_KEY secrets." }),
+        JSON.stringify({ error: "VPS storage not configured. Please set VPS_CDN_URL and VPS_API_KEY secrets." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
