@@ -1,127 +1,69 @@
 # ============================================
-# FileCloud VPS Deployment with Nginx + SSL
+# FileCloud SSL Dockerfile
 # ============================================
-# Unified HTTPS deployment with Nginx SSL termination
-# All traffic routes through Nginx for security & performance
-#
-# Architecture:
-#   Internet (443) -> Nginx (SSL) -> Internal Services
-#     - Frontend:    localhost:3000
-#     - Storage API: localhost:4000
-#
-# QUICK START:
-#   docker build -f Dockerfile.ssl -t filecloud-ssl .
-#   docker run -d -p 80:80 -p 443:443 \
-#     -v ./ssl:/etc/nginx/ssl/custom:ro \
-#     -v filecloud_storage:/app/storage \
-#     -e VPS_STORAGE_API_KEY=your-secure-key \
-#     -e VPS_CDN_URL=https://yourdomain.com \
-#     filecloud-ssl
-#
+# Unified container with Nginx SSL termination
 # ============================================
 
-# Build stage
 FROM node:20-alpine AS builder
-
 WORKDIR /app
-
-# Install dependencies
 COPY package*.json ./
 RUN npm ci
-
-# Build frontend
 COPY . .
 RUN npm run build
 
 # ============================================
-# Production Stage with Nginx SSL Termination
+# Production Stage
 # ============================================
 FROM node:20-alpine AS production
-
 WORKDIR /app
 
-# Install required packages
-RUN apk add --no-cache \
-    ffmpeg \
-    nginx \
-    curl \
-    openssl \
+# Install packages
+RUN apk add --no-cache ffmpeg nginx curl openssl \
     && npm install -g serve
 
-# Create required directories
-RUN mkdir -p \
-    /app/storage \
-    /app/data \
-    /var/www/certbot \
-    /run/nginx \
-    /etc/nginx/ssl \
-    /etc/nginx/ssl/custom \
-    /var/log/nginx \
-    /var/cache/nginx
+# Create directories
+RUN mkdir -p /app/storage /app/data /var/www/certbot /run/nginx \
+    /etc/nginx/ssl /etc/nginx/ssl/custom /var/log/nginx
 
 # Copy built frontend
 COPY --from=builder /app/dist ./dist
 
 # Copy VPS storage server
 COPY vps-storage-server ./vps-storage-server
-
-# Install VPS server dependencies
 WORKDIR /app/vps-storage-server
 RUN npm install --omit=dev
 WORKDIR /app
 
-# Copy nginx configuration to Alpine's http.d directory
-COPY nginx/nginx.conf /etc/nginx/http.d/filecloud.conf
+# Copy nginx config to Alpine's http.d directory (inside http block)
+COPY nginx/filecloud.conf /etc/nginx/http.d/filecloud.conf
 
-# Remove default nginx configs to avoid conflicts
-RUN rm -f /etc/nginx/http.d/default.conf 2>/dev/null || true
+# Remove any default configs
+RUN rm -f /etc/nginx/http.d/default.conf /etc/nginx/conf.d/*.conf 2>/dev/null || true
 
-# Generate self-signed certificate as fallback
+# Generate self-signed cert as fallback
 RUN openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout /etc/nginx/ssl/privkey.pem \
     -out /etc/nginx/ssl/fullchain.pem \
     -subj "/C=US/ST=State/L=City/O=FileCloud/CN=localhost" \
     && chmod 600 /etc/nginx/ssl/privkey.pem
 
-# ============================================
-# Environment Variables
-# ============================================
-ENV NODE_ENV=production
+# Environment
+ENV NODE_ENV=production \
+    PORT=3000 \
+    STORAGE_PORT=4000 \
+    STORAGE_PATH=/app/storage \
+    DATA_PATH=/app/data \
+    VPS_STORAGE_API_KEY=change-this-api-key \
+    VPS_OWNER_API_KEY=change-this-owner-key \
+    AUTO_TRANSCODE=true \
+    AUTO_IMAGE_THUMBNAIL=true \
+    ENABLE_THUMBNAIL_CALLBACK=true
 
-# Internal ports (not exposed externally)
-ENV PORT=3000
-ENV STORAGE_PORT=4000
-
-# Storage paths
-ENV STORAGE_PATH=/app/storage
-ENV DATA_PATH=/app/data
-
-# Security keys - MUST CHANGE IN PRODUCTION
-ENV VPS_STORAGE_API_KEY=change-this-api-key
-ENV VPS_OWNER_API_KEY=change-this-owner-key
-ENV HLS_SIGNING_SECRET=change-this-signing-secret
-ENV VPS_CALLBACK_KEY=vps-thumbnail-callback-secret
-
-# CDN URL (set to your domain with HTTPS)
-ENV VPS_CDN_URL=
-
-# Thumbnail & transcoding
-ENV AUTO_TRANSCODE=true
-ENV AUTO_IMAGE_THUMBNAIL=true
-ENV ENABLE_THUMBNAIL_CALLBACK=true
-
-# ============================================
-# Expose only HTTP/HTTPS ports
-# ============================================
-# Internal services (3000, 4000) are NOT exposed
-# All traffic goes through Nginx SSL termination
 EXPOSE 80 443
 
-# Health check via internal frontend
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD curl -sf http://127.0.0.1:3000/health || exit 1
+    CMD curl -sf http://127.0.0.1:3000 || exit 1
 
-# Copy and prepare entrypoint
 COPY docker-entrypoint.ssl.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 

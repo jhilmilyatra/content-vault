@@ -2,156 +2,112 @@
 set -e
 
 echo "============================================"
-echo "🚀 FileCloud - Unified SSL Deployment"
+echo "🚀 FileCloud SSL Deployment"
 echo "============================================"
-echo "📅 Started: $(date)"
+echo "📅 $(date)"
 echo ""
 
-# ==========================================
-# Configuration Display
-# ==========================================
 echo "📋 Configuration:"
-echo "   ├─ Storage path: ${STORAGE_PATH:-/app/storage}"
-echo "   ├─ Data path: ${DATA_PATH:-/app/data}"
-echo "   ├─ CDN URL: ${VPS_CDN_URL:-not configured}"
-echo "   ├─ Auto transcode: ${AUTO_TRANSCODE:-true}"
-echo "   ├─ Auto thumbnails: ${AUTO_IMAGE_THUMBNAIL:-true}"
-echo "   └─ SSL: Nginx termination (all traffic HTTPS)"
+echo "   Storage: ${STORAGE_PATH:-/app/storage}"
+echo "   CDN URL: ${VPS_CDN_URL:-not set}"
 echo ""
 
-# ==========================================
-# SSL Certificate Setup
-# ==========================================
-echo "🔐 Configuring SSL certificates..."
-
+# Setup SSL certificates
+echo "🔐 SSL Setup..."
 if [ -f "/etc/nginx/ssl/custom/fullchain.pem" ] && [ -f "/etc/nginx/ssl/custom/privkey.pem" ]; then
-    echo "   ✓ Using custom SSL certificates"
+    echo "   ✓ Using custom certificates"
     cp /etc/nginx/ssl/custom/fullchain.pem /etc/nginx/ssl/fullchain.pem
     cp /etc/nginx/ssl/custom/privkey.pem /etc/nginx/ssl/privkey.pem
     chmod 600 /etc/nginx/ssl/privkey.pem
 else
-    echo "   ⚠ Using self-signed certificates (replace for production)"
+    echo "   ⚠ Using self-signed (add certs to /etc/nginx/ssl/custom/)"
 fi
 
-# ==========================================
-# Nginx Configuration Test
-# ==========================================
+# Test nginx config
 echo ""
-echo "🔧 Testing Nginx configuration..."
+echo "🔧 Testing Nginx..."
 if ! nginx -t 2>&1; then
-    echo "❌ Nginx configuration test failed!"
+    echo "❌ Nginx config failed!"
     echo ""
-    echo "Debug info:"
-    cat /etc/nginx/conf.d/default.conf | head -50
+    echo "Config files:"
+    ls -la /etc/nginx/http.d/
+    echo ""
+    echo "Main config:"
+    cat /etc/nginx/nginx.conf | head -30
     exit 1
 fi
-echo "   ✓ Nginx configuration valid"
+echo "   ✓ Nginx config OK"
 
-# ==========================================
-# Start Services
-# ==========================================
-
-# Start Nginx (SSL termination for all traffic)
+# Start Nginx
 echo ""
-echo "🌐 Starting Nginx (HTTP:80 → HTTPS:443)..."
+echo "🌐 Starting Nginx..."
 nginx &
 NGINX_PID=$!
 sleep 2
 
 if ! kill -0 $NGINX_PID 2>/dev/null; then
-    echo "❌ Nginx failed to start!"
-    cat /var/log/nginx/error.log 2>/dev/null || echo "No error log available"
+    echo "❌ Nginx failed!"
     exit 1
 fi
 echo "   ✓ Nginx running (PID: $NGINX_PID)"
 
-# Start VPS Storage Server (internal only)
+# Start Storage Server
 echo ""
-echo "📦 Starting Storage Server (internal:${STORAGE_PORT:-4000})..."
+echo "📦 Starting Storage Server..."
 cd /app/vps-storage-server && node server.js &
 STORAGE_PID=$!
 sleep 3
 
 if ! kill -0 $STORAGE_PID 2>/dev/null; then
-    echo "❌ Storage server failed to start!"
+    echo "❌ Storage server failed!"
     kill $NGINX_PID 2>/dev/null
     exit 1
 fi
 echo "   ✓ Storage server running (PID: $STORAGE_PID)"
 
-# Start Frontend Server (internal only)
+# Start Frontend
 echo ""
-echo "🎨 Starting Frontend Server (internal:${PORT:-3000})..."
+echo "🎨 Starting Frontend..."
 cd /app && npx serve -s dist -l ${PORT:-3000} --no-clipboard &
 FRONTEND_PID=$!
 sleep 2
 
 if ! kill -0 $FRONTEND_PID 2>/dev/null; then
-    echo "❌ Frontend server failed to start!"
+    echo "❌ Frontend failed!"
     kill $NGINX_PID $STORAGE_PID 2>/dev/null
     exit 1
 fi
-echo "   ✓ Frontend server running (PID: $FRONTEND_PID)"
+echo "   ✓ Frontend running (PID: $FRONTEND_PID)"
 
-# ==========================================
-# Ready
-# ==========================================
 echo ""
 echo "============================================"
-echo "🎉 FileCloud is ready!"
+echo "🎉 FileCloud Ready!"
+echo "   HTTPS: https://localhost"
+echo "   HTTP:  http://localhost (redirects)"
 echo "============================================"
 echo ""
-echo "📍 Access Points (via Nginx SSL):"
-echo "   ├─ HTTP:  http://localhost:80 (→ HTTPS redirect)"
-echo "   ├─ HTTPS: https://localhost:443"
-echo "   └─ Health: http://localhost:3000/health (internal)"
-echo ""
-echo "🔗 API Endpoints (all HTTPS):"
-echo "   ├─ /api/*        - Storage API"
-echo "   ├─ /files/*      - File downloads"
-echo "   ├─ /hls/*        - HLS streaming"
-echo "   ├─ /thumbnails/* - Thumbnails"
-echo "   └─ /ws           - WebSocket"
-echo ""
-echo "🔒 SSL Status:"
-if [ -f "/etc/nginx/ssl/custom/fullchain.pem" ]; then
-    echo "   └─ Using: Custom certificates"
-    # Show certificate info
-    CERT_EXPIRY=$(openssl x509 -enddate -noout -in /etc/nginx/ssl/fullchain.pem 2>/dev/null | cut -d= -f2)
-    echo "   └─ Expires: ${CERT_EXPIRY:-unknown}"
-else
-    echo "   └─ Using: Self-signed (mount custom certs to /etc/nginx/ssl/custom/)"
-fi
-echo ""
-echo "============================================"
 
-# ==========================================
-# Signal Handling & Process Management
-# ==========================================
+# Graceful shutdown
 cleanup() {
-    echo ""
-    echo "🛑 Shutting down gracefully..."
-    kill $FRONTEND_PID 2>/dev/null
-    kill $STORAGE_PID 2>/dev/null
+    echo "🛑 Shutting down..."
+    kill $FRONTEND_PID $STORAGE_PID 2>/dev/null
     nginx -s quit 2>/dev/null || kill $NGINX_PID 2>/dev/null
-    echo "   ✓ All services stopped"
     exit 0
 }
+trap cleanup SIGTERM SIGINT
 
-trap cleanup SIGTERM SIGINT SIGQUIT
-
-# Monitor all processes
+# Monitor processes
 while true; do
     if ! kill -0 $NGINX_PID 2>/dev/null; then
-        echo "⚠️ Nginx stopped unexpectedly"
+        echo "⚠️ Nginx stopped"
         cleanup
     fi
     if ! kill -0 $STORAGE_PID 2>/dev/null; then
-        echo "⚠️ Storage server stopped unexpectedly"
+        echo "⚠️ Storage stopped"
         cleanup
     fi
     if ! kill -0 $FRONTEND_PID 2>/dev/null; then
-        echo "⚠️ Frontend server stopped unexpectedly"
+        echo "⚠️ Frontend stopped"
         cleanup
     fi
     sleep 5

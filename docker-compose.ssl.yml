@@ -1,21 +1,5 @@
-# ============================================
-# FileCloud - Unified SSL Deployment
-# ============================================
-# All traffic routes through Nginx for SSL termination
-# Internal services are not exposed externally
-#
-# Architecture:
-#   Internet (80/443) -> Nginx -> Internal Services
-#
-# QUICK START:
-#   1. Copy .env.example to .env and configure
-#   2. Create SSL directory: mkdir -p ssl
-#   3. Add certificates (Cloudflare Origin or Let's Encrypt):
-#      - ssl/fullchain.pem
-#      - ssl/privkey.pem
-#   4. Run: docker compose -f docker-compose.ssl.yml up -d
-#
-# ============================================
+# FileCloud SSL Docker Compose
+# Usage: docker compose -f docker-compose.ssl.yml up -d --build
 
 services:
   filecloud:
@@ -25,127 +9,30 @@ services:
     image: filecloud-ssl:latest
     container_name: filecloud
     restart: unless-stopped
-    
-    # Only expose HTTP/HTTPS through Nginx
     ports:
       - "80:80"
       - "443:443"
-    
     volumes:
-      # Persistent storage for files
       - filecloud_storage:/app/storage
       - filecloud_data:/app/data
-      
-      # SSL certificates (mount your certs here)
       - ./ssl:/etc/nginx/ssl/custom:ro
-      
-      # Custom nginx config (optional override) - use Alpine's http.d path
-      - ./nginx/nginx.conf:/etc/nginx/http.d/filecloud.conf:ro
-      
-      # Let's Encrypt webroot (for certbot renewal)
-      - certbot_webroot:/var/www/certbot:ro
-    
     environment:
-      # ========================================
-      # Core Settings
-      # ========================================
       - NODE_ENV=production
       - STORAGE_PATH=/app/storage
-      - DATA_PATH=/app/data
-      
-      # ========================================
-      # Security Keys (from .env file)
-      # ========================================
       - VPS_STORAGE_API_KEY=${VPS_STORAGE_API_KEY:-change-this-api-key}
       - VPS_OWNER_API_KEY=${VPS_OWNER_API_KEY:-change-this-owner-key}
-      - HLS_SIGNING_SECRET=${HLS_SIGNING_SECRET:-change-this-signing-secret}
-      - VPS_CALLBACK_KEY=${VPS_CALLBACK_KEY:-vps-thumbnail-callback-secret}
-      
-      # ========================================
-      # CDN/SSL URL (your HTTPS domain)
-      # ========================================
-      - VPS_CDN_URL=${VPS_CDN_URL:-https://yourdomain.com}
-      
-      # ========================================
-      # Supabase Connection
-      # ========================================
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
-      
-      # ========================================
-      # Video Transcoding
-      # ========================================
-      - AUTO_TRANSCODE=${AUTO_TRANSCODE:-true}
-      - AUTO_RETRANSCODE_ON_STARTUP=${AUTO_RETRANSCODE_ON_STARTUP:-false}
-      - TRANSCODE_DELAY_MS=${TRANSCODE_DELAY_MS:-30000}
-      
-      # ========================================
-      # Thumbnail Generation
-      # ========================================
-      - AUTO_THUMBNAIL_BACKFILL=${AUTO_THUMBNAIL_BACKFILL:-false}
-      - AUTO_IMAGE_THUMBNAIL=${AUTO_IMAGE_THUMBNAIL:-true}
-      - ENABLE_THUMBNAIL_CALLBACK=${ENABLE_THUMBNAIL_CALLBACK:-true}
-      
-      # ========================================
-      # Streaming Security
-      # ========================================
-      - ENABLE_SIGNED_URLS=${ENABLE_SIGNED_URLS:-true}
-    
+      - VPS_CDN_URL=${VPS_CDN_URL:-https://cloudvaults.in}
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}
+      - AUTO_TRANSCODE=true
+      - AUTO_IMAGE_THUMBNAIL=true
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:3000/health"]
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:3000"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
-    
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
-
-  # ==========================================
-  # Optional: Let's Encrypt Auto-Renewal
-  # ==========================================
-  # Start with: docker compose -f docker-compose.ssl.yml --profile letsencrypt up -d
-  certbot:
-    image: certbot/certbot:latest
-    container_name: filecloud-certbot
-    volumes:
-      - ./ssl:/etc/letsencrypt
-      - certbot_webroot:/var/www/certbot
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done;'"
-    profiles:
-      - letsencrypt
-    depends_on:
-      - filecloud
 
 volumes:
   filecloud_storage:
-    driver: local
   filecloud_data:
-    driver: local
-  certbot_webroot:
-    driver: local
-
-# ============================================
-# Usage Examples
-# ============================================
-#
-# Build and start:
-#   docker compose -f docker-compose.ssl.yml up -d --build
-#
-# View logs:
-#   docker compose -f docker-compose.ssl.yml logs -f
-#
-# Restart after config changes:
-#   docker compose -f docker-compose.ssl.yml restart
-#
-# Stop and remove:
-#   docker compose -f docker-compose.ssl.yml down
-#
-# With Let's Encrypt renewal:
-#   docker compose -f docker-compose.ssl.yml --profile letsencrypt up -d
-#
-# ============================================
