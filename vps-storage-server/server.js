@@ -2042,7 +2042,99 @@ app.post('/transcode', authenticate, async (req, res) => {
 });
 
 // ============================================
-// Chunked Upload: Append chunk directly to file
+// Chunked Upload: Binary chunk append (FormData) - FAST
+// ============================================
+const chunkUploadMulter = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max chunk
+});
+
+app.post('/chunk-binary', authenticate, chunkUploadMulter.single('chunk'), (req, res) => {
+  try {
+    const { fileName, userId, chunkIndex, totalChunks } = req.body;
+    const chunk = req.file;
+    
+    if (!chunk) {
+      return res.status(400).json({ error: 'Missing chunk file' });
+    }
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'Missing user ID' });
+    }
+    
+    if (!fileName) {
+      return res.status(400).json({ error: 'Missing file name' });
+    }
+    
+    const chunkIdx = parseInt(chunkIndex, 10);
+    const totalChunksNum = parseInt(totalChunks, 10);
+    
+    if (isNaN(chunkIdx)) {
+      return res.status(400).json({ error: 'Invalid chunk index' });
+    }
+    
+    // Validate userId
+    if (!isValidUUID(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+    
+    // Validate filename
+    if (!isValidFilename(fileName)) {
+      return res.status(400).json({ error: 'Invalid filename format' });
+    }
+    
+    // Get safe path
+    const pathInfo = getSafePath(userId, fileName);
+    if (!pathInfo) {
+      return res.status(400).json({ error: 'Invalid path parameters' });
+    }
+    
+    // Ensure user directory exists
+    if (!fs.existsSync(pathInfo.userDir)) {
+      fs.mkdirSync(pathInfo.userDir, { recursive: true });
+    }
+
+    // For first chunk, create/truncate the file
+    // For subsequent chunks, append to existing file
+    if (chunkIdx === 0) {
+      fs.writeFileSync(pathInfo.fullPath, chunk.buffer);
+      console.log(`📦 Chunk 0/${totalChunksNum - 1} written (new file): ${fileName} [${(chunk.size / 1024 / 1024).toFixed(2)} MB]`);
+    } else {
+      // Append to file
+      fs.appendFileSync(pathInfo.fullPath, chunk.buffer);
+      console.log(`📦 Chunk ${chunkIdx}/${totalChunksNum - 1} appended: ${fileName} [${(chunk.size / 1024 / 1024).toFixed(2)} MB]`);
+    }
+    
+    const filePath = `${userId}/${fileName}`;
+    
+    // Get current file size
+    const stats = fs.statSync(pathInfo.fullPath);
+    
+    const isComplete = chunkIdx === totalChunksNum - 1;
+    
+    // Trigger auto-transcode when chunked upload completes
+    if (isComplete) {
+      triggerAutoTranscode(userId, fileName, pathInfo.fullPath);
+    }
+    
+    res.json({
+      success: true,
+      chunkIndex: chunkIdx,
+      totalChunks: totalChunksNum,
+      currentSize: stats.size,
+      path: filePath,
+      fileName,
+      isComplete,
+      url: `/files/${filePath}`
+    });
+  } catch (error) {
+    console.error('Binary chunk append error:', error);
+    res.status(500).json({ error: 'Chunk append failed', message: error.message });
+  }
+});
+
+// ============================================
+// Chunked Upload: Append chunk directly to file (Legacy base64 - slower)
 // ============================================
 app.post('/chunk-append', authenticate, (req, res) => {
   try {
