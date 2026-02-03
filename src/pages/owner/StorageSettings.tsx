@@ -100,10 +100,11 @@ interface VPSStats {
   totalGB: string;
 }
 
-// Hardcoded VPS configuration
+// VPS configuration - fetched dynamically via edge function
+// Frontend should never have direct access to VPS credentials
 const VPS_CONFIG = {
-  endpoint: "http://46.38.232.46:4000",
-  apiKey: "kARTOOS007",
+  endpoint: "", // Fetched via vps-health edge function
+  apiKey: "", // Never exposed to frontend
   name: "Primary VPS Storage",
   totalCapacity: 200 * 1024 * 1024 * 1024, // 200GB
 };

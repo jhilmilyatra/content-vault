@@ -790,7 +790,7 @@ Authorization: Bearer <jwt_token>
 
 ```json
 {
-  "url": "http://46.38.232.46:4000/files/user-uuid/file.pdf",
+  "url": "https://cdn.yourdomain.com/files/user-uuid/file.pdf",
   "storage": "vps"
 }
 ```

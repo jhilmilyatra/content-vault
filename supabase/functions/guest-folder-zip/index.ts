@@ -29,10 +29,10 @@ function checkRateLimit(key: string): boolean {
   return true;
 }
 
-// VPS Configuration
+// VPS Configuration - uses environment variables only
 const VPS_CONFIG = {
-  endpoint: "http://46.38.232.46:4000",
-  apiKey: "kARTOOS007",
+  endpoint: Deno.env.get("VPS_ENDPOINT") || "",
+  apiKey: Deno.env.get("VPS_API_KEY") || "",
 };
 
 interface FileItem {

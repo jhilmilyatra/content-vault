@@ -9,9 +9,9 @@ const corsHeaders = {
 // Limits
 const MAX_USERS = 100;
 
-// VPS Configuration
-const VPS_ENDPOINT = "http://46.38.232.46:4000";
-const VPS_OWNER_KEY = "kARTOOS007";
+// VPS Configuration - uses environment variables only
+const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "";
+const VPS_OWNER_KEY = Deno.env.get("VPS_OWNER_API_KEY") || Deno.env.get("VPS_API_KEY") || "";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
