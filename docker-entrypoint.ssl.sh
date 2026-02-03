@@ -12,7 +12,18 @@ echo "   Storage: ${STORAGE_PATH:-/app/storage}"
 echo "   CDN URL: ${VPS_CDN_URL:-not set}"
 echo ""
 
+# CRITICAL: Clean any stray nginx configs
+echo "🧹 Cleaning nginx configs..."
+rm -rf /etc/nginx/conf.d/* 2>/dev/null || true
+rm -f /etc/nginx/http.d/default.conf 2>/dev/null || true
+
+# Verify only our config exists
+echo "📁 Nginx configs:"
+ls -la /etc/nginx/http.d/ 2>/dev/null || echo "   No http.d directory"
+ls -la /etc/nginx/conf.d/ 2>/dev/null || echo "   No conf.d directory (good)"
+
 # Setup SSL certificates
+echo ""
 echo "🔐 SSL Setup..."
 if [ -f "/etc/nginx/ssl/custom/fullchain.pem" ] && [ -f "/etc/nginx/ssl/custom/privkey.pem" ]; then
     echo "   ✓ Using custom certificates"
@@ -26,14 +37,15 @@ fi
 # Test nginx config
 echo ""
 echo "🔧 Testing Nginx..."
-if ! nginx -t 2>&1; then
+nginx -t 2>&1
+if [ $? -ne 0 ]; then
     echo "❌ Nginx config failed!"
     echo ""
-    echo "Config files:"
+    echo "http.d contents:"
     ls -la /etc/nginx/http.d/
     echo ""
-    echo "Main config:"
-    cat /etc/nginx/nginx.conf | head -30
+    echo "conf.d contents:"
+    ls -la /etc/nginx/conf.d/ 2>/dev/null || echo "(empty)"
     exit 1
 fi
 echo "   ✓ Nginx config OK"

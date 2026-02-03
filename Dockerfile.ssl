@@ -34,11 +34,11 @@ WORKDIR /app/vps-storage-server
 RUN npm install --omit=dev
 WORKDIR /app
 
-# Copy nginx config to Alpine's http.d directory (inside http block)
-COPY nginx/filecloud.conf /etc/nginx/http.d/filecloud.conf
+# CRITICAL: Remove ALL default nginx configs first
+RUN rm -rf /etc/nginx/http.d/* /etc/nginx/conf.d/* /etc/nginx/sites-enabled/* /etc/nginx/sites-available/* 2>/dev/null || true
 
-# Remove any default configs
-RUN rm -f /etc/nginx/http.d/default.conf /etc/nginx/conf.d/*.conf 2>/dev/null || true
+# Copy our nginx config to http.d (Alpine's include directory)
+COPY nginx/filecloud.conf /etc/nginx/http.d/filecloud.conf
 
 # Generate self-signed cert as fallback
 RUN openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
