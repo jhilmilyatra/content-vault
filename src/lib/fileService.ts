@@ -819,39 +819,32 @@ const uploadChunked = async (
     });
   }
 
-  // Upload chunks sequentially using chunk-append endpoint
-  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+  // Upload chunks using binary FormData (much faster than base64)
+  // Use parallel uploads for better throughput
+  const PARALLEL_CHUNK_UPLOADS = 3;
+  let currentChunkIndex = 0;
+  
+  const uploadChunk = async (chunkIndex: number): Promise<void> => {
     const chunkStart = chunkIndex * chunkSize;
     const chunkEnd = Math.min(chunkStart + chunkSize, file.size);
     const chunk = file.slice(chunkStart, chunkEnd);
     const chunkBytes = chunkEnd - chunkStart;
     
-    // Convert chunk to base64
-    const arrayBuffer = await chunk.arrayBuffer();
-    const base64Data = btoa(
-      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-    );
-    
-    const isFirstChunk = chunkIndex === 0;
-    const isLastChunk = chunkIndex === totalChunks - 1;
+    const formData = new FormData();
+    formData.append('chunk', chunk, `chunk_${chunkIndex}`);
+    formData.append('fileName', storageFileName);
+    formData.append('userId', userId);
+    formData.append('chunkIndex', String(chunkIndex));
+    formData.append('totalChunks', String(totalChunks));
     
     const chunkStartTime = performance.now();
     
-    const response = await fetch(`${PRIMARY_VPS_CONFIG.endpoint}/chunk-append`, {
+    const response = await fetch(`${PRIMARY_VPS_CONFIG.endpoint}/chunk-binary`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${PRIMARY_VPS_CONFIG.apiKey}`,
-        'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        data: base64Data,
-        fileName: storageFileName,
-        userId,
-        chunkIndex,
-        totalChunks,
-        isFirstChunk,
-        isLastChunk,
-      }),
+      body: formData,
     });
 
     if (!response.ok) {
@@ -884,6 +877,11 @@ const uploadChunked = async (
     }
     
     console.log(`📦 Chunk ${chunkIndex + 1}/${totalChunks} uploaded (${Math.round(chunkDuration)}ms, ${formatFileSize(speed)}/s)`);
+  };
+  
+  // Upload chunks sequentially (parallel can cause file corruption with append)
+  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+    await uploadChunk(chunkIndex);
   }
 
   // Update progress to processing (creating DB record)
