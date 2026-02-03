@@ -39,6 +39,7 @@ async function generateSignature(message: string): Promise<string> {
  * Generate a signed streaming URL
  */
 async function generateSignedUrl(
+  baseUrl: string,
   storagePath: string, 
   guestId: string,
   expiresInSeconds: number = 7200
@@ -54,8 +55,35 @@ async function generateSignedUrl(
     sig: signature,
   });
   
-  // Use the HTTPS CDN URL for client-facing URLs
-  return `${VPS_CDN_URL}/stream?${params.toString()}`;
+  // Normalize URL - remove trailing slashes
+  const normalizedBase = baseUrl.replace(/\/+$/, '');
+  return `${normalizedBase}/stream?${params.toString()}`;
+}
+
+/**
+ * Check if 480p transcoded version exists on VPS
+ */
+async function checkTranscodedExists(transcodedPath: string): Promise<boolean> {
+  if (!VPS_ENDPOINT || !VPS_API_KEY) return false;
+  
+  try {
+    const checkUrl = `${VPS_ENDPOINT}/verify-file`;
+    const checkResp = await fetch(checkUrl, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${VPS_API_KEY}`
+      },
+      body: JSON.stringify({ path: transcodedPath }),
+    });
+    if (checkResp.ok) {
+      const checkData = await checkResp.json();
+      return checkData.exists === true;
+    }
+  } catch (e) {
+    console.log("Could not check for transcoded version:", e);
+  }
+  return false;
 }
 
 Deno.serve(async (req) => {
@@ -145,6 +173,12 @@ Deno.serve(async (req) => {
     const hasCdnUrl = VPS_CDN_URL && VPS_CDN_URL.startsWith("https://");
     const hasVpsEndpoint = VPS_ENDPOINT && VPS_API_KEY;
 
+    // Calculate 480p transcoded path
+    const fileName = storagePath.split('/').pop() || '';
+    const baseName = fileName.replace(/\.[^.]+$/, '');
+    const userId = storagePath.split('/')[0];
+    const transcodedPath = `${userId}/processed/${baseName}/480p.mp4`;
+
     // Try VPS if CDN is configured
     if (hasCdnUrl && hasVpsEndpoint) {
       try {
@@ -159,14 +193,23 @@ Deno.serve(async (req) => {
         
         if (healthCheck.ok) {
           // Generate signed VPS streaming URL (HTTPS via CDN)
-          const streamUrl = await generateSignedUrl(storagePath, guestId, 7200);
+          const streamUrl = await generateSignedUrl(VPS_CDN_URL, storagePath, guestId, 43200);
+          
+          // Check for 480p fallback
+          const hasTranscoded = await checkTranscodedExists(transcodedPath);
+          let fallbackUrl: string | undefined;
+          
+          if (hasTranscoded) {
+            fallbackUrl = await generateSignedUrl(VPS_CDN_URL, transcodedPath, guestId, 43200);
+          }
           
           const totalTime = performance.now() - startTime;
-          console.log(`✅ Generated signed VPS URL: ${Math.round(totalTime)}ms`);
+          console.log(`✅ Generated signed VPS URL: ${Math.round(totalTime)}ms, fallback: ${hasTranscoded}`);
           
           return new Response(
             JSON.stringify({
               url: streamUrl,
+              fallbackUrl,
               type: 'vps',
               file: {
                 id: accessResult.file_id,
@@ -174,6 +217,7 @@ Deno.serve(async (req) => {
                 original_name: accessResult.file_original_name,
                 mime_type: accessResult.file_mime_type,
                 size: accessResult.file_size,
+                duration_seconds: accessResult.duration_seconds,
               },
             }),
             { 
@@ -192,7 +236,7 @@ Deno.serve(async (req) => {
     const { data: signedUrlData, error: signedUrlError } = await supabaseAdmin
       .storage
       .from("user-files")
-      .createSignedUrl(storagePath, 7200);
+      .createSignedUrl(storagePath, 43200);
 
     if (signedUrlError || !signedUrlData?.signedUrl) {
       return new Response(
@@ -214,6 +258,7 @@ Deno.serve(async (req) => {
           original_name: accessResult.file_original_name,
           mime_type: accessResult.file_mime_type,
           size: accessResult.file_size,
+          duration_seconds: accessResult.duration_seconds,
         },
       }),
       { 
