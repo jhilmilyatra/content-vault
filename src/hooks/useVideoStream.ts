@@ -16,9 +16,17 @@ interface StreamUrls {
   };
 }
 
+export interface VideoQualityOption {
+  label: string;
+  src: string;
+  isOriginal?: boolean;
+}
+
 interface UseVideoStreamResult {
   streamUrl: string | null;
   fallbackUrl: string | null;
+  /** Quality options for quality selector (original + 480p if available) */
+  qualities: VideoQualityOption[];
   isLoading: boolean;
   error: string | null;
   fileInfo: StreamUrls["fileInfo"] | null;
@@ -50,6 +58,7 @@ export function useVideoStream(
 ): UseVideoStreamResult {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
+  const [qualities, setQualities] = useState<VideoQualityOption[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileInfo, setFileInfo] = useState<StreamUrls["fileInfo"] | null>(null);
@@ -93,6 +102,14 @@ export function useVideoStream(
         console.log("📹 Using cached video stream URL");
         setStreamUrl(cached.url);
         setFallbackUrl(cached.fallbackUrl);
+        // Build qualities from cache
+        const qualityOptions: VideoQualityOption[] = [
+          { label: 'Original', src: cached.url, isOriginal: true }
+        ];
+        if (cached.fallbackUrl) {
+          qualityOptions.push({ label: '480p', src: cached.fallbackUrl });
+        }
+        setQualities(qualityOptions);
         setIsLoading(false);
         return;
       }
@@ -116,6 +133,14 @@ export function useVideoStream(
         if (result) {
           setStreamUrl(result.url);
           setFallbackUrl(result.fallbackUrl || null);
+          // Build qualities
+          const qualityOptions: VideoQualityOption[] = [
+            { label: 'Original', src: result.url, isOriginal: true }
+          ];
+          if (result.fallbackUrl) {
+            qualityOptions.push({ label: '480p', src: result.fallbackUrl });
+          }
+          setQualities(qualityOptions);
           setIsLoading(false);
           return;
         }
@@ -146,6 +171,16 @@ export function useVideoStream(
       setStreamUrl(data.url || null);
       setFallbackUrl(data.fallbackUrl || null);
       setFileInfo(data.fileInfo || null);
+      
+      // Build quality options from response
+      const qualityOptions: VideoQualityOption[] = [];
+      if (data.url) {
+        qualityOptions.push({ label: 'Original', src: data.url, isOriginal: true });
+      }
+      if (data.fallbackUrl) {
+        qualityOptions.push({ label: '480p', src: data.fallbackUrl });
+      }
+      setQualities(qualityOptions);
     } catch (err) {
       console.error("Failed to get stream URLs:", err);
       setError(err instanceof Error ? err.message : "Failed to get stream URL");
@@ -198,6 +233,7 @@ export function useVideoStream(
   return {
     streamUrl,
     fallbackUrl,
+    qualities,
     isLoading,
     error,
     fileInfo,

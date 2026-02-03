@@ -4,13 +4,21 @@ import { Slider } from "@/components/ui/slider";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
-  SkipBack, SkipForward, X, Loader2
+  SkipBack, SkipForward, X, Loader2, Settings
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
+
+export interface VideoQuality {
+  label: string;
+  src: string;
+  isOriginal?: boolean;
+}
 
 interface VideoPlayerProps {
   src: string;
   fallbackSrc?: string; // Fallback URL if primary fails
+  /** Quality options for quality selector (original + 480p) */
+  qualities?: VideoQuality[];
   onError?: () => void;
   /** Time update callback (fires every second) */
   onTimeUpdate?: (currentTime: number, duration: number) => void;
@@ -27,7 +35,8 @@ interface VideoPlayerProps {
 
 export function VideoPlayer({ 
   src, 
-  fallbackSrc, 
+  fallbackSrc,
+  qualities,
   onError,
   onTimeUpdate,
   onEnded,
@@ -54,6 +63,18 @@ export function VideoPlayer({
   const [currentSrc, setCurrentSrc] = useState(src);
   const [retryCount, setRetryCount] = useState(0);
   const MAX_RETRIES = 2;
+  
+  // Quality selection state
+  const [selectedQuality, setSelectedQuality] = useState<string>(() => {
+    // Default to original quality
+    if (qualities && qualities.length > 0) {
+      const original = qualities.find(q => q.isOriginal);
+      return original?.label || qualities[0].label;
+    }
+    return 'Original';
+  });
+  const [showQualityMenu, setShowQualityMenu] = useState(false);
+  
   // UI state
   const [showControls, setShowControls] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -400,6 +421,35 @@ export function VideoPlayer({
     }
   }, []);
 
+  // Quality change handler - preserves playback position
+  const changeQuality = useCallback((quality: VideoQuality) => {
+    const video = videoRef.current;
+    if (!video) return;
+    
+    lightHaptic();
+    const wasPlaying = !video.paused;
+    const currentPosition = video.currentTime;
+    
+    // Update source
+    setCurrentSrc(quality.src);
+    setSelectedQuality(quality.label);
+    setShowQualityMenu(false);
+    setIsBuffering(true);
+    
+    // After source changes, seek to previous position
+    const handleLoaded = () => {
+      video.currentTime = currentPosition;
+      if (wasPlaying) {
+        video.play().catch(console.error);
+      }
+      video.removeEventListener('loadeddata', handleLoaded);
+    };
+    video.addEventListener('loadeddata', handleLoaded);
+    
+    // Trigger reload
+    video.load();
+  }, []);
+
   const formatTime = useCallback((time: number) => {
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
@@ -618,17 +668,53 @@ export function VideoPlayer({
                   </button>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  {/* Quality selector */}
+                  {qualities && qualities.length > 1 && (
+                    <div className="relative">
+                      <button 
+                        onClick={() => {
+                          setShowQualityMenu(!showQualityMenu);
+                          setShowSpeedMenu(false);
+                        }}
+                        className="text-white p-2 flex items-center gap-1"
+                      >
+                        <Settings className="w-4 h-4" />
+                        <span className="text-xs hidden sm:inline">{selectedQuality}</span>
+                      </button>
+                      {showQualityMenu && (
+                        <div className="absolute bottom-full mb-2 right-0 bg-black/90 backdrop-blur-sm rounded-lg overflow-hidden min-w-[120px] border border-white/10">
+                          <div className="px-3 py-2 text-xs text-white/50 border-b border-white/10">Quality</div>
+                          {qualities.map(quality => (
+                            <button
+                              key={quality.label}
+                              onClick={() => changeQuality(quality)}
+                              className={`block w-full px-4 py-2 text-sm text-left hover:bg-white/10 ${
+                                selectedQuality === quality.label ? 'text-primary' : 'text-white'
+                              }`}
+                            >
+                              {quality.label}
+                              {quality.isOriginal && <span className="text-xs text-white/50 ml-1">(HD)</span>}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Speed */}
                   <div className="relative">
                     <button 
-                      onClick={() => setShowSpeedMenu(!showSpeedMenu)}
+                      onClick={() => {
+                        setShowSpeedMenu(!showSpeedMenu);
+                        setShowQualityMenu(false);
+                      }}
                       className="text-white text-sm px-2 py-1"
                     >
                       {playbackSpeed}x
                     </button>
                     {showSpeedMenu && (
-                      <div className="absolute bottom-full mb-2 right-0 bg-black/90 rounded-lg overflow-hidden">
+                      <div className="absolute bottom-full mb-2 right-0 bg-black/90 backdrop-blur-sm rounded-lg overflow-hidden border border-white/10">
                         {playbackSpeeds.map(speed => (
                           <button
                             key={speed}
@@ -800,16 +886,50 @@ export function VideoPlayer({
               </div>
 
               <div className="flex items-center gap-2">
+                {/* Quality selector (inline mode) */}
+                {qualities && qualities.length > 1 && (
+                  <div className="relative hidden sm:block">
+                    <button 
+                      onClick={() => {
+                        setShowQualityMenu(!showQualityMenu);
+                        setShowSpeedMenu(false);
+                      }}
+                      className="text-white p-1.5"
+                    >
+                      <Settings className="w-4 h-4" />
+                    </button>
+                    {showQualityMenu && (
+                      <div className="absolute bottom-full mb-2 right-0 bg-black/90 backdrop-blur-sm rounded-lg overflow-hidden z-50 min-w-[100px] border border-white/10">
+                        <div className="px-2 py-1 text-[10px] text-white/50 border-b border-white/10">Quality</div>
+                        {qualities.map(quality => (
+                          <button
+                            key={quality.label}
+                            onClick={() => changeQuality(quality)}
+                            className={`block w-full px-3 py-1.5 text-xs text-left hover:bg-white/10 ${
+                              selectedQuality === quality.label ? 'text-primary' : 'text-white'
+                            }`}
+                          >
+                            {quality.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Speed */}
                 <div className="relative hidden sm:block">
                   <button 
-                    onClick={() => setShowSpeedMenu(!showSpeedMenu)}
+                    onClick={() => {
+                      setShowSpeedMenu(!showSpeedMenu);
+                      setShowQualityMenu(false);
+                    }}
                     className="text-white text-xs px-2 py-1"
                   >
                     {playbackSpeed}x
                   </button>
                   {showSpeedMenu && (
-                    <div className="absolute bottom-full mb-2 right-0 bg-black/90 rounded-lg overflow-hidden z-50">
+                    <div className="absolute bottom-full mb-2 right-0 bg-black/90 backdrop-blur-sm rounded-lg overflow-hidden z-50 border border-white/10">
                       {playbackSpeeds.map(speed => (
                         <button
                           key={speed}
