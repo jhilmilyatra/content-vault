@@ -43,28 +43,23 @@ if [ $? -ne 0 ]; then
 fi
 echo "   ✓ Nginx config OK"
 
-# Start Nginx (foreground first to capture errors, then daemonize)
+# Start Nginx
 echo ""
 echo "🌐 Starting Nginx..."
 
-# Clear any old error logs
-> /var/log/nginx/error.log 2>/dev/null || true
-
-# Start nginx
+# Start nginx (runs as daemon by default)
 nginx 2>&1
-sleep 3
+sleep 2
 
-# Check if nginx is running
-if pgrep -x nginx > /dev/null; then
-    echo "   ✓ Nginx running (PID: $(pgrep -o nginx))"
+# Check if nginx is running by checking if port 80 is listening
+if netstat -tlnp 2>/dev/null | grep -q ":80.*nginx" || ss -tlnp 2>/dev/null | grep -q ":80.*nginx"; then
+    NGINX_PID=$(cat /run/nginx/nginx.pid 2>/dev/null || echo "unknown")
+    echo "   ✓ Nginx running (PID: $NGINX_PID)"
 else
     echo "❌ Nginx failed to start!"
     echo ""
     echo "Error log:"
     cat /var/log/nginx/error.log 2>/dev/null || echo "   (no error log)"
-    echo ""
-    echo "Checking ports:"
-    netstat -tlnp 2>/dev/null || ss -tlnp 2>/dev/null || echo "   (netstat not available)"
     exit 1
 fi
 
@@ -116,9 +111,13 @@ trap cleanup SIGTERM SIGINT
 
 # Monitor processes
 while true; do
-    if ! pgrep -x nginx > /dev/null; then
-        echo "⚠️ Nginx stopped"
-        cleanup
+    # Check nginx via pid file
+    if [ -f /run/nginx/nginx.pid ]; then
+        NGINX_PID=$(cat /run/nginx/nginx.pid)
+        if ! kill -0 $NGINX_PID 2>/dev/null; then
+            echo "⚠️ Nginx stopped"
+            cleanup
+        fi
     fi
     if ! kill -0 $STORAGE_PID 2>/dev/null; then
         echo "⚠️ Storage stopped"
