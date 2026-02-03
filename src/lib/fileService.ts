@@ -774,8 +774,8 @@ export const clearExpiredResumableUploads = () => {
 };
 
 /**
- * Upload large file in chunks - DIRECT TO VPS for maximum speed
- * Uses sequential chunk append for simplicity and reliability
+ * Upload large file in chunks - DIRECT TO VPS with PARALLEL uploads for maximum speed
+ * Uses parallel chunk uploads to separate temp files, then server-side assembly
  */
 const uploadChunked = async (
   file: File,
@@ -789,19 +789,25 @@ const uploadChunked = async (
     throw new Error("Not authenticated");
   }
 
-  // Generate unique filename for VPS storage
+  // Generate unique upload ID and filename for VPS storage
+  const uploadId = crypto.randomUUID();
   const ext = file.name.split('.').pop() || '';
   const storageFileName = `${crypto.randomUUID()}.${ext}`;
   const storagePath = `${userId}/${storageFileName}`;
   
-  // Use 5MB chunks for optimal speed
-  const chunkSize = 5 * 1024 * 1024;
+  // Use 10MB chunks for faster uploads (larger chunks = fewer round trips)
+  const chunkSize = 10 * 1024 * 1024;
   const totalChunks = Math.ceil(file.size / chunkSize);
   
-  const startTime = Date.now();
-  let totalUploaded = 0;
+  // Parallel uploads - use 4 concurrent connections for maximum throughput
+  const PARALLEL_UPLOADS = 4;
   
-  console.log(`📦 Starting direct VPS chunked upload: ${file.name} (${totalChunks} chunks)`);
+  const startTime = Date.now();
+  let completedChunks = 0;
+  let totalBytesUploaded = 0;
+  const uploadedChunkIndices: number[] = [];
+  
+  console.log(`📦 Starting parallel VPS chunked upload: ${file.name} (${totalChunks} chunks, ${PARALLEL_UPLOADS} parallel)`);
   
   // Initial progress
   if (onProgress) {
@@ -816,15 +822,12 @@ const uploadChunked = async (
       chunked: true,
       currentChunk: 0,
       totalChunks,
+      uploadedChunks: [],
     });
   }
 
-  // Upload chunks using binary FormData (much faster than base64)
-  // Use parallel uploads for better throughput
-  const PARALLEL_CHUNK_UPLOADS = 3;
-  let currentChunkIndex = 0;
-  
-  const uploadChunk = async (chunkIndex: number): Promise<void> => {
+  // Upload a single chunk to temp storage
+  const uploadChunkToTemp = async (chunkIndex: number): Promise<void> => {
     const chunkStart = chunkIndex * chunkSize;
     const chunkEnd = Math.min(chunkStart + chunkSize, file.size);
     const chunk = file.slice(chunkStart, chunkEnd);
@@ -832,6 +835,7 @@ const uploadChunked = async (
     
     const formData = new FormData();
     formData.append('chunk', chunk, `chunk_${chunkIndex}`);
+    formData.append('uploadId', uploadId);
     formData.append('fileName', storageFileName);
     formData.append('userId', userId);
     formData.append('chunkIndex', String(chunkIndex));
@@ -839,7 +843,8 @@ const uploadChunked = async (
     
     const chunkStartTime = performance.now();
     
-    const response = await fetch(`${PRIMARY_VPS_CONFIG.endpoint}/chunk-binary`, {
+    // Upload to temp chunk storage (parallel-safe endpoint)
+    const response = await fetch(`${PRIMARY_VPS_CONFIG.endpoint}/chunk-upload`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${PRIMARY_VPS_CONFIG.apiKey}`,
@@ -853,35 +858,122 @@ const uploadChunked = async (
     }
     
     const chunkDuration = performance.now() - chunkStartTime;
-    totalUploaded += chunkBytes;
+    completedChunks++;
+    totalBytesUploaded += chunkBytes;
+    uploadedChunkIndices.push(chunkIndex);
     
     // Calculate speed and remaining time
     const elapsed = (Date.now() - startTime) / 1000;
-    const speed = totalUploaded / elapsed;
-    const remaining = file.size - totalUploaded;
+    const speed = totalBytesUploaded / elapsed;
+    const remaining = file.size - totalBytesUploaded;
     const remainingTime = speed > 0 ? remaining / speed : 0;
     
     if (onProgress) {
       onProgress({
-        loaded: totalUploaded,
+        loaded: totalBytesUploaded,
         total: file.size,
-        percentage: Math.round((totalUploaded / file.size) * 100),
+        percentage: Math.round((totalBytesUploaded / file.size) * 100),
         speed,
         remainingTime,
         fileName: file.name,
         status: 'uploading',
         chunked: true,
-        currentChunk: chunkIndex + 1,
+        currentChunk: completedChunks,
         totalChunks,
+        uploadedChunks: [...uploadedChunkIndices].sort((a, b) => a - b),
       });
     }
     
     console.log(`📦 Chunk ${chunkIndex + 1}/${totalChunks} uploaded (${Math.round(chunkDuration)}ms, ${formatFileSize(speed)}/s)`);
   };
   
-  // Upload chunks sequentially (parallel can cause file corruption with append)
-  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-    await uploadChunk(chunkIndex);
+  // Create chunk upload queue
+  const chunkIndices = Array.from({ length: totalChunks }, (_, i) => i);
+  let queueIndex = 0;
+  
+  // Worker function that processes chunks from the queue
+  const worker = async (): Promise<void> => {
+    while (queueIndex < chunkIndices.length) {
+      const chunkIndex = chunkIndices[queueIndex++];
+      await uploadChunkToTemp(chunkIndex);
+    }
+  };
+  
+  // Start parallel workers
+  const workers = Array.from(
+    { length: Math.min(PARALLEL_UPLOADS, totalChunks) },
+    () => worker()
+  );
+  
+  // Wait for all chunks to complete
+  await Promise.all(workers);
+  
+  // Update progress to finalization phase
+  if (onProgress) {
+    onProgress({
+      loaded: file.size,
+      total: file.size,
+      percentage: 100,
+      speed: 0,
+      remainingTime: 0,
+      fileName: file.name,
+      status: 'processing',
+      chunked: true,
+      currentChunk: totalChunks,
+      totalChunks,
+      uploadedChunks: uploadedChunkIndices.sort((a, b) => a - b),
+      finalizationProgress: {
+        phase: 'assembling',
+        progress: 10,
+        message: 'Assembling file on server...',
+      },
+    });
+  }
+  
+  // Tell server to assemble all chunks into final file
+  console.log(`🔧 Finalizing upload: assembling ${totalChunks} chunks...`);
+  const finalizeResponse = await fetch(`${PRIMARY_VPS_CONFIG.endpoint}/finalize-upload`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${PRIMARY_VPS_CONFIG.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      uploadId,
+      fileName: storageFileName,
+      userId,
+      totalChunks,
+      mimeType: file.type || 'application/octet-stream',
+    }),
+  });
+
+  if (!finalizeResponse.ok) {
+    const errorData = await finalizeResponse.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to finalize upload');
+  }
+  
+  const finalizeResult = await finalizeResponse.json();
+  console.log(`✅ File assembled on VPS: ${finalizeResult.path}`);
+  
+  // Update progress to finalization complete
+  if (onProgress) {
+    onProgress({
+      loaded: file.size,
+      total: file.size,
+      percentage: 100,
+      speed: 0,
+      remainingTime: 0,
+      fileName: file.name,
+      status: 'processing',
+      chunked: true,
+      currentChunk: totalChunks,
+      totalChunks,
+      finalizationProgress: {
+        phase: 'creating-record',
+        progress: 80,
+        message: 'Creating database record...',
+      },
+    });
   }
 
   // Update progress to processing (creating DB record)
