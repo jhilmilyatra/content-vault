@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Float, Stars, Sphere, MeshDistortMaterial } from '@react-three/drei';
 import * as THREE from 'three';
@@ -6,6 +6,17 @@ import * as THREE from 'three';
 interface HemisphereProps {
   isWarping?: boolean;
 }
+
+// Check if WebGL is available
+const isWebGLAvailable = (): boolean => {
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+    return !!gl;
+  } catch {
+    return false;
+  }
+};
 
 const Hemisphere = () => {
   const meshRef = useRef<THREE.Mesh>(null);
@@ -100,7 +111,65 @@ const DataStream = ({ isActive }: { isActive: boolean }) => {
   );
 };
 
+// CSS-only fallback for devices without WebGL
+const CSSFallback = () => (
+  <div className="fixed inset-0 z-0 pointer-events-none bg-[#0b0b0d] overflow-hidden">
+    {/* Animated gradient orb */}
+    <div 
+      className="absolute left-1/2 bottom-1/4 -translate-x-1/2 w-[500px] h-[250px] rounded-full opacity-20"
+      style={{
+        background: 'radial-gradient(ellipse at center, #14b8a6 0%, #00f2ff 30%, transparent 70%)',
+        animation: 'pulse 4s ease-in-out infinite',
+        filter: 'blur(40px)',
+      }}
+    />
+    
+    {/* Static stars */}
+    <div className="absolute inset-0">
+      {[...Array(100)].map((_, i) => (
+        <div
+          key={i}
+          className="absolute w-0.5 h-0.5 bg-white rounded-full opacity-30"
+          style={{
+            left: `${Math.random() * 100}%`,
+            top: `${Math.random() * 100}%`,
+            animation: `twinkle ${2 + Math.random() * 3}s ease-in-out infinite`,
+            animationDelay: `${Math.random() * 2}s`,
+          }}
+        />
+      ))}
+    </div>
+    
+    <style>{`
+      @keyframes pulse {
+        0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.2; }
+        50% { transform: translateX(-50%) scale(1.1); opacity: 0.3; }
+      }
+      @keyframes twinkle {
+        0%, 100% { opacity: 0.3; }
+        50% { opacity: 0.7; }
+      }
+    `}</style>
+  </div>
+);
+
 export const CelestialHorizon = ({ isWarping = false }: HemisphereProps) => {
+  const [webglAvailable, setWebglAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    setWebglAvailable(isWebGLAvailable());
+  }, []);
+
+  // Show nothing during check
+  if (webglAvailable === null) {
+    return <div className="fixed inset-0 z-0 pointer-events-none bg-[#0b0b0d]" />;
+  }
+
+  // Use CSS fallback if WebGL not available
+  if (!webglAvailable) {
+    return <CSSFallback />;
+  }
+
   return (
     <div className="fixed inset-0 z-0 pointer-events-none">
       <Canvas
@@ -108,6 +177,12 @@ export const CelestialHorizon = ({ isWarping = false }: HemisphereProps) => {
         onCreated={({ scene }) => {
           scene.background = new THREE.Color('#0b0b0d');
         }}
+        gl={{ 
+          antialias: false, 
+          powerPreference: 'low-power',
+          failIfMajorPerformanceCaveat: true,
+        }}
+        dpr={[1, 1.5]} // Limit pixel ratio for performance
       >
         <group rotation={[-0.2, 0, 0]}>
           <ambientLight intensity={0.2} />
@@ -116,7 +191,7 @@ export const CelestialHorizon = ({ isWarping = false }: HemisphereProps) => {
           <Stars 
             radius={50} 
             depth={50} 
-            count={3000} 
+            count={1500} // Reduced from 3000
             factor={4} 
             saturation={0} 
             fade 
