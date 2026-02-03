@@ -37,19 +37,9 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     
-    // Primary VPS storage - from environment variables
-    // VPS_CDN_URL is the preferred endpoint (e.g., https://cloudvaults.in/api) for HTTPS access
-    // VPS_ENDPOINT is fallback for direct access (may not be reachable from edge functions)
-    const envVpsCdnUrl = Deno.env.get("VPS_CDN_URL") || "";
-    const envVpsEndpoint = Deno.env.get("VPS_ENDPOINT") || "";
-    const envVpsApiKey = Deno.env.get("VPS_API_KEY") || "";
-    
-    // Prefer CDN URL for uploads as it's accessible via HTTPS
-    const primaryEndpoint = envVpsCdnUrl || envVpsEndpoint;
-    
-    // Custom VPS from headers (for additional nodes)
-    const headerVpsEndpoint = req.headers.get("x-vps-endpoint");
-    const headerVpsApiKey = req.headers.get("x-vps-api-key");
+    // Direct VPS storage - hardcoded for reliable uploads
+    const VPS_ENDPOINT = "https://cloudvaults.in";
+    const VPS_API_KEY = "kARTOOS@007";
     
     // Verify authorization
     const authHeader = req.headers.get("Authorization");
@@ -117,18 +107,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    // VPS storage only - no cloud fallback
-    // Prefer: custom endpoint > header > CDN URL > direct VPS endpoint
-    const vpsEndpoint = customVpsEndpoint || headerVpsEndpoint || primaryEndpoint;
-    const vpsApiKey = customVpsApiKey || headerVpsApiKey || envVpsApiKey;
-
-    if (!vpsEndpoint || !vpsApiKey) {
-      console.error("VPS storage not configured. VPS_CDN_URL:", envVpsCdnUrl ? "set" : "missing", "VPS_ENDPOINT:", envVpsEndpoint ? "set" : "missing", "VPS_API_KEY:", vpsApiKey ? "set" : "missing");
-      return new Response(
-        JSON.stringify({ error: "VPS storage not configured. Please set VPS_CDN_URL and VPS_API_KEY secrets." }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    // Use hardcoded VPS settings - ignore custom overrides for simplicity
+    const vpsEndpoint = VPS_ENDPOINT;
+    const vpsApiKey = VPS_API_KEY;
 
     console.log(`📦 Uploading to VPS: ${vpsEndpoint}`);
     
@@ -187,11 +168,10 @@ Deno.serve(async (req) => {
     // Use the path returned by VPS server
     const storagePath = vpsResult.path;
     
-    // Construct file URL using CDN if available
-    const cdnUrl = envVpsCdnUrl || vpsEndpoint;
-    const fileUrl = `${cdnUrl}${vpsResult.url}`;
+    // Construct file URL
+    const fileUrl = `${VPS_ENDPOINT}${vpsResult.url}`;
     const storageType = "vps";
-    const usedNode = envVpsCdnUrl || vpsEndpoint;
+    const usedNode = VPS_ENDPOINT;
     
     console.log(`✅ VPS upload successful: ${storagePath} via ${usedNode}`);
 
