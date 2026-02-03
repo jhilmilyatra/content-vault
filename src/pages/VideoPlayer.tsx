@@ -32,7 +32,8 @@ export default function VideoPlayer() {
     fallbackUrl, 
     isLoading: streamLoading, 
     error, 
-    fileInfo 
+    fileInfo,
+    keepAlive,
   } = useVideoStream(fileId);
 
   const {
@@ -110,10 +111,12 @@ export default function VideoPlayer() {
     };
   }, [fileInfo?.originalName]);
 
-  // Handle time updates (save progress)
+  // Handle time updates (save progress + keep stream warm)
   const handleTimeUpdate = useCallback((currentTime: number, duration: number) => {
     saveProgress(currentTime, duration);
-  }, [saveProgress]);
+    // Keep stream warm every 5 minutes during playback
+    keepAlive();
+  }, [saveProgress, keepAlive]);
 
   // Handle video ended
   const handleEnded = useCallback(() => {
