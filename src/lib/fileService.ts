@@ -287,15 +287,11 @@ export const getDirectVPSUrl = (storagePath: string): string => {
 };
 
 /**
- * Get direct VPS HLS URL for video streaming
- * NOTE: Only works when accessed from same origin or with proper CORS
+ * Get direct VPS streaming URL for video
+ * Uses CDN-signed URLs for MP4 streaming
  */
-export const getDirectHLSUrl = (storagePath: string): string => {
-  const pathParts = storagePath.split('/');
-  const fileName = pathParts.pop() || '';
-  const userId = pathParts[0];
-  const baseName = fileName.replace(/\.[^/.]+$/, '');
-  return `${PRIMARY_VPS_CONFIG.endpoint}/hls/${userId}/${baseName}/master.m3u8`;
+export const getDirectStreamUrl = (storagePath: string): string => {
+  return `${PRIMARY_VPS_CONFIG.endpoint}/stream?path=${encodeURIComponent(storagePath)}`;
 };
 
 /**

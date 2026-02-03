@@ -88,7 +88,7 @@ export function FilePreviewModal({
   // Determine file type from mime type
   const getBaseFileType = (mimeType: string): StreamMode => {
     if (mimeType.startsWith("image/")) return "image";
-    if (mimeType.startsWith("video/")) return "mp4"; // Will be upgraded to 'hls' if available
+    if (mimeType.startsWith("video/")) return "mp4"; // Direct MP4 streaming
     if (mimeType.startsWith("audio/")) return "audio";
     if (mimeType === "application/pdf") return "pdf";
     
@@ -147,7 +147,7 @@ export function FilePreviewModal({
             
             // Prefer CDN URL for best performance
             const primaryUrl = streamData.url;
-            const fallbackUrl = streamData.fallbackUrl || streamData.hlsUrl;
+            const fallbackUrl = streamData.fallbackUrl;
             
             setStream({ 
               mode: 'mp4', 

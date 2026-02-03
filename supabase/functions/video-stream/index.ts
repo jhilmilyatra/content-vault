@@ -185,21 +185,20 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Generate MP4 streaming URLs
+    // Generate MP4 streaming URLs - Pure MP4 streaming, NO HLS
     const streamUrls: Record<string, unknown> = {
       fileInfo,
       storage: "vps",
       type: "mp4",
     };
 
-    // Check if transcoded 480p.mp4 exists (web-compatible H.264)
-    // This is preferred over original as it's guaranteed to play in all browsers
+    // Check if 480p web-compatible MP4 exists in 'processed' folder
     const fileName = finalStoragePath!.split('/').pop() || '';
     const baseName = fileName.replace(/\.[^.]+$/, '');
     const userId = finalStoragePath!.split('/')[0];
-    const transcodedPath = `${userId}/hls/${baseName}/480p.mp4`;
+    const transcodedPath = `${userId}/processed/${baseName}/480p.mp4`;
     
-    // Try to check if 480p transcoded version exists on VPS
+    // Check if 480p transcoded version exists on VPS
     let useTranscoded = false;
     if (hasVps) {
       try {
@@ -222,27 +221,26 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Primary: Use transcoded 480p if available, otherwise original
-    const primaryPath = useTranscoded ? transcodedPath : finalStoragePath!;
-    
+    // Primary: Use original MP4 for full quality
+    // Fallback: Use 480p transcoded if browser can't play original codec
     if (hasCdnUrl) {
-      streamUrls.url = await generateSignedStreamUrl(vpsCdnUrl, primaryPath, user.id, 43200);
+      streamUrls.url = await generateSignedStreamUrl(vpsCdnUrl, finalStoragePath!, user.id, 43200);
       streamUrls.type = "cdn";
       
-      // If using transcoded, provide original as fallback for full quality
+      // If 480p exists, provide it as fallback for codec compatibility
       if (useTranscoded) {
-        streamUrls.fallbackUrl = await generateSignedStreamUrl(vpsCdnUrl, finalStoragePath!, user.id, 43200);
+        streamUrls.fallbackUrl = await generateSignedStreamUrl(vpsCdnUrl, transcodedPath, user.id, 43200);
       }
     } else if (hasVps) {
-      streamUrls.url = await generateSignedStreamUrl(vpsEndpoint, primaryPath, user.id, 43200);
+      streamUrls.url = await generateSignedStreamUrl(vpsEndpoint, finalStoragePath!, user.id, 43200);
       streamUrls.type = "vps-direct";
       
       if (useTranscoded) {
-        streamUrls.fallbackUrl = await generateSignedStreamUrl(vpsEndpoint, finalStoragePath!, user.id, 43200);
+        streamUrls.fallbackUrl = await generateSignedStreamUrl(vpsEndpoint, transcodedPath, user.id, 43200);
       }
     }
 
-    // If no transcoded version and no fallback yet, try Supabase storage
+    // If no 480p fallback, try Supabase storage as last resort
     if (!streamUrls.fallbackUrl) {
       try {
         const { data: supabaseData, error: supabaseError } = await supabase.storage

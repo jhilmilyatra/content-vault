@@ -62,7 +62,7 @@ export function GuestFilePreviewModal({ file, guestId, open, onOpenChange }: Gue
   // Determine file type from mime type
   const getFileType = (mimeType: string): StreamMode => {
     if (mimeType.startsWith("image/")) return "image";
-    if (mimeType.startsWith("video/")) return "mp4"; // Will be upgraded to 'hls' if available
+    if (mimeType.startsWith("video/")) return "mp4"; // Direct MP4 streaming
     if (mimeType.startsWith("audio/")) return "audio";
     if (mimeType === "application/pdf") return "pdf";
     

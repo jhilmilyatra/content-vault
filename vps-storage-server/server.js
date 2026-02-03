@@ -47,31 +47,17 @@ if (!fs.existsSync(STORAGE_PATH)) {
 }
 
 // ============================================
-// Auto-Transcode: Multi-Quality HLS Conversion
+// Auto-Processing: Thumbnails + Web-Compatible MP4
 // ============================================
+// NO HLS - Pure MP4 streaming like YouTube
 const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
 
-// Quality presets for adaptive bitrate streaming
-// Only 480p to save storage - original MP4 is served directly for playback
-const HLS_QUALITIES = [
-  { name: '480p', height: 480, videoBitrate: '1400k', audioBitrate: '96k', bandwidth: 1500000 },
-];
-
-/**
- * Generate master playlist for adaptive streaming
- */
-function generateMasterPlaylist(hlsDir, availableQualities) {
-  const lines = ['#EXTM3U', '#EXT-X-VERSION:3'];
-  
-  for (const q of availableQualities) {
-    lines.push(`#EXT-X-STREAM-INF:BANDWIDTH=${q.bandwidth},RESOLUTION=${q.width}x${q.height},NAME="${q.name}"`);
-    lines.push(`${q.name}/index.m3u8`);
-  }
-  
-  const masterPath = path.join(hlsDir, 'index.m3u8');
-  fs.writeFileSync(masterPath, lines.join('\n'));
-  return masterPath;
-}
+// Web-compatible 480p transcoding config (H.264 + AAC)
+const WEB_TRANSCODE_CONFIG = {
+  height: 480,
+  videoBitrate: '1400k',
+  audioBitrate: '96k'
+};
 
 /**
  * Get video resolution using ffprobe
@@ -229,49 +215,53 @@ async function sendThumbnailCallback(userId, fileName, thumbnailResult, animated
 }
 
 /**
- * Transcode to a specific quality - outputs web-compatible MP4 (H.264 + AAC)
- * This creates a direct MP4 file for streaming, NOT HLS segments
+ * Transcode to web-compatible 480p MP4 (H.264 + AAC)
+ * This creates a browser-compatible MP4 for playback fallback
  */
-function transcodeQuality(fullPath, hlsDir, quality, sourceResolution) {
+function transcodeToWebMp4(fullPath, outputDir, baseName, sourceResolution) {
   return new Promise((resolve, reject) => {
     const { exec } = require('child_process');
     
-    // Output directly to the hlsDir (not in subdirectory) for simpler access
-    const outputMp4 = path.join(hlsDir, `${quality.name}.mp4`);
+    const outputMp4 = path.join(outputDir, `480p.mp4`);
     
     // Calculate width maintaining aspect ratio
+    const targetHeight = Math.min(480, sourceResolution.height);
     const aspectRatio = sourceResolution.width / sourceResolution.height;
-    const targetWidth = Math.round(quality.height * aspectRatio);
+    const targetWidth = Math.round(targetHeight * aspectRatio);
     // Ensure width is even for h264
     const width = targetWidth % 2 === 0 ? targetWidth : targetWidth + 1;
     
-    // Transcode to web-compatible MP4 (H.264 baseline/main + AAC)
+    // Transcode to web-compatible MP4 (H.264 main profile + AAC)
     // -movflags +faststart enables progressive download for instant playback
     const ffmpegCmd = `ffmpeg -i "${fullPath}" \
-      -c:v libx264 -preset fast -b:v ${quality.videoBitrate} \
+      -c:v libx264 -preset fast -b:v ${WEB_TRANSCODE_CONFIG.videoBitrate} \
       -profile:v main -level 4.0 \
-      -vf "scale=${width}:${quality.height}" \
-      -c:a aac -b:a ${quality.audioBitrate} \
+      -vf "scale=${width}:${targetHeight}" \
+      -c:a aac -b:a ${WEB_TRANSCODE_CONFIG.audioBitrate} \
       -movflags +faststart \
       -y "${outputMp4}" 2>&1`;
     
     exec(ffmpegCmd, { maxBuffer: 50 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
-        reject({ quality: quality.name, error: error.message, output: stdout || stderr });
+        reject({ error: error.message, output: stdout || stderr });
       } else {
+        const stat = fs.statSync(outputMp4);
         resolve({ 
-          name: quality.name, 
-          height: quality.height, 
+          path: outputMp4,
+          fileName: '480p.mp4',
           width,
-          bandwidth: quality.bandwidth,
-          mp4Path: outputMp4,
-          mp4Url: `${quality.name}.mp4`
+          height: targetHeight,
+          size: stat.size
         });
       }
     });
   });
 }
 
+/**
+ * Process video after upload: Generate thumbnails + optional 480p web-compatible MP4
+ * NO HLS - Pure MP4 streaming like YouTube
+ */
 function triggerAutoTranscode(userId, fileName, fullPath) {
   if (!AUTO_TRANSCODE) return;
   
@@ -279,128 +269,87 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
   if (!videoExtensions.includes(ext)) return;
   
   const baseName = fileName.replace(/\.[^.]+$/, '');
-  const hlsDir = path.join(STORAGE_PATH, userId, 'hls', baseName);
-  const masterPlaylist = path.join(hlsDir, 'index.m3u8');
-  const lockFile = path.join(hlsDir, '.transcoding');
+  // Store in 'processed' folder instead of 'hls' to avoid confusion
+  const processedDir = path.join(STORAGE_PATH, userId, 'processed', baseName);
+  const completeMarker = path.join(processedDir, '.complete');
+  const lockFile = path.join(processedDir, '.processing');
   
   // Skip if already exists or in progress
-  if (fs.existsSync(masterPlaylist) || fs.existsSync(lockFile)) {
-    console.log(`⏭️ HLS already exists or in progress: ${fileName}`);
+  if (fs.existsSync(completeMarker) || fs.existsSync(lockFile)) {
+    console.log(`⏭️ Already processed or in progress: ${fileName}`);
     return;
   }
   
-  // Create HLS directory
-  if (!fs.existsSync(hlsDir)) {
-    fs.mkdirSync(hlsDir, { recursive: true });
+  // Create processed directory
+  if (!fs.existsSync(processedDir)) {
+    fs.mkdirSync(processedDir, { recursive: true });
   }
   
-  // Create lock file with progress info
+  // Create lock file
   fs.writeFileSync(lockFile, JSON.stringify({ 
     started: new Date().toISOString(),
-    status: 'analyzing',
+    status: 'processing',
     progress: 0
   }));
   
-  console.log(`🎬 Multi-quality transcode started for: ${userId}/${fileName}`);
+  console.log(`🎬 Video processing started for: ${userId}/${fileName}`);
   
-  // Async transcoding pipeline
+  // Async processing pipeline
   (async () => {
     try {
       // Get source video resolution
       const sourceRes = await getVideoResolution(fullPath);
       console.log(`📐 Source resolution: ${sourceRes.width}x${sourceRes.height}`);
       
-      // Generate thumbnails first (fast operation)
+      // Generate thumbnails (fast operation)
       console.log(`🖼️ Generating thumbnails...`);
       fs.writeFileSync(lockFile, JSON.stringify({ 
         started: new Date().toISOString(),
         status: 'generating_thumbnails',
-        progress: 5
+        progress: 20
       }));
       
-      const thumbnailResult = await generateVideoThumbnail(fullPath, hlsDir, baseName);
+      const thumbnailResult = await generateVideoThumbnail(fullPath, processedDir, baseName);
       console.log(`✅ Thumbnails generated:`, thumbnailResult.thumbnailUrl ? 'success' : 'failed');
       
-      // Generate animated preview (optional, can be slow)
+      // Generate animated preview (optional)
       let animatedResult = { gif: null, gifUrl: null };
       try {
-        animatedResult = await generateAnimatedPreview(fullPath, hlsDir, baseName);
+        animatedResult = await generateAnimatedPreview(fullPath, processedDir, baseName);
       } catch (e) {
         console.warn('Animated preview generation skipped:', e.message);
       }
       
-      // Filter qualities that don't exceed source resolution
-      const applicableQualities = HLS_QUALITIES.filter(q => q.height <= sourceRes.height);
-      
-      if (applicableQualities.length === 0) {
-        // Source is smaller than 360p, just use source resolution
-        applicableQualities.push({
-          name: 'source',
-          height: sourceRes.height,
-          videoBitrate: '1000k',
-          audioBitrate: '128k',
-          bandwidth: 1200000
-        });
-      }
-      
-      console.log(`🎯 Transcoding to: ${applicableQualities.map(q => q.name).join(', ')}`);
-      
-      // Update lock file
-      fs.writeFileSync(lockFile, JSON.stringify({ 
-        started: new Date().toISOString(),
-        status: 'transcoding',
-        qualities: applicableQualities.map(q => q.name),
-        thumbnails: thumbnailResult,
-        progress: 10
-      }));
-      
-      // Transcode each quality sequentially (to avoid overwhelming CPU)
-      const completedQualities = [];
-      for (let i = 0; i < applicableQualities.length; i++) {
-        const quality = applicableQualities[i];
-        console.log(`⏳ Transcoding ${quality.name} (${i + 1}/${applicableQualities.length})...`);
+      // Transcode to 480p web-compatible MP4 if source is larger
+      let webMp4Result = null;
+      if (sourceRes.height > 480) {
+        console.log(`🎯 Transcoding to 480p web-compatible MP4...`);
+        fs.writeFileSync(lockFile, JSON.stringify({ 
+          started: new Date().toISOString(),
+          status: 'transcoding_480p',
+          progress: 40
+        }));
         
         try {
-          const result = await transcodeQuality(fullPath, hlsDir, quality, sourceRes);
-          completedQualities.push(result);
-          
-          // Update progress (10-100%, with 10% reserved for thumbnails)
-          const progress = 10 + Math.round(((i + 1) / applicableQualities.length) * 90);
-          fs.writeFileSync(lockFile, JSON.stringify({ 
-            started: new Date().toISOString(),
-            status: 'transcoding',
-            qualities: applicableQualities.map(q => q.name),
-            completed: completedQualities.map(q => q.name),
-            thumbnails: thumbnailResult,
-            progress
-          }));
-          
-          console.log(`✅ ${quality.name} complete`);
+          webMp4Result = await transcodeToWebMp4(fullPath, processedDir, baseName, sourceRes);
+          console.log(`✅ 480p MP4 created: ${(webMp4Result.size / 1024 / 1024).toFixed(2)} MB`);
         } catch (err) {
-          console.error(`⚠️ Failed to transcode ${quality.name}:`, err.error);
-          // Continue with other qualities
+          console.error(`⚠️ 480p transcode failed:`, err.error);
+          // Continue without 480p - original will be used
         }
+      } else {
+        console.log(`📹 Source is ${sourceRes.height}p - skipping 480p transcode`);
       }
-      
-      if (completedQualities.length === 0) {
-        throw new Error('All quality transcodes failed');
-      }
-      
-      // Generate master playlist
-      generateMasterPlaylist(hlsDir, completedQualities);
-      console.log(`📝 Master playlist created with ${completedQualities.length} qualities`);
       
       // Remove lock file and create success marker
       if (fs.existsSync(lockFile)) {
         fs.unlinkSync(lockFile);
       }
       
-      const successMarker = path.join(hlsDir, '.complete');
-      const qualitiesData = completedQualities.map(q => ({ name: q.name, resolution: `${q.width}x${q.height}` }));
-      fs.writeFileSync(successMarker, JSON.stringify({
+      fs.writeFileSync(completeMarker, JSON.stringify({
         completed: new Date().toISOString(),
-        qualities: qualitiesData,
         sourceResolution: `${sourceRes.width}x${sourceRes.height}`,
+        has480p: webMp4Result !== null,
         thumbnails: {
           thumbnail: thumbnailResult.thumbnailUrl,
           poster: thumbnailResult.posterUrl,
@@ -408,13 +357,13 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
         }
       }));
       
-      console.log(`🎉 Multi-quality transcode complete: ${userId}/${baseName}`);
+      console.log(`🎉 Video processing complete: ${userId}/${baseName}`);
       
       // Send callback to update database with thumbnail URLs
-      await sendThumbnailCallback(userId, fileName, thumbnailResult, animatedResult, qualitiesData);
+      await sendThumbnailCallback(userId, fileName, thumbnailResult, animatedResult, webMp4Result ? [{ name: '480p' }] : []);
       
     } catch (error) {
-      console.error(`❌ Multi-quality transcode failed for ${fileName}:`, error.message || error);
+      console.error(`❌ Video processing failed for ${fileName}:`, error.message || error);
       
       // Remove lock file
       try {
@@ -426,7 +375,7 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
       }
       
       // Write error log
-      const errorLog = path.join(hlsDir, 'error.log');
+      const errorLog = path.join(processedDir, 'error.log');
       fs.writeFileSync(errorLog, `Error: ${error.message || error}\n\nTimestamp: ${new Date().toISOString()}`);
     }
   })();

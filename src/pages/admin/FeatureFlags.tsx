@@ -47,7 +47,7 @@ const SETTING_LABELS: Record<string, string> = {
   feature_password_shares: "Password-Protected Shares",
   feature_expiring_links: "Expiring Links",
   feature_download_limits: "Download Limits",
-  feature_video_streaming: "Video Streaming (HLS)",
+  feature_video_streaming: "Video Streaming",
   feature_telegram_upload: "Telegram Uploads",
   feature_member_chat: "Member-Guest Chat",
   feature_owner_chat: "Owner-Member Chat",
