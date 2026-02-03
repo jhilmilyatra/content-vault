@@ -1320,7 +1320,7 @@ guest_users (
 
 ### VPS Server Endpoints
 
-The VPS storage server runs at `http://46.38.232.46:4000`:
+The VPS storage server endpoint is configured via the `VPS_ENDPOINT` environment variable:
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|

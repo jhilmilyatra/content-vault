@@ -529,20 +529,14 @@ Secrets are managed through Lovable Cloud:
 
 ### Step 4.2: Update VPS Configuration
 
-After setting up custom domain, update edge functions to use HTTPS VPS endpoint:
+After setting up custom domain, update your Lovable Cloud secrets:
 
-**Files to update with HTTPS endpoint:**
-- `src/lib/fileService.ts` (line 45)
-- All edge functions with VPS configuration
+**Secrets to update (Settings → Secrets):**
+- `VPS_ENDPOINT`: Your VPS internal endpoint (e.g., `http://152.53.118.55:3001`)
+- `VPS_CDN_URL`: Your Cloudflare CDN URL (e.g., `https://cdn.cloudvaults.in`)
+- `VPS_API_KEY`: Your VPS authentication key
 
-**Example:**
-```typescript
-// Before
-const VPS_ENDPOINT = "http://46.38.232.46:4000";
-
-// After
-const VPS_ENDPOINT = "https://storage.yourdomain.com";
-```
+**Note:** Edge functions now use environment variables exclusively. No code changes needed.
 
 ---
 
