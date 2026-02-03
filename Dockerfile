@@ -24,7 +24,7 @@
 #                        ⚠️ MUST be changed in production!
 #
 # VPS_OWNER_API_KEY      Owner API key for admin operations (stats, user management)
-#                        Default: kARTOOS007
+#                        Default: change-this-owner-key
 #                        ⚠️ MUST be changed in production!
 #
 # OPTIONAL:
@@ -165,7 +165,7 @@ ENV DATA_PATH=/app/data
 
 # Security keys - CHANGE THESE IN PRODUCTION!
 ENV VPS_STORAGE_API_KEY=change-this-api-key
-ENV VPS_OWNER_API_KEY=kARTOOS007
+ENV VPS_OWNER_API_KEY=change-this-owner-key
 
 # Thumbnail and media processing
 ENV AUTO_TRANSCODE=true
