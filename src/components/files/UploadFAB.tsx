@@ -52,7 +52,8 @@ const UploadFAB = ({ onUploadClick, onNewFolderClick, disabled }: UploadFABProps
   return (
     <div 
       ref={fabRef}
-      className="fixed right-4 bottom-24 z-40 flex flex-col-reverse items-center gap-3 sm:bottom-6 sm:right-6"
+      className="fixed right-4 bottom-28 z-50 flex flex-col-reverse items-center gap-3 sm:bottom-6 sm:right-6"
+      style={{ pointerEvents: 'auto' }}
     >
       {/* Action items - appear above main FAB */}
       <AnimatePresence>

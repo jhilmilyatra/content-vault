@@ -389,8 +389,15 @@ const FileManager = () => {
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
-    if (!selectedFiles || !user) return;
-    await processFileUpload(Array.from(selectedFiles));
+    if (!selectedFiles || selectedFiles.length === 0 || !user) return;
+    
+    // Convert to array before processing (FileList may become stale)
+    const filesArray = Array.from(selectedFiles);
+    
+    // Reset the input value immediately to allow re-selecting the same files
+    e.target.value = '';
+    
+    await processFileUpload(filesArray);
   };
 
   const processFileUpload = async (fileList: File[]) => {
@@ -1926,14 +1933,22 @@ const FileManager = () => {
           />
         </div>
 
-        {/* Mobile FAB */}
-        {isMobile && (
-          <UploadFAB
-            onUploadClick={() => fileInputRef.current?.click()}
-            onNewFolderClick={() => setCreateFolderOpen(true)}
-          />
-        )}
       </PageTransition>
+      
+      {/* Mobile FAB - outside PageTransition for proper z-index */}
+      {isMobile && activeTab === "files" && (
+        <UploadFAB
+          onUploadClick={() => {
+            console.log('[FAB] Upload clicked, triggering file input');
+            fileInputRef.current?.click();
+          }}
+          onNewFolderClick={() => {
+            console.log('[FAB] New folder clicked');
+            setCreateFolderOpen(true);
+          }}
+          disabled={uploading}
+        />
+      )}
     </DashboardLayout>
   );
 };
