@@ -7,13 +7,18 @@ const corsHeaders = {
 };
 
 // Primary VPS storage - from environment variables
+// VPS_CDN_URL is preferred for HTTPS access from edge functions
+// VPS_ENDPOINT is fallback for direct access (may be unreachable from edge functions)
 const RAW_VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "";
 const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "";
 const VPS_CDN_URL = Deno.env.get("VPS_CDN_URL") || "";
 
+// Use CDN URL if available (preferred for HTTPS access), fallback to direct endpoint
+const PRIMARY_VPS_ENDPOINT = VPS_CDN_URL || RAW_VPS_ENDPOINT;
+
 // Normalize VPS endpoint for API calls
 function getVpsApiUrl(path: string): string {
-  let endpoint = RAW_VPS_ENDPOINT;
+  let endpoint = PRIMARY_VPS_ENDPOINT;
   if (endpoint.endsWith('/')) {
     endpoint = endpoint.slice(0, -1);
   }
