@@ -6,36 +6,13 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// Primary VPS storage - from environment variables
-// VPS_CDN_URL is preferred for HTTPS access from edge functions
-// VPS_ENDPOINT is fallback for direct access (may be unreachable from edge functions)
-const RAW_VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "";
-const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "";
-const VPS_CDN_URL = Deno.env.get("VPS_CDN_URL") || "";
+// Direct VPS storage - hardcoded for reliable uploads
+const VPS_ENDPOINT = "https://cloudvaults.in";
+const VPS_API_KEY = "kARTOOS@007";
 
-// Use CDN URL if available (preferred for HTTPS access), fallback to direct endpoint
-const PRIMARY_VPS_ENDPOINT = VPS_CDN_URL || RAW_VPS_ENDPOINT;
-
-// Normalize VPS endpoint for API calls
+// Normalize VPS endpoint for API calls - always use /api path
 function getVpsApiUrl(path: string): string {
-  let endpoint = PRIMARY_VPS_ENDPOINT;
-  if (endpoint.endsWith('/')) {
-    endpoint = endpoint.slice(0, -1);
-  }
-  
-  // Handle different endpoint formats:
-  // - https://domain.com -> https://domain.com/api/path
-  // - https://domain.com/api -> https://domain.com/api/path
-  // - http://ip:4000 -> http://ip:4000/path
-  if (endpoint.includes('/api')) {
-    return endpoint.replace(/\/api\/?$/, '') + '/api' + path;
-  } else if (endpoint.match(/:\d+$/)) {
-    // Direct port access (e.g., http://ip:4000)
-    return `${endpoint}${path}`;
-  } else {
-    // HTTPS domain without /api path
-    return `${endpoint}/api${path}`;
-  }
+  return `${VPS_ENDPOINT}/api${path}`;
 }
 
 // Chunk size: 5MB
