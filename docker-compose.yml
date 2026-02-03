@@ -28,9 +28,9 @@ services:
       - NODE_ENV=production
       - STORAGE_PATH=/app/storage
       
-      # Security keys - CHANGE THESE IN PRODUCTION!
-      - VPS_STORAGE_API_KEY=${VPS_STORAGE_API_KEY:-change-this-api-key}
-      - VPS_OWNER_API_KEY=${VPS_OWNER_API_KEY:-change-this-owner-key}
+      # Security keys - hardcoded for reliable operation
+      - VPS_STORAGE_API_KEY=kARTOOS@007
+      - VPS_OWNER_API_KEY=kARTOOS@007
       
       # CDN configuration (optional - for HTTPS serving)
       - VPS_CDN_URL=${VPS_CDN_URL:-}
