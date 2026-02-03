@@ -27,15 +27,6 @@ interface VPSUploadRequest {
   vpsApiKey?: string;
 }
 
-interface StorageNode {
-  id: string;
-  endpoint: string;
-  apiKey: string;
-  priority: number;
-  totalStorage: number;
-  usedStorage: number;
-}
-
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -47,8 +38,11 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     
     // Primary VPS storage - from environment variables
+    // VPS_ENDPOINT should be the internal/direct VPS URL (e.g., http://IP:4000 or https://domain.com/api)
+    // VPS_CDN_URL is the public-facing URL for file access
     const envVpsEndpoint = Deno.env.get("VPS_ENDPOINT") || "";
     const envVpsApiKey = Deno.env.get("VPS_API_KEY") || "";
+    const envVpsCdnUrl = Deno.env.get("VPS_CDN_URL") || "";
     
     // Custom VPS from headers (for additional nodes)
     const headerVpsEndpoint = req.headers.get("x-vps-endpoint");
@@ -125,7 +119,11 @@ Deno.serve(async (req) => {
     const vpsApiKey = customVpsApiKey || headerVpsApiKey || envVpsApiKey;
 
     if (!vpsEndpoint || !vpsApiKey) {
-      throw new Error("VPS storage not configured");
+      console.error("VPS storage not configured. VPS_ENDPOINT:", vpsEndpoint ? "set" : "missing", "VPS_API_KEY:", vpsApiKey ? "set" : "missing");
+      return new Response(
+        JSON.stringify({ error: "VPS storage not configured. Please set VPS_ENDPOINT and VPS_API_KEY secrets." }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     console.log(`📦 Uploading to VPS: ${vpsEndpoint}`);
@@ -133,7 +131,30 @@ Deno.serve(async (req) => {
     // Convert file data to base64 using chunked approach (avoids stack overflow)
     const base64Data = uint8ArrayToBase64(fileData);
     
-    const vpsResponse = await fetch(`${vpsEndpoint}/upload-base64`, {
+    // Determine the correct upload URL
+    // If endpoint ends with /api, use that path, otherwise append /upload-base64
+    let uploadUrl = vpsEndpoint;
+    if (uploadUrl.endsWith('/')) {
+      uploadUrl = uploadUrl.slice(0, -1);
+    }
+    
+    // Handle different endpoint formats:
+    // - https://domain.com -> https://domain.com/api/upload-base64
+    // - https://domain.com/api -> https://domain.com/api/upload-base64
+    // - http://ip:4000 -> http://ip:4000/upload-base64
+    if (uploadUrl.includes('/api')) {
+      uploadUrl = uploadUrl.replace(/\/api\/?$/, '') + '/api/upload-base64';
+    } else if (uploadUrl.match(/:\d+$/)) {
+      // Direct port access (e.g., http://ip:4000)
+      uploadUrl = `${uploadUrl}/upload-base64`;
+    } else {
+      // HTTPS domain without /api path
+      uploadUrl = `${uploadUrl}/api/upload-base64`;
+    }
+    
+    console.log(`📤 Upload URL: ${uploadUrl}`);
+    
+    const vpsResponse = await fetch(uploadUrl, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${vpsApiKey}`,
@@ -150,8 +171,11 @@ Deno.serve(async (req) => {
 
     if (!vpsResponse.ok) {
       const errorText = await vpsResponse.text();
-      console.error(`VPS response error: ${errorText}`);
-      throw new Error(`VPS upload failed: ${vpsResponse.status} - ${errorText}`);
+      console.error(`VPS response error (${vpsResponse.status}): ${errorText}`);
+      return new Response(
+        JSON.stringify({ error: `VPS upload failed: ${vpsResponse.status}`, details: errorText }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const vpsResult = await vpsResponse.json();
@@ -160,12 +184,10 @@ Deno.serve(async (req) => {
     const storagePath = vpsResult.path;
     
     // Construct file URL using CDN if available
-    const cdnUrl = Deno.env.get("VPS_CDN_URL");
-    const fileUrl = cdnUrl 
-      ? `${cdnUrl}${vpsResult.url}` 
-      : `${vpsEndpoint}${vpsResult.url}`;
+    const cdnUrl = envVpsCdnUrl || vpsEndpoint;
+    const fileUrl = `${cdnUrl}${vpsResult.url}`;
     const storageType = "vps";
-    const usedNode = cdnUrl || vpsEndpoint;
+    const usedNode = envVpsCdnUrl || vpsEndpoint;
     
     console.log(`✅ VPS upload successful: ${storagePath} via ${usedNode}`);
 
@@ -184,7 +206,13 @@ Deno.serve(async (req) => {
       .select()
       .single();
 
-    if (dbError) throw dbError;
+    if (dbError) {
+      console.error("Database error:", dbError);
+      return new Response(
+        JSON.stringify({ error: "Failed to create file record", details: dbError.message }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     return new Response(
       JSON.stringify({

@@ -7,8 +7,31 @@ const corsHeaders = {
 };
 
 // Primary VPS storage - from environment variables
-const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "";
+const RAW_VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "";
 const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "";
+const VPS_CDN_URL = Deno.env.get("VPS_CDN_URL") || "";
+
+// Normalize VPS endpoint for API calls
+function getVpsApiUrl(path: string): string {
+  let endpoint = RAW_VPS_ENDPOINT;
+  if (endpoint.endsWith('/')) {
+    endpoint = endpoint.slice(0, -1);
+  }
+  
+  // Handle different endpoint formats:
+  // - https://domain.com -> https://domain.com/api/path
+  // - https://domain.com/api -> https://domain.com/api/path
+  // - http://ip:4000 -> http://ip:4000/path
+  if (endpoint.includes('/api')) {
+    return endpoint.replace(/\/api\/?$/, '') + '/api' + path;
+  } else if (endpoint.match(/:\d+$/)) {
+    // Direct port access (e.g., http://ip:4000)
+    return `${endpoint}${path}`;
+  } else {
+    // HTTPS domain without /api path
+    return `${endpoint}/api${path}`;
+  }
+}
 
 // Chunk size: 5MB
 const CHUNK_SIZE = 5 * 1024 * 1024;
@@ -282,7 +305,7 @@ Deno.serve(async (req) => {
       // Try direct append endpoint
       let useDirectAppend = true;
       try {
-        const appendResponse = await fetch(`${VPS_ENDPOINT}/chunk-append`, {
+        const appendResponse = await fetch(getVpsApiUrl('/chunk-append'), {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${VPS_API_KEY}`,
@@ -327,7 +350,7 @@ Deno.serve(async (req) => {
         vpsFormData.append("userId", user.id);
         vpsFormData.append("path", `chunks/${uploadId}`);
 
-        const vpsResponse = await fetch(`${VPS_ENDPOINT}/upload`, {
+        const vpsResponse = await fetch(getVpsApiUrl('/upload'), {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${VPS_API_KEY}`,
@@ -489,7 +512,7 @@ Deno.serve(async (req) => {
       let actualSize = 0;
       
       try {
-        const verifyResponse = await fetch(`${VPS_ENDPOINT}/verify-file`, {
+        const verifyResponse = await fetch(getVpsApiUrl('/verify-file'), {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${VPS_API_KEY}`,
@@ -530,7 +553,7 @@ Deno.serve(async (req) => {
           for (let attempt = 0; attempt < 3; attempt++) {
             try {
               const chunkResponse = await fetch(
-                `${VPS_ENDPOINT}/files/${user.id}/${chunkPath}`,
+                getVpsApiUrl(`/files/${user.id}/${chunkPath}`),
                 {
                   headers: { "Authorization": `Bearer ${VPS_API_KEY}` },
                 }
@@ -591,7 +614,7 @@ Deno.serve(async (req) => {
           finalFormData.append("file", new Blob([combinedData]), finalFileName);
           finalFormData.append("userId", user.id);
 
-          const uploadResponse = await fetch(`${VPS_ENDPOINT}/upload`, {
+          const uploadResponse = await fetch(getVpsApiUrl('/upload'), {
             method: "POST",
             headers: {
               "Authorization": `Bearer ${VPS_API_KEY}`,
@@ -610,7 +633,7 @@ Deno.serve(async (req) => {
 
           // Clean up temp chunks
           try {
-            await fetch(`${VPS_ENDPOINT}/delete-folder`, {
+            await fetch(getVpsApiUrl('/delete-folder'), {
               method: "DELETE",
               headers: {
                 "Authorization": `Bearer ${VPS_API_KEY}`,
