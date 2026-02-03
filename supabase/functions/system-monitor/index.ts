@@ -290,12 +290,17 @@ interface StorageHealthCheck extends HealthCheck {
 async function checkStorageHealth(supabase: any): Promise<StorageHealthCheck> {
   const startTime = Date.now();
   
+  // Use CDN URL (public HTTPS) for health checks - the internal endpoint (port 4000) is not exposed externally
+  const healthUrl = VPS_CONFIG.cdnUrl 
+    ? `${VPS_CONFIG.cdnUrl}/api/health`  // Via Nginx proxy on CDN
+    : `${VPS_CONFIG.endpoint}/health`;    // Fallback to direct endpoint
+  
   try {
-    // Check VPS health with SHORT timeout (2s) - don't block if unreachable
+    // Check VPS health with SHORT timeout (3s) - don't block if unreachable
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
     
-    const vpsResponse = await fetch(`${VPS_CONFIG.endpoint}/health`, {
+    const vpsResponse = await fetch(healthUrl, {
       headers: { "Authorization": `Bearer ${VPS_CONFIG.apiKey}` },
       signal: controller.signal,
     }).catch((err) => {
@@ -312,10 +317,10 @@ async function checkStorageHealth(supabase: any): Promise<StorageHealthCheck> {
         message: "VPS unreachable (network/firewall issue)",
         lastChecked: new Date().toISOString(),
         vpsDetails: {
-          endpoint: VPS_CONFIG.endpoint,
+          endpoint: healthUrl,
           status: "unreachable",
           latency: vpsLatency,
-          error: "Connection failed - check VPS firewall allows Supabase Edge IPs",
+          error: "Connection failed - check VPS/CDN is running",
         },
       };
     }
@@ -328,7 +333,7 @@ async function checkStorageHealth(supabase: any): Promise<StorageHealthCheck> {
         message: `VPS returned ${vpsResponse.status}`,
         lastChecked: new Date().toISOString(),
         vpsDetails: {
-          endpoint: VPS_CONFIG.endpoint,
+          endpoint: healthUrl,
           status: "unhealthy",
           latency: vpsLatency,
           error: errorText,
@@ -346,7 +351,7 @@ async function checkStorageHealth(supabase: any): Promise<StorageHealthCheck> {
         message: `VPS disk usage at ${vpsData.diskUsage}%`,
         lastChecked: new Date().toISOString(),
         vpsDetails: {
-          endpoint: VPS_CONFIG.endpoint,
+          endpoint: healthUrl,
           status: "warning",
           latency: vpsLatency,
           diskUsage: vpsData.diskUsage,
@@ -359,7 +364,7 @@ async function checkStorageHealth(supabase: any): Promise<StorageHealthCheck> {
       latency: vpsLatency,
       lastChecked: new Date().toISOString(),
       vpsDetails: {
-        endpoint: VPS_CONFIG.endpoint,
+        endpoint: healthUrl,
         status: "healthy",
         latency: vpsLatency,
         diskUsage: vpsData.diskUsage,
@@ -373,7 +378,7 @@ async function checkStorageHealth(supabase: any): Promise<StorageHealthCheck> {
       message: String(error),
       lastChecked: new Date().toISOString(),
       vpsDetails: {
-        endpoint: VPS_CONFIG.endpoint,
+        endpoint: healthUrl,
         status: "error",
         latency: vpsLatency,
         error: String(error),
