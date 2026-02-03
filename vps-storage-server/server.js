@@ -28,7 +28,7 @@ const app = express();
 const PORT = process.env.STORAGE_PORT || 4000;
 const STORAGE_PATH = process.env.STORAGE_PATH || './storage';
 const API_KEY = process.env.VPS_STORAGE_API_KEY || 'change-this-api-key';
-const OWNER_API_KEY = process.env.VPS_OWNER_API_KEY || 'kARTOOS007';
+const OWNER_API_KEY = process.env.VPS_OWNER_API_KEY || 'change-this-owner-key';
 const HLS_SIGNING_SECRET = process.env.HLS_SIGNING_SECRET || process.env.VPS_STORAGE_API_KEY || 'default-signing-secret';
 const ENABLE_SIGNED_URLS = process.env.ENABLE_SIGNED_URLS === 'true'; // Enable URL signing verification
 const AUTO_TRANSCODE = process.env.AUTO_TRANSCODE !== 'false'; // Enable by default

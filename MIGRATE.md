@@ -41,20 +41,26 @@ Before starting the migration, ensure you have:
 | `.env` | Lines 1-4 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_SUPABASE_PROJECT_ID` |
 | `supabase/config.toml` | Line 1 | `project_id` |
 
-### VPS Configuration Files
+### VPS Configuration (Environment Variables Only)
 
-| File | Line Numbers | What to Change |
-|------|--------------|----------------|
-| `src/lib/fileService.ts` | Lines 44-47 | `PRIMARY_VPS_CONFIG.endpoint`, `PRIMARY_VPS_CONFIG.apiKey` |
-| `supabase/functions/vps-upload/index.ts` | Lines 50-51 | `envVpsEndpoint`, `envVpsApiKey` |
-| `supabase/functions/vps-file/index.ts` | Lines 19-20 | `envVpsEndpoint`, `envVpsApiKey` |
-| `supabase/functions/vps-owner-stats/index.ts` | Lines 10-11 | `VPS_ENDPOINT`, `VPS_OWNER_KEY` |
-| `supabase/functions/shared-download/index.ts` | Lines 10-11 | `VPS_ENDPOINT`, `VPS_API_KEY` |
-| `supabase/functions/verify-share-link/index.ts` | Lines 9-10 | `VPS_ENDPOINT`, `VPS_API_KEY` |
-| `supabase/functions/guest-file-proxy/index.ts` | Lines 10-13 | `VPS_CONFIG.endpoint`, `VPS_CONFIG.apiKey` |
-| `supabase/functions/guest-file-stream/index.ts` | Lines 9-12 | `VPS_CONFIG.endpoint`, `VPS_CONFIG.apiKey` |
-| `supabase/functions/guest-folder-zip/index.ts` | Lines 10-13 | `VPS_CONFIG.endpoint`, `VPS_CONFIG.apiKey` |
-| `vps-storage-server/server.js` | Lines 30-31 | `API_KEY`, `OWNER_API_KEY` (or environment variables) |
+**All VPS configuration is now managed via environment variables in Lovable Cloud Secrets:**
+
+| Secret Name | Description |
+|-------------|-------------|
+| `VPS_ENDPOINT` | Full URL to VPS storage API (e.g., `http://your-ip:4000`) |
+| `VPS_API_KEY` | Standard API key for file operations |
+| `VPS_OWNER_API_KEY` | Owner API key for admin operations |
+| `VPS_CDN_URL` | Public HTTPS CDN URL (e.g., `https://cdn.yourdomain.com`) |
+| `HLS_SIGNING_SECRET` | Secret for signing HLS/streaming URLs |
+
+**No hardcoded IPs or credentials in code** - all edge functions read from `Deno.env.get()`.
+
+### Docker Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `VPS_STORAGE_API_KEY` | Set in `docker-compose.yml` or `.env` file |
+| `VPS_OWNER_API_KEY` | Set in `docker-compose.yml` or `.env` file |
 
 ---
 
@@ -152,245 +158,45 @@ In your new Supabase project:
 
 ## Part 2: VPS Storage Migration
 
-### Step 2.1: Understand Current VPS Configuration
+### Step 2.1: Configure VPS Secrets in Lovable Cloud
 
-**Current VPS Details:**
-- **IP Address:** `46.38.232.46`
-- **Port:** `4000`
-- **Standard API Key:** `kARTOOS007`
-- **Owner API Key:** `kARTOOS007`
-- **Full Endpoint:** `http://46.38.232.46:4000`
+**All VPS configuration is now done via Lovable Cloud Secrets (Settings → Secrets):**
 
-### Step 2.2: Frontend Configuration
+1. **VPS_ENDPOINT**: Your VPS internal endpoint (e.g., `http://your-ip:4000`)
+2. **VPS_API_KEY**: Your VPS authentication key
+3. **VPS_CDN_URL**: Your Cloudflare CDN URL (e.g., `https://cdn.yourdomain.com`)
+4. **VPS_OWNER_API_KEY**: Admin API key for owner operations
 
-**File: `src/lib/fileService.ts`**
+**No code changes required** - all edge functions read from environment variables.
 
+### Step 2.2: Docker Environment Variables
+
+When deploying your VPS storage server, configure these in your `docker-compose.yml` or `.env` file:
+
+```yaml
+environment:
+  - VPS_STORAGE_API_KEY=your-secure-api-key
+  - VPS_OWNER_API_KEY=your-owner-api-key
+  - VPS_CDN_URL=https://cdn.yourdomain.com
+  - HLS_SIGNING_SECRET=your-signing-secret
 ```
-Location: src/lib/fileService.ts
-Lines to modify: 44-47
-```
 
-**Current Configuration (Lines 44-47):**
+### Step 2.3: Verify Edge Functions
+
+All edge functions now read VPS configuration from environment variables:
+
 ```typescript
-// Hardcoded primary VPS configuration - always available
-const PRIMARY_VPS_CONFIG = {
-  endpoint: "http://46.38.232.46:4000",
-  apiKey: "kARTOOS007",
-};
+// All edge functions use this pattern:
+const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "";
+const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "";
 ```
 
-**Replace With:**
-```typescript
-// Hardcoded primary VPS configuration - always available
-const PRIMARY_VPS_CONFIG = {
-  endpoint: "http://[YOUR_NEW_VPS_IP]:[PORT]",
-  apiKey: "[YOUR_NEW_API_KEY]",
-};
+**No code changes required** - just update the secrets in Lovable Cloud.
 ```
 
-**Example with new values:**
-```typescript
-const PRIMARY_VPS_CONFIG = {
-  endpoint: "http://192.168.1.100:4000",
-  apiKey: "MyNewSecureApiKey123",
-};
-```
-
-### Step 2.3: Edge Function - VPS Upload
-
-**File: `supabase/functions/vps-upload/index.ts`**
-
-```
-Location: supabase/functions/vps-upload/index.ts
-Lines to modify: 50-51
-```
-
-**Current Configuration (Lines 50-51):**
-```typescript
-    // Primary VPS storage - hardcoded
-    const envVpsEndpoint = "http://46.38.232.46:4000";
-    const envVpsApiKey = "kARTOOS007";
-```
-
-**Replace With:**
-```typescript
-    // Primary VPS storage - hardcoded
-    const envVpsEndpoint = "http://[YOUR_NEW_VPS_IP]:[PORT]";
-    const envVpsApiKey = "[YOUR_NEW_API_KEY]";
-```
-
-### Step 2.4: Edge Function - VPS File Operations
-
-**File: `supabase/functions/vps-file/index.ts`**
-
-```
-Location: supabase/functions/vps-file/index.ts
-Lines to modify: 18-20
-```
-
-**Current Configuration (Lines 18-20):**
-```typescript
-    // Primary VPS storage - hardcoded
-    const envVpsEndpoint = "http://46.38.232.46:4000";
-    const envVpsApiKey = "kARTOOS007";
-```
-
-**Replace With:**
-```typescript
-    // Primary VPS storage - hardcoded
-    const envVpsEndpoint = "http://[YOUR_NEW_VPS_IP]:[PORT]";
-    const envVpsApiKey = "[YOUR_NEW_API_KEY]";
-```
-
-### Step 2.5: Edge Function - VPS Owner Stats
-
-**File: `supabase/functions/vps-owner-stats/index.ts`**
-
-```
-Location: supabase/functions/vps-owner-stats/index.ts
-Lines to modify: 10-11
-```
-
-**Current Configuration (Lines 10-11):**
-```typescript
-// Hardcoded VPS configuration
-const VPS_ENDPOINT = "http://46.38.232.46:4000";
-const VPS_OWNER_KEY = "kARTOOS007";
-```
-
-**Replace With:**
-```typescript
-// Hardcoded VPS configuration
-const VPS_ENDPOINT = "http://[YOUR_NEW_VPS_IP]:[PORT]";
-const VPS_OWNER_KEY = "[YOUR_NEW_OWNER_API_KEY]";
-```
-
-### Step 2.6: Edge Function - Shared Download
-
-**File: `supabase/functions/shared-download/index.ts`**
-
-```
-Location: supabase/functions/shared-download/index.ts
-Lines to modify: 9-11
-```
-
-**Current Configuration (Lines 9-11):**
-```typescript
-// Primary VPS storage - hardcoded
-const VPS_ENDPOINT = "http://46.38.232.46:4000";
-const VPS_API_KEY = "kARTOOS007";
-```
-
-**Replace With:**
-```typescript
-// Primary VPS storage - hardcoded
-const VPS_ENDPOINT = "http://[YOUR_NEW_VPS_IP]:[PORT]";
-const VPS_API_KEY = "[YOUR_NEW_API_KEY]";
-```
-
-### Step 2.7: Edge Function - Verify Share Link
-
-**File: `supabase/functions/verify-share-link/index.ts`**
-
-```
-Location: supabase/functions/verify-share-link/index.ts
-Lines to modify: 8-10
-```
-
-**Current Configuration (Lines 8-10):**
-```typescript
-// Primary VPS storage - hardcoded (same as vps-file function)
-const VPS_ENDPOINT = "http://46.38.232.46:4000";
-const VPS_API_KEY = "kARTOOS007";
-```
-
-**Replace With:**
-```typescript
-// Primary VPS storage - hardcoded (same as vps-file function)
-const VPS_ENDPOINT = "http://[YOUR_NEW_VPS_IP]:[PORT]";
-const VPS_API_KEY = "[YOUR_NEW_API_KEY]";
-```
-
-### Step 2.8: Edge Function - Guest File Proxy
-
-**File: `supabase/functions/guest-file-proxy/index.ts`**
-
-```
-Location: supabase/functions/guest-file-proxy/index.ts
-Lines to modify: 9-13
-```
-
-**Current Configuration (Lines 9-13):**
-```typescript
-// Primary VPS storage - hardcoded same as fileService
-const VPS_CONFIG = {
-  endpoint: "http://46.38.232.46:4000",
-  apiKey: "kARTOOS007",
-};
-```
-
-**Replace With:**
-```typescript
-// Primary VPS storage - hardcoded same as fileService
-const VPS_CONFIG = {
-  endpoint: "http://[YOUR_NEW_VPS_IP]:[PORT]",
-  apiKey: "[YOUR_NEW_API_KEY]",
-};
-```
-
-### Step 2.9: Edge Function - Guest File Stream
-
-**File: `supabase/functions/guest-file-stream/index.ts`**
-
-```
-Location: supabase/functions/guest-file-stream/index.ts
-Lines to modify: 8-12
-```
-
-**Current Configuration (Lines 8-12):**
-```typescript
-// Primary VPS storage - hardcoded same as fileService
-const VPS_CONFIG = {
-  endpoint: "http://46.38.232.46:4000",
-  apiKey: "kARTOOS007",
-};
-```
-
-**Replace With:**
-```typescript
-// Primary VPS storage - hardcoded same as fileService
-const VPS_CONFIG = {
-  endpoint: "http://[YOUR_NEW_VPS_IP]:[PORT]",
-  apiKey: "[YOUR_NEW_API_KEY]",
-};
-```
-
-### Step 2.10: Edge Function - Guest Folder ZIP
-
-**File: `supabase/functions/guest-folder-zip/index.ts`**
-
-```
-Location: supabase/functions/guest-folder-zip/index.ts
-Lines to modify: 9-13
-```
-
-**Current Configuration (Lines 9-13):**
-```typescript
-// Primary VPS storage
-const VPS_CONFIG = {
-  endpoint: "http://46.38.232.46:4000",
-  apiKey: "kARTOOS007",
-};
-```
-
-**Replace With:**
-```typescript
-// Primary VPS storage
-const VPS_CONFIG = {
-  endpoint: "http://[YOUR_NEW_VPS_IP]:[PORT]",
-  apiKey: "[YOUR_NEW_API_KEY]",
-};
-```
+> **Note:** The sections below (Steps 2.5 through 2.10) are no longer needed.
+> All edge functions now read VPS configuration from environment variables.
+> Simply update the secrets in Lovable Cloud Settings → Secrets.
 
 ---
 

@@ -73,7 +73,7 @@ project/
 |----------|-------------|---------|
 | `VPS_CDN_URL` | Your HTTPS domain URL | - |
 | `VPS_STORAGE_API_KEY` | Storage API authentication key | change-this-api-key |
-| `VPS_OWNER_API_KEY` | Admin API key | kARTOOS007 |
+| `VPS_OWNER_API_KEY` | Admin API key | change-this-owner-key |
 | `SUPABASE_URL` | Supabase project URL | - |
 | `SUPABASE_ANON_KEY` | Supabase public key | - |
 

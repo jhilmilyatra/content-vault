@@ -7,10 +7,10 @@ const corsHeaders = {
   "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges, Content-Type",
 };
 
-// VPS Configuration
+// VPS Configuration - uses environment variables only
 // VPS_ENDPOINT = internal HTTP for server-to-server (streaming, file access)
-const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "http://46.38.232.46:4000";
-const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "kARTOOS007";
+const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "";
+const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "";
 
 // Timeouts
 const VPS_TIMEOUT = 30000; // 30 seconds for streaming

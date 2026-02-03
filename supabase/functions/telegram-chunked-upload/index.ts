@@ -5,9 +5,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-api-key",
 };
 
-// Primary VPS storage - hardcoded
-const VPS_ENDPOINT = "http://46.38.232.46:4000";
-const VPS_API_KEY = "kARTOOS007";
+// VPS Configuration - uses environment variables only
+const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "";
+const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "";
 
 // Chunk size: 5MB (matches main chunked upload)
 const CHUNK_SIZE = 5 * 1024 * 1024;

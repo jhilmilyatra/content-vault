@@ -19,12 +19,12 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
-// VPS Configuration
+// VPS Configuration - uses environment variables only
 // VPS_ENDPOINT = internal HTTP for server-to-server (health checks, HLS status, etc.)
 // VPS_CDN_URL = public HTTPS URL for client-facing URLs (Cloudflare proxied)
-const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "http://46.38.232.46:4000";
-const VPS_CDN_URL = Deno.env.get("VPS_CDN_URL") || "https://media.trycloudflare.com"; // MUST be HTTPS
-const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "kARTOOS007";
+const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "";
+const VPS_CDN_URL = Deno.env.get("VPS_CDN_URL") || "";
+const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "";
 
 // Signing secret for URL tokens
 const SIGNING_SECRET = Deno.env.get("HLS_SIGNING_SECRET") || VPS_API_KEY || "default-signing-secret";

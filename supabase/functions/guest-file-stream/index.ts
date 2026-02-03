@@ -10,10 +10,10 @@ const corsHeaders = {
 // Performance tracking
 const SLOW_THRESHOLD_MS = 200;
 
-// VPS Configuration
+// VPS Configuration - uses environment variables only
 // VPS_ENDPOINT = internal HTTP for server-to-server (streaming via edge function proxy)
-const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "http://46.38.232.46:4000";
-const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "kARTOOS007";
+const VPS_ENDPOINT = Deno.env.get("VPS_ENDPOINT") || "";
+const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "";
 
 // VPS timeout for availability check (ms)
 const VPS_CHECK_TIMEOUT = 3000;

@@ -22,8 +22,8 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const vpsEndpoint = Deno.env.get("VPS_ENDPOINT") || "http://46.38.232.46:4000";
-    const vpsApiKey = Deno.env.get("VPS_API_KEY") || "kARTOOS007";
+    const vpsEndpoint = Deno.env.get("VPS_ENDPOINT") || "";
+    const vpsApiKey = Deno.env.get("VPS_API_KEY") || "";
 
     // Verify authorization
     const authHeader = req.headers.get("Authorization");

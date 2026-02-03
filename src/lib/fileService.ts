@@ -268,10 +268,12 @@ class AdaptiveSpeedTracker {
   }
 }
 
-// Hardcoded primary VPS configuration - always available
+// VPS configuration - fetched dynamically via edge function
+// Frontend never has direct access to VPS credentials for security
+// All VPS operations are proxied through edge functions
 const PRIMARY_VPS_CONFIG = {
-  endpoint: "http://46.38.232.46:4000",
-  apiKey: "kARTOOS007",
+  endpoint: "", // Proxied via edge functions
+  apiKey: "", // Never exposed to frontend
 };
 
 const STORAGE_NODES_KEY = "vps_storage_nodes";
