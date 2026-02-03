@@ -1316,7 +1316,42 @@ app.get('/files/:userId/:fileName', (req, res) => {
 });
 
 // ============================================
-// File Delete Endpoint - SECURED
+// File Delete Endpoint via URL params - SECURED
+// ============================================
+app.delete('/files/:userId/:fileName', authenticate, (req, res) => {
+  try {
+    const { userId, fileName } = req.params;
+    
+    // Validate and get safe path
+    const pathInfo = getSafePath(userId, fileName);
+    if (!pathInfo) {
+      return res.status(400).json({ error: 'Invalid path parameters' });
+    }
+    
+    if (!fs.existsSync(pathInfo.fullPath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    
+    fs.unlinkSync(pathInfo.fullPath);
+    console.log(`File deleted via URL: ${pathInfo.fullPath}`);
+    
+    // Also delete HLS directory if exists
+    const baseName = fileName.replace(/\.[^.]+$/, '');
+    const hlsDir = path.join(STORAGE_PATH, userId, 'hls', baseName);
+    if (fs.existsSync(hlsDir)) {
+      fs.rmSync(hlsDir, { recursive: true, force: true });
+      console.log(`HLS directory deleted: ${hlsDir}`);
+    }
+
+    res.json({ success: true, message: 'File deleted', path: `${userId}/${fileName}` });
+  } catch (error) {
+    console.error('Delete error:', error);
+    res.status(500).json({ error: 'Delete failed', message: error.message });
+  }
+});
+
+// ============================================
+// File Delete Endpoint via Body - SECURED
 // ============================================
 app.delete('/delete', authenticate, (req, res) => {
   try {
@@ -1335,6 +1370,14 @@ app.delete('/delete', authenticate, (req, res) => {
     if (fs.existsSync(pathInfo.fullPath)) {
       fs.unlinkSync(pathInfo.fullPath);
       console.log(`File deleted: ${pathInfo.fullPath}`);
+      
+      // Also delete HLS directory if exists
+      const baseName = fileName.replace(/\.[^.]+$/, '');
+      const hlsDir = path.join(STORAGE_PATH, userId, 'hls', baseName);
+      if (fs.existsSync(hlsDir)) {
+        fs.rmSync(hlsDir, { recursive: true, force: true });
+        console.log(`HLS directory deleted: ${hlsDir}`);
+      }
     }
 
     res.json({ success: true, message: 'File deleted' });
@@ -2081,6 +2124,192 @@ app.post('/chunk-append', authenticate, (req, res) => {
   } catch (error) {
     console.error('Chunk append error:', error);
     res.status(500).json({ error: 'Chunk append failed', message: error.message });
+  }
+});
+
+// ============================================
+// Chunked Upload: Store chunk temporarily
+// ============================================
+app.post('/chunk-upload', authenticate, (req, res) => {
+  try {
+    const { data, uploadId, chunkIndex, totalChunks, fileName, userId } = req.body;
+    
+    if (!data) {
+      return res.status(400).json({ error: 'Missing chunk data' });
+    }
+    
+    if (!uploadId) {
+      return res.status(400).json({ error: 'Missing upload ID' });
+    }
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'Missing user ID' });
+    }
+    
+    if (chunkIndex === undefined || chunkIndex === null) {
+      return res.status(400).json({ error: 'Missing chunk index' });
+    }
+    
+    // Validate userId
+    if (!isValidUUID(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+    
+    // Create temp chunks directory
+    const chunksDir = path.join(STORAGE_PATH, '.chunks', uploadId);
+    if (!fs.existsSync(chunksDir)) {
+      fs.mkdirSync(chunksDir, { recursive: true });
+    }
+    
+    // Write chunk to temp file
+    const chunkPath = path.join(chunksDir, `chunk_${String(chunkIndex).padStart(5, '0')}`);
+    const buffer = Buffer.from(data, 'base64');
+    fs.writeFileSync(chunkPath, buffer);
+    
+    console.log(`📦 Chunk ${chunkIndex}/${totalChunks - 1} stored for upload ${uploadId}`);
+    
+    // Write metadata for finalization
+    const metaPath = path.join(chunksDir, 'meta.json');
+    const meta = {
+      uploadId,
+      userId,
+      fileName,
+      totalChunks,
+      lastChunk: chunkIndex,
+      updatedAt: new Date().toISOString()
+    };
+    fs.writeFileSync(metaPath, JSON.stringify(meta));
+    
+    res.json({
+      success: true,
+      chunkIndex,
+      totalChunks,
+      uploadId
+    });
+  } catch (error) {
+    console.error('Chunk upload error:', error);
+    res.status(500).json({ error: 'Chunk upload failed', message: error.message });
+  }
+});
+
+// ============================================
+// Chunked Upload: Finalize/Assemble chunks
+// ============================================
+app.post('/finalize-upload', authenticate, (req, res) => {
+  try {
+    const { uploadId, fileName, userId, originalName, mimeType } = req.body;
+    
+    if (!uploadId) {
+      return res.status(400).json({ error: 'Missing upload ID' });
+    }
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'Missing user ID' });
+    }
+    
+    if (!fileName) {
+      return res.status(400).json({ error: 'Missing file name' });
+    }
+    
+    // Validate userId
+    if (!isValidUUID(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+    
+    const chunksDir = path.join(STORAGE_PATH, '.chunks', uploadId);
+    
+    if (!fs.existsSync(chunksDir)) {
+      return res.status(404).json({ error: 'Upload session not found' });
+    }
+    
+    // Get safe path for final file
+    const pathInfo = getSafePath(userId, fileName);
+    if (!pathInfo) {
+      return res.status(400).json({ error: 'Invalid path parameters' });
+    }
+    
+    // Ensure user directory exists
+    if (!fs.existsSync(pathInfo.userDir)) {
+      fs.mkdirSync(pathInfo.userDir, { recursive: true });
+    }
+    
+    // Get all chunk files sorted
+    const chunkFiles = fs.readdirSync(chunksDir)
+      .filter(f => f.startsWith('chunk_'))
+      .sort();
+    
+    if (chunkFiles.length === 0) {
+      return res.status(400).json({ error: 'No chunks found' });
+    }
+    
+    // Assemble chunks into final file
+    const writeStream = fs.createWriteStream(pathInfo.fullPath);
+    
+    for (const chunkFile of chunkFiles) {
+      const chunkPath = path.join(chunksDir, chunkFile);
+      const chunkData = fs.readFileSync(chunkPath);
+      writeStream.write(chunkData);
+    }
+    
+    writeStream.end();
+    
+    writeStream.on('finish', () => {
+      // Clean up chunks directory
+      fs.rmSync(chunksDir, { recursive: true, force: true });
+      
+      const stats = fs.statSync(pathInfo.fullPath);
+      const filePath = `${userId}/${fileName}`;
+      
+      // Trigger auto-transcode for video files
+      triggerAutoTranscode(userId, fileName, pathInfo.fullPath);
+      
+      console.log(`✅ Upload finalized: ${filePath} (${stats.size} bytes)`);
+      
+      res.json({
+        success: true,
+        path: filePath,
+        fileName,
+        originalName: originalName || fileName,
+        size: stats.size,
+        mimeType,
+        url: `/files/${filePath}`
+      });
+    });
+    
+    writeStream.on('error', (err) => {
+      console.error('Finalize write error:', err);
+      res.status(500).json({ error: 'Failed to write final file', message: err.message });
+    });
+    
+  } catch (error) {
+    console.error('Finalize upload error:', error);
+    res.status(500).json({ error: 'Finalize failed', message: error.message });
+  }
+});
+
+// ============================================
+// Chunked Upload: Cleanup incomplete upload
+// ============================================
+app.post('/cleanup-chunks', authenticate, (req, res) => {
+  try {
+    const { uploadId } = req.body;
+    
+    if (!uploadId) {
+      return res.status(400).json({ error: 'Missing upload ID' });
+    }
+    
+    const chunksDir = path.join(STORAGE_PATH, '.chunks', uploadId);
+    
+    if (fs.existsSync(chunksDir)) {
+      fs.rmSync(chunksDir, { recursive: true, force: true });
+      console.log(`🧹 Cleaned up chunks for upload: ${uploadId}`);
+      res.json({ success: true, message: 'Chunks cleaned up' });
+    } else {
+      res.json({ success: true, message: 'No chunks to clean up' });
+    }
+  } catch (error) {
+    console.error('Cleanup chunks error:', error);
+    res.status(500).json({ error: 'Cleanup failed', message: error.message });
   }
 });
 
