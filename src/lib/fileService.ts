@@ -604,8 +604,12 @@ const uploadToVPSWithProgress = (
               extractAndUploadVideoMetadata(file, uploadedFile.id, sessionData.session!.access_token)
                 .catch((err) => console.warn('Video metadata extraction failed:', err));
               
-              // Warm stream URL for instant playback
-              warmVideoStreamUrl(uploadedFile.id, uploadedFile.storage_path, { priority: 'high' })
+              // Warm stream URL and CDN edge cache for instant playback
+              warmVideoStreamUrl(uploadedFile.id, uploadedFile.storage_path, { 
+                priority: 'high', 
+                showToast: true,
+                warmEdge: true 
+              })
                 .then(() => console.log('📹 Video stream pre-warmed after upload'))
                 .catch(() => {}); // Silent fail - not critical
             }
@@ -1088,8 +1092,12 @@ const uploadChunked = async (
             .catch((err) => console.warn('Video metadata extraction failed:', err));
         }
         
-        // Warm stream URL for instant playback
-        warmVideoStreamUrl(uploadedFile.id, uploadedFile.storage_path, { priority: 'high' })
+        // Warm stream URL and CDN edge cache for instant playback
+        warmVideoStreamUrl(uploadedFile.id, uploadedFile.storage_path, { 
+          priority: 'high', 
+          showToast: true,
+          warmEdge: true 
+        })
           .then(() => console.log('📹 Video stream pre-warmed after upload'))
           .catch(() => {}); // Silent fail - not critical
       }

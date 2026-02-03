@@ -7,12 +7,16 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { setCachedUrl, getCachedUrl } from "./urlCache";
+import { toast } from "@/hooks/use-toast";
 
 // Video stream URL cache TTL (11 hours - just under the 12h signed URL validity)
 const VIDEO_STREAM_CACHE_TTL = 11 * 60 * 60 * 1000;
 
 // In-memory preload tracking to avoid duplicate requests
 const preloadingUrls = new Set<string>();
+
+// Track which videos have been edge-warmed
+const edgeWarmedUrls = new Set<string>();
 
 /**
  * Pre-warm video stream URL for a file
@@ -24,6 +28,8 @@ export async function warmVideoStreamUrl(
   options?: {
     priority?: 'high' | 'low';
     prefetchMetadata?: boolean;
+    showToast?: boolean;
+    warmEdge?: boolean;
   }
 ): Promise<{ url: string; fallbackUrl?: string } | null> {
   const cacheKey = `video-stream:${fileId}`;
@@ -81,7 +87,22 @@ export async function warmVideoStreamUrl(
         prefetchVideoMetadata(result.url, options?.priority);
       }
       
+      // Warm the CDN edge cache with a range request (first 2MB)
+      if (options?.warmEdge !== false && !edgeWarmedUrls.has(fileId)) {
+        warmCdnEdgeCache(result.url, fileId);
+      }
+      
       console.log('🔥 Video stream warmed:', fileId.substring(0, 8));
+      
+      // Show toast notification for high-priority warming (after upload)
+      if (options?.showToast && options?.priority === 'high') {
+        toast({
+          title: "Video ready for instant playback",
+          description: "Stream has been pre-cached for smooth viewing",
+          duration: 3000,
+        });
+      }
+      
       return { url: result.url, fallbackUrl: result.fallbackUrl };
     }
     
@@ -91,6 +112,39 @@ export async function warmVideoStreamUrl(
     return null;
   } finally {
     preloadingUrls.delete(fileId);
+  }
+}
+
+/**
+ * Warm CDN edge cache by making a range request for first 2MB
+ * This populates Cloudflare's edge cache for instant first-byte delivery
+ */
+async function warmCdnEdgeCache(url: string, fileId: string): Promise<void> {
+  try {
+    edgeWarmedUrls.add(fileId);
+    
+    // Request first 2MB to warm the edge cache (enough for video to start playing)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Range': 'bytes=0-2097151', // First 2MB
+      },
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (response.ok || response.status === 206) {
+      // Read and discard the response to complete the cache warming
+      await response.arrayBuffer();
+      console.log('🌐 CDN edge cache warmed:', fileId.substring(0, 8));
+    }
+  } catch (error) {
+    // Silent fail - edge warming is optional optimization
+    console.log('CDN edge warming skipped:', error instanceof Error ? error.message : 'unknown');
   }
 }
 
