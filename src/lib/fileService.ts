@@ -287,7 +287,7 @@ const STORAGE_NODES_KEY = "vps_storage_nodes";
  * For cross-origin HTTPS access, use the edge function proxy instead
  */
 export const getDirectVPSUrl = (storagePath: string): string => {
-  return `${PRIMARY_VPS_CONFIG.endpoint}/files/${storagePath}`;
+  return `${getPrimaryVpsConfig().endpoint}/files/${storagePath}`;
 };
 
 /**
@@ -295,7 +295,7 @@ export const getDirectVPSUrl = (storagePath: string): string => {
  * Uses CDN-signed URLs for MP4 streaming
  */
 export const getDirectStreamUrl = (storagePath: string): string => {
-  return `${PRIMARY_VPS_CONFIG.endpoint}/stream?path=${encodeURIComponent(storagePath)}`;
+  return `${getPrimaryVpsConfig().endpoint}/stream?path=${encodeURIComponent(storagePath)}`;
 };
 
 /**
@@ -306,7 +306,7 @@ export const checkVPSHealth = async (): Promise<boolean> => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
     
-    const response = await fetch(`${PRIMARY_VPS_CONFIG.endpoint}/health`, {
+    const response = await fetch(`${getPrimaryVpsConfig().endpoint}/health`, {
       method: 'GET',
       signal: controller.signal,
     });
@@ -321,12 +321,12 @@ export const checkVPSHealth = async (): Promise<boolean> => {
 /**
  * Get VPS API key for authenticated requests
  */
-export const getVPSApiKey = (): string => PRIMARY_VPS_CONFIG.apiKey;
+export const getVPSApiKey = (): string => getPrimaryVpsConfig().apiKey;
 
 /**
  * Get VPS endpoint
  */
-export const getVPSEndpoint = (): string => PRIMARY_VPS_CONFIG.endpoint;
+export const getVPSEndpoint = (): string => getPrimaryVpsConfig().endpoint;
 
 /**
  * Get all configured VPS storage nodes (includes hardcoded primary)
@@ -336,8 +336,8 @@ export const getStorageNodes = (): StorageNode[] => {
   const primaryNode: StorageNode = {
     id: "vps-primary",
     name: "Primary VPS Storage",
-    endpoint: PRIMARY_VPS_CONFIG.endpoint,
-    apiKey: PRIMARY_VPS_CONFIG.apiKey,
+    endpoint: getPrimaryVpsConfig().endpoint,
+    apiKey: getPrimaryVpsConfig().apiKey,
     status: "online",
     totalStorage: 200 * 1024 * 1024 * 1024, // 200GB
     usedStorage: 0,
@@ -362,7 +362,7 @@ export const getStorageNodes = (): StorageNode[] => {
 /**
  * Get the primary VPS config (hardcoded)
  */
-export const getPrimaryVPSConfig = () => PRIMARY_VPS_CONFIG;
+export const getPrimaryVPSConfig = () => getPrimaryVpsConfig();
 
 /**
  * Get the best available VPS node for upload based on capacity
@@ -756,8 +756,8 @@ const directVPSUpload = (
       reject(new Error("Upload timed out"));
     });
 
-    xhr.open("POST", `${PRIMARY_VPS_CONFIG.endpoint}/upload`);
-    xhr.setRequestHeader("Authorization", `Bearer ${PRIMARY_VPS_CONFIG.apiKey}`);
+    xhr.open("POST", `${getPrimaryVpsConfig().endpoint}/upload`);
+    xhr.setRequestHeader("Authorization", `Bearer ${getPrimaryVpsConfig().apiKey}`);
     xhr.send(formData);
   });
 };
@@ -949,10 +949,10 @@ const uploadChunked = async (
     const chunkStartTime = performance.now();
     
     // Upload to temp chunk storage (parallel-safe endpoint)
-    const response = await fetch(`${PRIMARY_VPS_CONFIG.endpoint}/chunk-upload`, {
+    const response = await fetch(`${getPrimaryVpsConfig().endpoint}/chunk-upload`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${PRIMARY_VPS_CONFIG.apiKey}`,
+        'Authorization': `Bearer ${getPrimaryVpsConfig().apiKey}`,
       },
       body: formData,
     });
@@ -1037,10 +1037,10 @@ const uploadChunked = async (
   
   // Tell server to assemble all chunks into final file
   console.log(`🔧 Finalizing upload: assembling ${totalChunks} chunks...`);
-  const finalizeResponse = await fetch(`${PRIMARY_VPS_CONFIG.endpoint}/finalize-upload`, {
+  const finalizeResponse = await fetch(`${getPrimaryVpsConfig().endpoint}/finalize-upload`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${PRIMARY_VPS_CONFIG.apiKey}`,
+      'Authorization': `Bearer ${getPrimaryVpsConfig().apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
