@@ -155,7 +155,7 @@ const StorageSettings = () => {
       }
 
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-owner-stats?action=all-users`,
+        `${edgeFunctionUrl('vps-owner-stats')}?action=all-users`,
         {
           headers: {
             Authorization: `Bearer ${sessionData.session.access_token}`,
