@@ -135,6 +135,72 @@ function generateVideoThumbnail(fullPath, outputDir, baseName) {
 }
 
 /**
+ * Generate 10-frame horizontal sprite strip (WebP) for hover previews
+ * Picks 10 evenly-spaced frames, tiles them into a single row, 320px per frame.
+ * If the result exceeds 200KB, retries at 240px width.
+ */
+function generateSpriteStrip(fullPath, outputDir, baseName) {
+  return new Promise((resolve) => {
+    const { exec } = require('child_process');
+
+    const spritePath = path.join(outputDir, 'sprite.webp');
+    const frameCount = 10;
+
+    // Get duration first
+    const durationCmd = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${fullPath}"`;
+
+    exec(durationCmd, (durationError, durationStdout) => {
+      const duration = parseFloat(durationStdout) || 10;
+      // Interval between selected frames (skip first and last 5%)
+      const usable = duration * 0.9;
+      const start = duration * 0.05;
+      const interval = usable / frameCount;
+
+      // Build select expression: pick 10 frames at calculated timestamps
+      const selectPts = Array.from({ length: frameCount }, (_, i) => {
+        const t = start + i * interval;
+        return `gte(t\\,${t.toFixed(3)})*lt(t\\,${(t + 0.04).toFixed(3)})`;
+      }).join('+');
+
+      const buildCmd = (frameWidth) =>
+        `ffmpeg -i "${fullPath}" -vf "select='${selectPts}',scale=${frameWidth}:-1,tile=${frameCount}x1" -frames:v 1 -quality 75 -y "${spritePath}" 2>&1`;
+
+      exec(buildCmd(320), { maxBuffer: 50 * 1024 * 1024 }, (err) => {
+        if (err) {
+          console.warn('Sprite strip generation failed:', err.message);
+          resolve({ sprite: null, spriteUrl: null });
+          return;
+        }
+
+        // Check size — if over 200KB, retry at 240px
+        const stat = fs.statSync(spritePath);
+        if (stat.size > 200 * 1024) {
+          console.log(`🎞️ Sprite too large (${(stat.size / 1024).toFixed(0)}KB), retrying at 240px...`);
+          exec(buildCmd(240), { maxBuffer: 50 * 1024 * 1024 }, (err2) => {
+            if (err2) {
+              console.warn('Sprite 240px retry failed:', err2.message);
+            } else {
+              const stat2 = fs.statSync(spritePath);
+              console.log(`🎞️ Sprite strip generated (240px): ${(stat2.size / 1024).toFixed(0)}KB`);
+            }
+            resolve({
+              sprite: fs.existsSync(spritePath) ? spritePath : null,
+              spriteUrl: fs.existsSync(spritePath) ? 'sprite.webp' : null,
+            });
+          });
+        } else {
+          console.log(`🎞️ Sprite strip generated (320px): ${(stat.size / 1024).toFixed(0)}KB`);
+          resolve({
+            sprite: spritePath,
+            spriteUrl: 'sprite.webp',
+          });
+        }
+      });
+    });
+  });
+}
+
+/**
  * Generate animated GIF preview (for hover previews)
  */
 function generateAnimatedPreview(fullPath, outputDir, baseName) {
@@ -320,6 +386,20 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
         console.warn('Animated preview generation skipped:', e.message);
       }
       
+      // Generate sprite strip for hover previews (10-frame WebP)
+      console.log(`🎞️ Generating sprite strip...`);
+      fs.writeFileSync(lockFile, JSON.stringify({ 
+        started: new Date().toISOString(),
+        status: 'generating_sprite',
+        progress: 30
+      }));
+      let spriteResult = { sprite: null, spriteUrl: null };
+      try {
+        spriteResult = await generateSpriteStrip(fullPath, processedDir, baseName);
+      } catch (e) {
+        console.warn('Sprite strip generation skipped:', e.message);
+      }
+      
       // Transcode to 480p web-compatible MP4 if source is larger
       let webMp4Result = null;
       if (sourceRes.height > 480) {
@@ -354,6 +434,7 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
           thumbnail: thumbnailResult.thumbnailUrl,
           poster: thumbnailResult.posterUrl,
           animatedPreview: animatedResult.gifUrl,
+          sprite: spriteResult.spriteUrl,
         }
       }));
       
