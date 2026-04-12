@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, memo } from "react";
 import { cn } from "@/lib/utils";
 import { getCachedThumbnail, cacheThumbnail } from "@/lib/thumbnailCache";
+import { thumbnailQueue } from "@/lib/thumbnailQueue";
+import { getAdaptiveRootMargin } from "@/hooks/useDeviceCapability";
 
 interface LazyImageProps {
   src: string;
@@ -11,7 +13,7 @@ interface LazyImageProps {
   placeholderColor?: string;
   blurHash?: string;
   priority?: boolean;
-  /** Enable IndexedDB caching */
+  highPriority?: boolean;
   enableCache?: boolean;
   onLoad?: () => void;
   onError?: () => void;
@@ -21,7 +23,6 @@ function generatePlaceholder(color: string = "rgba(255,255,255,0.05)"): string {
   return `linear-gradient(135deg, ${color} 0%, rgba(0,0,0,0.1) 100%)`;
 }
 
-// Aspect ratio mappings
 const aspectRatioClasses = {
   square: "aspect-square",
   video: "aspect-video",
@@ -30,8 +31,7 @@ const aspectRatioClasses = {
 };
 
 /**
- * LazyImage - Optimized for smooth scrolling with CSS-only transitions
- * No framer-motion to prevent jitter during scroll
+ * LazyImage - Optimized with concurrency queue and adaptive loading
  */
 export const LazyImage = memo(function LazyImage({
   src,
@@ -41,6 +41,7 @@ export const LazyImage = memo(function LazyImage({
   aspectRatio = "auto",
   placeholderColor,
   priority = false,
+  highPriority = false,
   enableCache = true,
   onLoad,
   onError,
@@ -52,10 +53,11 @@ export const LazyImage = memo(function LazyImage({
   const containerRef = useRef<HTMLDivElement>(null);
   const blobUrlRef = useRef<string | null>(null);
 
-  // Intersection Observer for lazy loading - larger margin for smoother experience
+  // Adaptive IntersectionObserver
   useEffect(() => {
     if (priority || !containerRef.current) return;
 
+    const rootMargin = getAdaptiveRootMargin();
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -65,32 +67,27 @@ export const LazyImage = memo(function LazyImage({
           }
         });
       },
-      {
-        rootMargin: "400px", // Start loading 400px before viewport for smoother scroll
-        threshold: 0,
-      }
+      { rootMargin, threshold: 0 }
     );
 
     observer.observe(containerRef.current);
-
     return () => observer.disconnect();
   }, [priority]);
 
-  // Check cache and preload image when in view
+  // Load image via queue with caching
   useEffect(() => {
     if (!isInView || !src) return;
 
     let isMounted = true;
 
     const loadImage = async () => {
-      // Try to get from cache first (instant display)
+      // Try IndexedDB cache first
       if (enableCache) {
         try {
           const cached = await getCachedThumbnail(src);
           if (cached && isMounted) {
             blobUrlRef.current = cached;
             setCachedSrc(cached);
-            // Small delay for smooth transition
             requestAnimationFrame(() => {
               if (isMounted) {
                 setIsLoaded(true);
@@ -99,56 +96,64 @@ export const LazyImage = memo(function LazyImage({
             });
             return;
           }
-        } catch {
-          // Continue to fetch if cache fails
-        }
+        } catch {}
       }
 
-      // Fetch the image with high priority for visible items
+      // Use thumbnail queue for concurrency control
       try {
-        const response = await fetch(src, { 
-          credentials: 'include',
-          priority: priority ? 'high' : 'auto' as RequestPriority,
-        });
-        if (!response.ok) throw new Error('Failed to fetch');
-        
-        const blob = await response.blob();
-        if (!isMounted) return;
+        const queuePriority = highPriority ? 'high' : priority ? 'normal' : 'low';
+        const blobUrl = await thumbnailQueue.enqueue(src, queuePriority);
 
-        const blobUrl = URL.createObjectURL(blob);
-        blobUrlRef.current = blobUrl;
-        setCachedSrc(blobUrl);
-        
-        // Use requestAnimationFrame for smooth transition
-        requestAnimationFrame(() => {
-          if (isMounted) {
-            setIsLoaded(true);
-            onLoad?.();
-          }
-        });
-
-        // Cache for future use (only images under 5MB)
-        if (enableCache && blob.size < 5 * 1024 * 1024) {
-          cacheThumbnail(src, blob).catch(() => {});
+        if (!isMounted) {
+          if (blobUrl) URL.revokeObjectURL(blobUrl);
+          return;
         }
-      } catch {
-        // Fall back to direct src on error
-        if (isMounted) {
-          setCachedSrc(src);
-          const img = new Image();
-          img.src = src;
-          img.onload = () => {
+
+        if (blobUrl) {
+          blobUrlRef.current = blobUrl;
+          setCachedSrc(blobUrl);
+          requestAnimationFrame(() => {
             if (isMounted) {
               setIsLoaded(true);
               onLoad?.();
             }
-          };
-          img.onerror = () => {
-            if (isMounted) {
-              setHasError(true);
-              onError?.();
-            }
-          };
+          });
+
+          // Cache for future use
+          if (enableCache) {
+            try {
+              const response = await fetch(blobUrl);
+              const blob = await response.blob();
+              if (blob.size < 5 * 1024 * 1024) {
+                cacheThumbnail(src, blob).catch(() => {});
+              }
+            } catch {}
+          }
+        } else {
+          // Fallback to direct src
+          if (isMounted) {
+            setCachedSrc(src);
+            const img = new Image();
+            img.src = src;
+            img.onload = () => {
+              if (isMounted) {
+                setIsLoaded(true);
+                onLoad?.();
+              }
+            };
+            img.onerror = () => {
+              if (isMounted) {
+                setHasError(true);
+                onError?.();
+              }
+            };
+          }
+        }
+      } catch {
+        if (isMounted) {
+          setCachedSrc(src);
+          setHasError(true);
+          onError?.();
         }
       }
     };
@@ -157,12 +162,11 @@ export const LazyImage = memo(function LazyImage({
 
     return () => {
       isMounted = false;
-      // Clean up blob URL
       if (blobUrlRef.current?.startsWith('blob:')) {
         URL.revokeObjectURL(blobUrlRef.current);
       }
     };
-  }, [isInView, src, enableCache, onLoad, onError, priority]);
+  }, [isInView, src, enableCache, onLoad, onError, priority, highPriority]);
 
   const placeholder = generatePlaceholder(placeholderColor);
 
@@ -175,7 +179,7 @@ export const LazyImage = memo(function LazyImage({
         containerClassName
       )}
     >
-      {/* Static placeholder - no animation during scroll */}
+      {/* Static placeholder */}
       <div
         className={cn(
           "absolute inset-0 z-10 transition-opacity duration-300",
@@ -188,31 +192,22 @@ export const LazyImage = memo(function LazyImage({
       {hasError && (
         <div className="absolute inset-0 flex items-center justify-center bg-muted/30">
           <div className="text-center text-muted-foreground">
-            <svg
-              className="w-8 h-8 mx-auto mb-2"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-              />
+            <svg className="w-8 h-8 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
             <span className="text-xs">Failed to load</span>
           </div>
         </div>
       )}
 
-      {/* Actual image - CSS transition only, no JS animation */}
+      {/* Image with CSS transition */}
       {isInView && !hasError && cachedSrc && (
         <img
           src={cachedSrc}
           alt={alt}
           loading={priority ? "eager" : "lazy"}
           decoding="async"
+          fetchPriority={highPriority ? "high" : undefined}
           className={cn(
             "w-full h-full object-cover transition-opacity duration-300",
             isLoaded ? "opacity-100" : "opacity-0",
@@ -230,7 +225,6 @@ export const LazyImage = memo(function LazyImage({
 
 /**
  * LazyThumbnail - Lightweight version for small thumbnails
- * Pure CSS transitions, no framer-motion
  */
 export const LazyThumbnail = memo(function LazyThumbnail({
   src,
@@ -254,7 +248,6 @@ export const LazyThumbnail = memo(function LazyThumbnail({
       )}
       style={{ width: size, height: size }}
     >
-      {/* Static shimmer placeholder */}
       {!isLoaded && !hasError && (
         <div
           className="absolute inset-0 animate-pulse"
@@ -263,7 +256,6 @@ export const LazyThumbnail = memo(function LazyThumbnail({
           }}
         />
       )}
-
       {hasError ? (
         <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -290,7 +282,6 @@ export const LazyThumbnail = memo(function LazyThumbnail({
 
 /**
  * LazyBackground - Background image with lazy loading
- * Pure CSS transitions
  */
 export const LazyBackground = memo(function LazyBackground({
   src,
@@ -307,6 +298,7 @@ export const LazyBackground = memo(function LazyBackground({
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const rootMargin = getAdaptiveRootMargin();
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -318,7 +310,7 @@ export const LazyBackground = memo(function LazyBackground({
           }
         });
       },
-      { rootMargin: "100px" }
+      { rootMargin }
     );
 
     if (containerRef.current) {
@@ -330,7 +322,6 @@ export const LazyBackground = memo(function LazyBackground({
 
   return (
     <div ref={containerRef} className={cn("relative overflow-hidden", className)}>
-      {/* Placeholder gradient */}
       <div
         className={cn(
           "absolute inset-0 transition-opacity duration-500",
@@ -340,8 +331,6 @@ export const LazyBackground = memo(function LazyBackground({
           background: "linear-gradient(135deg, hsl(var(--muted)/0.3) 0%, hsl(var(--background)) 100%)",
         }}
       />
-      
-      {/* Background image - CSS transition */}
       <div
         className={cn(
           "absolute inset-0 bg-cover bg-center transition-opacity duration-500",
@@ -349,11 +338,7 @@ export const LazyBackground = memo(function LazyBackground({
         )}
         style={{ backgroundImage: `url(${src})` }}
       />
-      
-      {/* Optional overlay */}
       {overlayClassName && <div className={cn("absolute inset-0", overlayClassName)} />}
-      
-      {/* Content */}
       <div className="relative z-10">{children}</div>
     </div>
   );

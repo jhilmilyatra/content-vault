@@ -103,6 +103,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
+import { useHoverPrefetch } from "@/hooks/useHoverPrefetch";
 
 // Format duration in seconds to MM:SS or HH:MM:SS
 const formatDuration = (seconds: number): string => {
@@ -187,7 +188,7 @@ const FileManager = () => {
   const isMobile = useIsMobile();
   const { isProcessing: isThumbnailProcessing } = useThumbnailProcessing();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
+  const { onHoverStart: prefetchOnHover, onHoverEnd: prefetchOnHoverEnd } = useHoverPrefetch();
   // Scroll container ref for prefetching
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -1335,7 +1336,7 @@ const FileManager = () => {
               })}
 
               {/* Files */}
-              {filteredFiles.map((file) => {
+              {filteredFiles.map((file, index) => {
                 const IconComponent = getFileIconComponent(file.mime_type);
                 const isSelected = selectedFiles.includes(file.id);
                 
@@ -1425,6 +1426,13 @@ const FileManager = () => {
                           className="w-full h-full object-cover"
                           aspectRatio="square"
                           showPlayIndicator={viewMode === "grid"}
+                          priority={index < 6}
+                          highPriority={index < 2}
+                          storagePath={file.storage_path}
+                          fileId={file.id}
+                          enableHoverPreview={viewMode === "grid"}
+                          onHoverStart={() => prefetchOnHover(file.storage_path)}
+                          onHoverEnd={prefetchOnHoverEnd}
                         />
                         {/* Duration Badge */}
                         {file.duration_seconds && file.duration_seconds > 0 && viewMode === "grid" && (
