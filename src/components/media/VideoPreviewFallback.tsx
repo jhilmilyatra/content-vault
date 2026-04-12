@@ -1,7 +1,6 @@
 import { useRef, useEffect, memo, useState } from 'react';
 import { cn } from '@/lib/utils';
-
-const VPS_CDN_URL = 'https://cloudvaults.in';
+import { vpsProcessedUrl } from '@/lib/config';
 
 interface VideoPreviewFallbackProps {
   /** Storage path for the video */
@@ -27,7 +26,7 @@ export const VideoPreviewFallback = memo(function VideoPreviewFallback({
   // Construct 480p URL
   const userId = storagePath.split('/')[0];
   const baseName = storagePath.split('/').pop()?.replace(/\.[^.]+$/, '') || '';
-  const previewUrl = `${VPS_CDN_URL}/api/files/${userId}/processed/${baseName}/480p.mp4`;
+  const previewUrl = vpsProcessedUrl(storagePath, '480p.mp4');
 
   useEffect(() => {
     const video = videoRef.current;

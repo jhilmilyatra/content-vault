@@ -1,6 +1,5 @@
 import { memo } from 'react';
-
-const VPS_CDN_URL = 'https://cloudvaults.in';
+import { VPS_CDN_URL } from '@/lib/config';
 
 /**
  * CDNPreconnect - Renders preconnect and dns-prefetch hints for the VPS CDN.

@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { cn } from '@/lib/utils';
-
-const VPS_CDN_URL = 'https://cloudvaults.in';
+import { vpsProcessedUrl } from '@/lib/config';
 
 interface SpritePreviewProps {
   /** File ID used to construct sprite URL */
@@ -40,9 +39,7 @@ export const SpritePreview = memo(function SpritePreview({
   const preloadedRef = useRef(false);
 
   // Construct sprite URL from storage path
-  const userId = storagePath.split('/')[0];
-  const baseName = storagePath.split('/').pop()?.replace(/\.[^.]+$/, '') || fileId;
-  const spriteUrl = `${VPS_CDN_URL}/api/files/${userId}/processed/${baseName}/sprite.webp`;
+  const spriteUrl = vpsProcessedUrl(storagePath, 'sprite.webp');
 
   // Preload sprite only when hover starts (not on mount)
   useEffect(() => {
