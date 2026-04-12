@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { PageTransition, staggerContainer, staggerItem } from "@/components/ui/PageTransition";
 import { supabase } from "@/integrations/supabase/client";
+import { edgeFunctionUrl } from "@/lib/config";
 import {
   HardDrive,
   Plus,

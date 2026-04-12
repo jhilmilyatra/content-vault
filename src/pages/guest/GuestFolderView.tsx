@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useGuestAuth } from '@/contexts/GuestAuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { SUPABASE_URL, SUPABASE_ANON_KEY, edgeFunctionUrl } from '@/lib/config';
 import { formatFileSize } from '@/lib/fileService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -257,8 +258,8 @@ const GuestFolderView = () => {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         // Use fetch directly with proper blob handling to avoid data corruption
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+        const supabaseUrl = SUPABASE_URL;
+        const supabaseKey = SUPABASE_ANON_KEY;
         
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
@@ -533,7 +534,7 @@ const GuestFolderView = () => {
                           ) : file.mime_type.startsWith('image/') ? (
                             <div className="w-full aspect-square">
                               <LazyImage
-                                src={`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/guest-file-proxy?guestId=${guest?.id}&storagePath=${encodeURIComponent(file.storage_path)}`}
+                                src={`${edgeFunctionUrl('guest-file-proxy')}?guestId=${guest?.id}&storagePath=${encodeURIComponent(file.storage_path)}`}
                                 alt={file.name}
                                 aspectRatio="square"
                                 placeholderColor="rgba(236,72,153,0.1)"
@@ -606,7 +607,7 @@ const GuestFolderView = () => {
                             ) : file.mime_type.startsWith('image/') ? (
                               <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg overflow-hidden flex-shrink-0">
                                 <LazyImage
-                                  src={`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/guest-file-proxy?guestId=${guest?.id}&storagePath=${encodeURIComponent(file.storage_path)}`}
+                                  src={`${edgeFunctionUrl('guest-file-proxy')}?guestId=${guest?.id}&storagePath=${encodeURIComponent(file.storage_path)}`}
                                   alt={file.name}
                                   aspectRatio="square"
                                   placeholderColor="rgba(236,72,153,0.1)"
