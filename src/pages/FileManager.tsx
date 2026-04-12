@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { supabase } from "@/integrations/supabase/client";
+import { edgeFunctionUrl } from "@/lib/config";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -630,7 +631,7 @@ const FileManager = () => {
       }
 
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`,
+        `${edgeFunctionUrl('vps-file')}?path=${encodeURIComponent(file.storage_path)}&action=get`,
         {
           headers: {
             Authorization: `Bearer ${sessionData.session.access_token}`,
@@ -1421,7 +1422,7 @@ const FileManager = () => {
                       >
                         <VideoThumbnail
                           thumbnailUrl={file.thumbnail_url}
-                          fallbackUrl={file.thumbnail_url ? undefined : `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`}
+                          fallbackUrl={file.thumbnail_url ? undefined : `${edgeFunctionUrl('vps-file')}?path=${encodeURIComponent(file.storage_path)}&action=get`}
                           alt={file.name}
                           className="w-full h-full object-cover"
                           aspectRatio="square"
@@ -1459,7 +1460,7 @@ const FileManager = () => {
                         }`}
                       >
                         <LazyImage
-                          src={file.thumbnail_url || `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`}
+                          src={file.thumbnail_url || `${edgeFunctionUrl('vps-file')}?path=${encodeURIComponent(file.storage_path)}&action=get`}
                           alt={file.name}
                           className="w-full h-full object-cover"
                           aspectRatio="square"
