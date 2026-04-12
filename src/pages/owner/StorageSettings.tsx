@@ -113,6 +113,81 @@ const VPS_CONFIG = {
   totalCapacity: 200 * 1024 * 1024 * 1024, // 200GB
 };
 
+const VpsConfigPanel = () => {
+  const { loading: vpsLoading, saving, hasChanges, handleInputChange, handleSave, getSetting } = useSystemSettings('vps');
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) {
+        supabase.rpc('get_user_role', { _user_id: data.user.id }).then(({ data: role }) => {
+          setUserRole(role);
+        });
+      }
+    });
+  }, []);
+
+  const onSave = async () => {
+    const success = await handleSave('owner', userRole);
+    if (success) {
+      invalidateVpsConfig();
+    }
+  };
+
+  if (vpsLoading) {
+    return <SkeletonStats />;
+  }
+
+  return (
+    <motion.div variants={staggerItem} initial="hidden" animate="show">
+      <Card className="bg-white/[0.02] backdrop-blur-xl border-white/10 shadow-2xl">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center gap-2">
+            <Settings className="w-5 h-5 text-cyan-400" />
+            VPS Configuration
+          </CardTitle>
+          <CardDescription className="text-white/50">
+            Change the CDN URL and API key used to connect to your VPS storage server. Changes take effect immediately.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="vps_cdn_url" className="text-white/70">CDN URL</Label>
+            <Input
+              id="vps_cdn_url"
+              placeholder="https://cloudvaults.in"
+              value={getSetting('vps_cdn_url')}
+              onChange={(e) => handleInputChange('vps_cdn_url', e.target.value)}
+              className="bg-white/5 border-white/10 text-white placeholder:text-white/30 font-mono"
+            />
+            <p className="text-xs text-white/40">The HTTPS domain that proxies your VPS (e.g. Cloudflare tunnel or custom domain).</p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="vps_api_key" className="text-white/70">API Key</Label>
+            <Input
+              id="vps_api_key"
+              type="password"
+              placeholder="Your VPS API key"
+              value={getSetting('vps_api_key')}
+              onChange={(e) => handleInputChange('vps_api_key', e.target.value)}
+              className="bg-white/5 border-white/10 text-white placeholder:text-white/30 font-mono"
+            />
+            <p className="text-xs text-white/40">Must match the VPS_STORAGE_API_KEY env var on your Docker container.</p>
+          </div>
+          <Button
+            onClick={onSave}
+            disabled={saving || !hasChanges}
+            className="gap-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white border-0"
+          >
+            {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {saving ? 'Saving...' : 'Save Changes'}
+          </Button>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+};
+
 const StorageSettings = () => {
   const [nodes, setNodes] = useState<StorageNode[]>([
     {
