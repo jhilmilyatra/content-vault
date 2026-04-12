@@ -52,12 +52,14 @@ if (!fs.existsSync(STORAGE_PATH)) {
 // NO HLS - Pure MP4 streaming like YouTube
 const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
 
-// Web-compatible 480p transcoding config (H.264 + AAC)
-const WEB_TRANSCODE_CONFIG = {
-  height: 480,
-  videoBitrate: '1400k',
-  audioBitrate: '96k'
+// Multi-quality transcoding configs (H.264 + AAC)
+const TRANSCODE_CONFIGS = {
+  '360p': { height: 360, videoBitrate: '800k', audioBitrate: '64k' },
+  '480p': { height: 480, videoBitrate: '1400k', audioBitrate: '96k' },
 };
+
+// Legacy alias
+const WEB_TRANSCODE_CONFIG = TRANSCODE_CONFIGS['480p'];
 
 /**
  * Get video resolution using ffprobe
@@ -281,29 +283,28 @@ async function sendThumbnailCallback(userId, fileName, thumbnailResult, animated
 }
 
 /**
- * Transcode to web-compatible 480p MP4 (H.264 + AAC)
- * This creates a browser-compatible MP4 for playback fallback
+ * Transcode to a specific quality MP4 (H.264 + AAC)
+ * @param {string} quality - e.g. '360p', '480p'
  */
-function transcodeToWebMp4(fullPath, outputDir, baseName, sourceResolution) {
+function transcodeToQuality(fullPath, outputDir, baseName, sourceResolution, quality) {
+  const config = TRANSCODE_CONFIGS[quality];
+  if (!config) return Promise.reject({ error: `Unknown quality: ${quality}` });
+
   return new Promise((resolve, reject) => {
     const { exec } = require('child_process');
     
-    const outputMp4 = path.join(outputDir, `480p.mp4`);
+    const outputMp4 = path.join(outputDir, `${quality}.mp4`);
     
-    // Calculate width maintaining aspect ratio
-    const targetHeight = Math.min(480, sourceResolution.height);
+    const targetHeight = Math.min(config.height, sourceResolution.height);
     const aspectRatio = sourceResolution.width / sourceResolution.height;
     const targetWidth = Math.round(targetHeight * aspectRatio);
-    // Ensure width is even for h264
     const width = targetWidth % 2 === 0 ? targetWidth : targetWidth + 1;
     
-    // Transcode to web-compatible MP4 (H.264 main profile + AAC)
-    // -movflags +faststart enables progressive download for instant playback
     const ffmpegCmd = `ffmpeg -i "${fullPath}" \
-      -c:v libx264 -preset fast -b:v ${WEB_TRANSCODE_CONFIG.videoBitrate} \
+      -c:v libx264 -preset fast -b:v ${config.videoBitrate} \
       -profile:v main -level 4.0 \
       -vf "scale=${width}:${targetHeight}" \
-      -c:a aac -b:a ${WEB_TRANSCODE_CONFIG.audioBitrate} \
+      -c:a aac -b:a ${config.audioBitrate} \
       -movflags +faststart \
       -y "${outputMp4}" 2>&1`;
     
@@ -314,11 +315,51 @@ function transcodeToWebMp4(fullPath, outputDir, baseName, sourceResolution) {
         const stat = fs.statSync(outputMp4);
         resolve({ 
           path: outputMp4,
-          fileName: '480p.mp4',
+          fileName: `${quality}.mp4`,
+          quality,
           width,
           height: targetHeight,
           size: stat.size
         });
+      }
+    });
+  });
+}
+
+// Legacy wrapper
+function transcodeToWebMp4(fullPath, outputDir, baseName, sourceResolution) {
+  return transcodeToQuality(fullPath, outputDir, baseName, sourceResolution, '480p');
+}
+
+/**
+ * Remux original video to faststart MP4 (no re-encode, just copy streams)
+ * If already MP4 with faststart, just symlink. Otherwise remux.
+ */
+function prepareOriginalQuality(fullPath, outputDir, baseName, ext) {
+  return new Promise((resolve) => {
+    const { exec } = require('child_process');
+    const outputMp4 = path.join(outputDir, `original.mp4`);
+
+    // If source is already .mp4, just remux with faststart (very fast, no re-encode)
+    const ffmpegCmd = `ffmpeg -i "${fullPath}" -c copy -movflags +faststart -y "${outputMp4}" 2>&1`;
+    
+    exec(ffmpegCmd, { maxBuffer: 50 * 1024 * 1024 }, (error) => {
+      if (error) {
+        // Fallback: create symlink to original file
+        try {
+          if (fs.existsSync(outputMp4)) fs.unlinkSync(outputMp4);
+          fs.symlinkSync(fullPath, outputMp4);
+          const stat = fs.statSync(fullPath);
+          console.log(`🔗 Symlinked original: ${(stat.size / 1024 / 1024).toFixed(2)} MB`);
+          resolve({ path: outputMp4, fileName: 'original.mp4', quality: 'original', size: stat.size });
+        } catch (e) {
+          console.warn('Could not prepare original quality:', e.message);
+          resolve(null);
+        }
+      } else {
+        const stat = fs.statSync(outputMp4);
+        console.log(`📦 Original remuxed with faststart: ${(stat.size / 1024 / 1024).toFixed(2)} MB`);
+        resolve({ path: outputMp4, fileName: 'original.mp4', quality: 'original', size: stat.size });
       }
     });
   });
@@ -400,25 +441,57 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
         console.warn('Sprite strip generation skipped:', e.message);
       }
       
-      // Transcode to 480p web-compatible MP4 if source is larger
+      // === Multi-quality transcode pipeline ===
+      const availableQualities = [];
+      const ext = path.extname(fileName).toLowerCase();
+      
+      // 1. Prepare original quality (remux with faststart)
+      console.log(`📦 Preparing original quality...`);
+      fs.writeFileSync(lockFile, JSON.stringify({ 
+        started: new Date().toISOString(),
+        status: 'preparing_original',
+        progress: 35
+      }));
+      const originalResult = await prepareOriginalQuality(fullPath, processedDir, baseName, ext);
+      if (originalResult) {
+        availableQualities.push({ name: 'original', size: originalResult.size });
+        console.log(`✅ Original quality ready: ${(originalResult.size / 1024 / 1024).toFixed(2)} MB`);
+      }
+      
+      // 2. Transcode to 480p if source is larger than 480p
       let webMp4Result = null;
       if (sourceRes.height > 480) {
-        console.log(`🎯 Transcoding to 480p web-compatible MP4...`);
+        console.log(`🎯 Transcoding to 480p...`);
         fs.writeFileSync(lockFile, JSON.stringify({ 
           started: new Date().toISOString(),
           status: 'transcoding_480p',
-          progress: 40
+          progress: 50
         }));
-        
         try {
-          webMp4Result = await transcodeToWebMp4(fullPath, processedDir, baseName, sourceRes);
+          webMp4Result = await transcodeToQuality(fullPath, processedDir, baseName, sourceRes, '480p');
+          availableQualities.push({ name: '480p', size: webMp4Result.size });
           console.log(`✅ 480p MP4 created: ${(webMp4Result.size / 1024 / 1024).toFixed(2)} MB`);
         } catch (err) {
           console.error(`⚠️ 480p transcode failed:`, err.error);
-          // Continue without 480p - original will be used
         }
-      } else {
-        console.log(`📹 Source is ${sourceRes.height}p - skipping 480p transcode`);
+      }
+      
+      // 3. Transcode to 360p if source is larger than 360p
+      let web360Result = null;
+      if (sourceRes.height > 360) {
+        console.log(`🎯 Transcoding to 360p...`);
+        fs.writeFileSync(lockFile, JSON.stringify({ 
+          started: new Date().toISOString(),
+          status: 'transcoding_360p',
+          progress: 70
+        }));
+        try {
+          web360Result = await transcodeToQuality(fullPath, processedDir, baseName, sourceRes, '360p');
+          availableQualities.push({ name: '360p', size: web360Result.size });
+          console.log(`✅ 360p MP4 created: ${(web360Result.size / 1024 / 1024).toFixed(2)} MB`);
+        } catch (err) {
+          console.error(`⚠️ 360p transcode failed:`, err.error);
+        }
       }
       
       // Remove lock file and create success marker
@@ -429,7 +502,10 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
       fs.writeFileSync(completeMarker, JSON.stringify({
         completed: new Date().toISOString(),
         sourceResolution: `${sourceRes.width}x${sourceRes.height}`,
+        qualities: availableQualities.map(q => q.name),
         has480p: webMp4Result !== null,
+        has360p: web360Result !== null,
+        hasOriginal: originalResult !== null,
         thumbnails: {
           thumbnail: thumbnailResult.thumbnailUrl,
           poster: thumbnailResult.posterUrl,
@@ -438,10 +514,10 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
         }
       }));
       
-      console.log(`🎉 Video processing complete: ${userId}/${baseName}`);
+      console.log(`🎉 Video processing complete: ${userId}/${baseName} (qualities: ${availableQualities.map(q => q.name).join(', ')})`);
       
-      // Send callback to update database with thumbnail URLs
-      await sendThumbnailCallback(userId, fileName, thumbnailResult, animatedResult, webMp4Result ? [{ name: '480p' }] : []);
+      // Send callback to update database with thumbnail URLs and quality info
+      await sendThumbnailCallback(userId, fileName, thumbnailResult, animatedResult, availableQualities);
       
     } catch (error) {
       console.error(`❌ Video processing failed for ${fileName}:`, error.message || error);
