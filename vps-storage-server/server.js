@@ -386,6 +386,20 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
         console.warn('Animated preview generation skipped:', e.message);
       }
       
+      // Generate sprite strip for hover previews (10-frame WebP)
+      console.log(`🎞️ Generating sprite strip...`);
+      fs.writeFileSync(lockFile, JSON.stringify({ 
+        started: new Date().toISOString(),
+        status: 'generating_sprite',
+        progress: 30
+      }));
+      let spriteResult = { sprite: null, spriteUrl: null };
+      try {
+        spriteResult = await generateSpriteStrip(fullPath, processedDir, baseName);
+      } catch (e) {
+        console.warn('Sprite strip generation skipped:', e.message);
+      }
+      
       // Transcode to 480p web-compatible MP4 if source is larger
       let webMp4Result = null;
       if (sourceRes.height > 480) {
