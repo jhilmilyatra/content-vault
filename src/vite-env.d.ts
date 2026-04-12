@@ -1,10 +1,6 @@
 /// <reference types="vite/client" />
 
-// Polyfill NodeJS namespace for timer types used across the app
-declare global {
-  namespace NodeJS {
-    interface Timeout extends ReturnType<typeof setTimeout> {}
-  }
+declare namespace NodeJS {
+  type Timeout = ReturnType<typeof globalThis.setTimeout>;
+  type Timer = ReturnType<typeof globalThis.setTimeout>;
 }
-
-export {};
