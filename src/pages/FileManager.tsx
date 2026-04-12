@@ -188,7 +188,7 @@ const FileManager = () => {
   const isMobile = useIsMobile();
   const { isProcessing: isThumbnailProcessing } = useThumbnailProcessing();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
+  const { onHoverStart: prefetchOnHover, onHoverEnd: prefetchOnHoverEnd } = useHoverPrefetch();
   // Scroll container ref for prefetching
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
