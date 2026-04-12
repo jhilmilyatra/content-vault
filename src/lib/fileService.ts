@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { VPS_API_URL, VPS_API_KEY, SUPABASE_URL, edgeFunctionUrl } from "@/lib/config";
+import { getVpsApiUrlSync, getVpsApiKeySync, SUPABASE_URL, edgeFunctionUrl } from "@/lib/config";
 import { getCachedUrl, setCachedUrl, clearUrlCache } from "@/lib/urlCache";
 import { warmVideoStreamUrl, isVideoFile } from "@/lib/videoStreamCache";
 import { extractVideoMetadata, updateVideoMetadata, isVideo } from "@/lib/videoMetadata";
@@ -271,10 +271,13 @@ class AdaptiveSpeedTracker {
 
 // VPS configuration - direct connection for maximum upload speed
 // Uploads go directly to VPS, bypassing edge function middleman
-const PRIMARY_VPS_CONFIG = {
-  endpoint: VPS_API_URL,
-  apiKey: VPS_API_KEY,
-};
+// Dynamic getter so values update after DB fetch
+function getPrimaryVpsConfig() {
+  return {
+    endpoint: getVpsApiUrlSync(),
+    apiKey: getVpsApiKeySync(),
+  };
+}
 
 const STORAGE_NODES_KEY = "vps_storage_nodes";
 
