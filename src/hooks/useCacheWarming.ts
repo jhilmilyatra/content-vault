@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { getCachedUrl, setCachedUrl } from '@/lib/urlCache';
 import { supabase } from '@/integrations/supabase/client';
+import { edgeFunctionUrl } from '@/lib/config';
 
 interface FileForWarming {
   id: string;
@@ -37,7 +38,7 @@ export function useCacheWarming(files: FileForWarming[], enabled: boolean = true
       if (!sessionData.session) return;
 
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(storagePath)}&action=url`,
+         `${edgeFunctionUrl('vps-file')}?path=${encodeURIComponent(storagePath)}&action=url`,
         {
           headers: {
             Authorization: `Bearer ${sessionData.session.access_token}`,
@@ -50,7 +51,7 @@ export function useCacheWarming(files: FileForWarming[], enabled: boolean = true
         let finalUrl: string;
         
         if (result.storage === "vps") {
-          finalUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(storagePath)}&action=get`;
+          finalUrl = `${edgeFunctionUrl('vps-file')}?path=${encodeURIComponent(storagePath)}&action=get`;
         } else {
           finalUrl = result.url;
         }
@@ -193,7 +194,7 @@ export async function warmCacheForPaths(storagePaths: string[]): Promise<void> {
     uncachedPaths.slice(0, BATCH_SIZE).map(async (storagePath) => {
       try {
         const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(storagePath)}&action=url`,
+          `${edgeFunctionUrl('vps-file')}?path=${encodeURIComponent(storagePath)}&action=url`,
           {
             headers: {
               Authorization: `Bearer ${sessionData.session.access_token}`,
@@ -204,7 +205,7 @@ export async function warmCacheForPaths(storagePaths: string[]): Promise<void> {
         if (response.ok) {
           const result = await response.json();
           const finalUrl = result.storage === "vps"
-            ? `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(storagePath)}&action=get`
+            ? `${edgeFunctionUrl('vps-file')}?path=${encodeURIComponent(storagePath)}&action=get`
             : result.url;
           
           setCachedUrl(storagePath, finalUrl, 'url');
