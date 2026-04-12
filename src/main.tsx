@@ -5,7 +5,6 @@ import "./index.css";
 import { initSecurityMeasures } from "./lib/security";
 import { registerServiceWorker, preloadCriticalResources } from "./lib/cache";
 import { getVpsCdnUrl } from "./lib/config";
-import { registerServiceWorker, preloadCriticalResources } from "./lib/cache";
 
 // Initialize security measures in production
 initSecurityMeasures();
