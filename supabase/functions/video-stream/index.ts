@@ -192,63 +192,102 @@ Deno.serve(async (req) => {
       type: "mp4",
     };
 
-    // Check if 480p web-compatible MP4 exists in 'processed' folder
+    // Check which quality variants exist in the processed folder
     const fileName = finalStoragePath!.split('/').pop() || '';
     const baseName = fileName.replace(/\.[^.]+$/, '');
     const userId = finalStoragePath!.split('/')[0];
-    const transcodedPath = `${userId}/processed/${baseName}/480p.mp4`;
     
-    // Check if 480p transcoded version exists on VPS
-    let useTranscoded = false;
+    // Quality variants to check: original, 480p, 360p
+    const qualityPaths: Record<string, string> = {
+      original: `${userId}/processed/${baseName}/original.mp4`,
+      '480p': `${userId}/processed/${baseName}/480p.mp4`,
+      '360p': `${userId}/processed/${baseName}/360p.mp4`,
+    };
+    
+    const availableQualities: string[] = [];
+    
     if (hasVps) {
-      try {
-        const vpsApiKey = Deno.env.get("VPS_API_KEY") || "";
-        const checkUrl = `${vpsEndpoint}/verify-file`;
-        const checkResp = await fetch(checkUrl, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${vpsApiKey}`
-          },
-          body: JSON.stringify({ path: transcodedPath }),
-        });
-        if (checkResp.ok) {
-          const checkData = await checkResp.json();
-          useTranscoded = checkData.exists === true;
+      // Check all qualities in parallel
+      const checks = await Promise.allSettled(
+        Object.entries(qualityPaths).map(async ([quality, qPath]) => {
+          try {
+            const checkResp = await fetch(`${vpsEndpoint}/verify-file`, {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${vpsApiKey}`
+              },
+              body: JSON.stringify({ path: qPath }),
+            });
+            if (checkResp.ok) {
+              const checkData = await checkResp.json();
+              if (checkData.exists === true) return quality;
+            }
+          } catch (e) {
+            console.log(`Could not check ${quality}:`, e);
+          }
+          return null;
+        })
+      );
+      
+      for (const result of checks) {
+        if (result.status === 'fulfilled' && result.value) {
+          availableQualities.push(result.value);
         }
-      } catch (e) {
-        console.log("Could not check for transcoded version:", e);
       }
     }
 
-    // Primary: Use original MP4 for full quality
-    // Fallback: Use 480p transcoded if browser can't play original codec
-    if (hasCdnUrl) {
-      streamUrls.url = await generateSignedStreamUrl(vpsCdnUrl, finalStoragePath!, user.id, 43200);
-      streamUrls.type = "cdn";
+    // Build quality URLs
+    const qualityUrls: Array<{ label: string; src: string; isOriginal?: boolean }> = [];
+    const baseUrl = hasCdnUrl ? vpsCdnUrl : vpsEndpoint;
+
+    // Always include direct original file as a quality option (the raw uploaded file)
+    if (hasCdnUrl || hasVps) {
+      const originalDirectUrl = await generateSignedStreamUrl(baseUrl, finalStoragePath!, user.id, 43200);
       
-      // If 480p exists, provide it as fallback for codec compatibility
-      if (useTranscoded) {
-        streamUrls.fallbackUrl = await generateSignedStreamUrl(vpsCdnUrl, transcodedPath, user.id, 43200);
+      // If we have a remuxed original.mp4 in processed, use that (has faststart)
+      if (availableQualities.includes('original')) {
+        const origUrl = await generateSignedStreamUrl(baseUrl, qualityPaths.original, user.id, 43200);
+        qualityUrls.push({ label: 'Original', src: origUrl, isOriginal: true });
+      } else {
+        qualityUrls.push({ label: 'Original', src: originalDirectUrl, isOriginal: true });
       }
-    } else if (hasVps) {
-      streamUrls.url = await generateSignedStreamUrl(vpsEndpoint, finalStoragePath!, user.id, 43200);
-      streamUrls.type = "vps-direct";
       
-      if (useTranscoded) {
-        streamUrls.fallbackUrl = await generateSignedStreamUrl(vpsEndpoint, transcodedPath, user.id, 43200);
+      // Add 480p if available
+      if (availableQualities.includes('480p')) {
+        const url480 = await generateSignedStreamUrl(baseUrl, qualityPaths['480p'], user.id, 43200);
+        qualityUrls.push({ label: '480p', src: url480 });
       }
+      
+      // Add 360p if available
+      if (availableQualities.includes('360p')) {
+        const url360 = await generateSignedStreamUrl(baseUrl, qualityPaths['360p'], user.id, 43200);
+        qualityUrls.push({ label: '360p', src: url360 });
+      }
+      
+      // Primary URL = best available quality (original > 480p > 360p)
+      streamUrls.url = qualityUrls[0]?.src || originalDirectUrl;
+      streamUrls.type = hasCdnUrl ? "cdn" : "vps-direct";
+      
+      // Fallback = lowest quality for codec issues
+      if (qualityUrls.length > 1) {
+        streamUrls.fallbackUrl = qualityUrls[qualityUrls.length - 1].src;
+      }
+      
+      // Include all qualities for the quality selector
+      streamUrls.qualities = qualityUrls;
     }
 
-    // If no 480p fallback, try Supabase storage as last resort
-    if (!streamUrls.fallbackUrl) {
+    // If no VPS qualities, try Supabase storage as last resort
+    if (!streamUrls.url) {
       try {
         const { data: supabaseData, error: supabaseError } = await supabase.storage
           .from("user-files")
           .createSignedUrl(finalStoragePath!, 43200);
         
         if (!supabaseError && supabaseData?.signedUrl) {
-          streamUrls.fallbackUrl = supabaseData.signedUrl;
+          streamUrls.url = supabaseData.signedUrl;
+          streamUrls.qualities = [{ label: 'Original', src: supabaseData.signedUrl, isOriginal: true }];
         }
       } catch (e) {
         console.log("Supabase fallback not available:", e);
