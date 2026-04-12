@@ -84,6 +84,13 @@ export function getVpsApiKeySync(): string {
 export const VPS_CDN_URL = FALLBACK_VPS_CDN_URL;
 /** @deprecated Use getVpsApiKey() instead */
 export const VPS_API_KEY = FALLBACK_VPS_API_KEY;
+/** @deprecated Use getVpsCdnUrl() + '/api' instead */
+export const VPS_API_URL = `${FALLBACK_VPS_CDN_URL}/api`;
+
+// ─── Build VPS API URL dynamically ──────────────────────────
+export function getVpsApiUrlSync(): string {
+  return `${getVpsCdnUrlSync()}/api`;
+}
 
 // ─── Supabase (from Vite env) ────────────────────────────────
 export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
