@@ -1,6 +1,5 @@
 import { useRef, useCallback } from 'react';
-
-const VPS_CDN_URL = 'https://cloudvaults.in';
+import { vpsProcessedUrl } from '@/lib/config';
 const PREFETCH_DELAY_MS = 500;
 const PREFETCH_SIZE = 1 * 1024 * 1024; // 1MB
 
@@ -32,7 +31,7 @@ export function useHoverPrefetch() {
     prefetchTimerRef.current = setTimeout(() => {
       const userId = storagePath.split('/')[0];
       const baseName = storagePath.split('/').pop()?.replace(/\.[^.]+$/, '') || '';
-      const videoUrl = `${VPS_CDN_URL}/api/files/${userId}/processed/${baseName}/480p.mp4`;
+      const videoUrl = vpsProcessedUrl(storagePath, '480p.mp4');
 
       // Range request for first 1MB to warm CDN cache
       fetch(videoUrl, {

@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { PageTransition, staggerContainer, staggerItem } from "@/components/ui/PageTransition";
 import { supabase } from "@/integrations/supabase/client";
+import { edgeFunctionUrl } from "@/lib/config";
 import {
   HardDrive,
   Plus,
@@ -154,7 +155,7 @@ const StorageSettings = () => {
       }
 
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-owner-stats?action=all-users`,
+        `${edgeFunctionUrl('vps-owner-stats')}?action=all-users`,
         {
           headers: {
             Authorization: `Bearer ${sessionData.session.access_token}`,
@@ -206,7 +207,7 @@ const StorageSettings = () => {
       }
 
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-owner-stats?action=user&userId=${userId}`,
+        `${edgeFunctionUrl('vps-owner-stats')}?action=user&userId=${userId}`,
         {
           headers: {
             Authorization: `Bearer ${sessionData.session.access_token}`,

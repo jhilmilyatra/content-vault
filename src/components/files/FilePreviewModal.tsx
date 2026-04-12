@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { FileItem, formatFileSize } from "@/lib/fileService";
 import { supabase } from "@/integrations/supabase/client";
+import { edgeFunctionUrl } from "@/lib/config";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { 
   Download, X, File, Loader2,
@@ -133,7 +134,7 @@ export function FilePreviewModal({
       if (baseFileType === 'mp4') {
         try {
           const videoStreamResponse = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/video-stream?id=${file.id}`,
+            `${edgeFunctionUrl('video-stream')}?id=${file.id}`,
             {
               headers: {
                 Authorization: `Bearer ${sessionData.session.access_token}`,
@@ -165,7 +166,7 @@ export function FilePreviewModal({
 
       // Fallback: Get base file URL from VPS
       const fileResponse = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=url`,
+        `${edgeFunctionUrl('vps-file')}?path=${encodeURIComponent(file.storage_path)}&action=url`,
         {
           headers: {
             Authorization: `Bearer ${sessionData.session.access_token}`,
@@ -210,7 +211,7 @@ export function FilePreviewModal({
           setStream({ mode: 'mp4', url: fallbackUrl, fallbackUrl: baseUrl, vpsOnline: false });
         } else if (isCloudfareTunnel) {
           // Use edge function proxy as fallback
-          const proxyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=get`;
+          const proxyUrl = `${edgeFunctionUrl('vps-file')}?path=${encodeURIComponent(file.storage_path)}&action=get`;
           console.log('⚠️ Using edge function proxy for video');
           setStream({ mode: 'mp4', url: proxyUrl, fallbackUrl: baseUrl, vpsOnline });
         } else {
@@ -318,7 +319,7 @@ export function FilePreviewModal({
       
       try {
         const urlResponse = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(file.storage_path)}&action=url`,
+          `${edgeFunctionUrl('vps-file')}?path=${encodeURIComponent(file.storage_path)}&action=url`,
           {
             headers: {
               Authorization: `Bearer ${sessionData.session.access_token}`,

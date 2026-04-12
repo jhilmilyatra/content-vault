@@ -5,6 +5,8 @@
  * Uses HTML5 video element for cross-browser compatibility.
  */
 
+import { edgeFunctionUrl } from "@/lib/config";
+
 export interface VideoMetadata {
   duration: number; // seconds
   width: number;
@@ -154,7 +156,7 @@ export async function uploadThumbnail(
   authToken: string
 ): Promise<string | null> {
   try {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    // Using centralized config
     
     // Create a thumbnail filename based on the video storage path
     const baseName = storagePath.replace(/\.[^.]+$/, '');
@@ -165,7 +167,7 @@ export async function uploadThumbnail(
     const bytes = new Uint8Array(arrayBuffer);
     const base64 = uint8ArrayToBase64(bytes);
 
-    const response = await fetch(`${supabaseUrl}/functions/v1/vps-upload`, {
+    const response = await fetch(edgeFunctionUrl('vps-upload'), {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${authToken}`,
@@ -204,9 +206,7 @@ export async function updateVideoMetadata(
   authToken: string
 ): Promise<boolean> {
   try {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-
-    const response = await fetch(`${supabaseUrl}/functions/v1/update-video-metadata`, {
+    const response = await fetch(edgeFunctionUrl('update-video-metadata'), {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${authToken}`,

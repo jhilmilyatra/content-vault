@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { VPS_API_URL, VPS_API_KEY, SUPABASE_URL, edgeFunctionUrl } from "@/lib/config";
 import { getCachedUrl, setCachedUrl, clearUrlCache } from "@/lib/urlCache";
 import { warmVideoStreamUrl, isVideoFile } from "@/lib/videoStreamCache";
 import { extractVideoMetadata, updateVideoMetadata, isVideo } from "@/lib/videoMetadata";
@@ -271,8 +272,8 @@ class AdaptiveSpeedTracker {
 // VPS configuration - direct connection for maximum upload speed
 // Uploads go directly to VPS, bypassing edge function middleman
 const PRIMARY_VPS_CONFIG = {
-  endpoint: "https://cloudvaults.in/api",
-  apiKey: "kARTOOS@007",
+  endpoint: VPS_API_URL,
+  apiKey: VPS_API_KEY,
 };
 
 const STORAGE_NODES_KEY = "vps_storage_nodes";
@@ -488,8 +489,7 @@ async function extractAndUploadImageMetadata(
     console.log(`📊 Image metadata: ${metadata.width}x${metadata.height}`);
 
     // Update file record with thumbnail (using video metadata endpoint)
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const response = await fetch(`${supabaseUrl}/functions/v1/update-video-metadata`, {
+    const response = await fetch(edgeFunctionUrl('update-video-metadata'), {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${authToken}`,
@@ -769,7 +769,7 @@ const edgeFunctionUpload = async (
   authToken: string,
   onProgress?: (progress: UploadProgress) => void
 ): Promise<{ path: string; fileName: string; fileRecord?: FileItem }> => {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseUrl = SUPABASE_URL;
 
   const formData = new FormData();
   formData.append("file", file);
@@ -1429,7 +1429,7 @@ export const getFileUrl = async (storagePath: string): Promise<string> => {
   }
 
   const response = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(storagePath)}&action=url`,
+    `${SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(storagePath)}&action=url`,
     {
       headers: {
         Authorization: `Bearer ${sessionData.session.access_token}`,
@@ -1446,7 +1446,7 @@ export const getFileUrl = async (storagePath: string): Promise<string> => {
   // Build the final URL
   let finalUrl: string;
   if (result.storage === "vps") {
-    finalUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(storagePath)}&action=get`;
+    finalUrl = `${SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(storagePath)}&action=get`;
   } else {
     finalUrl = result.url;
   }

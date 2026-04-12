@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { edgeFunctionUrl } from "@/lib/config";
 import { getCachedVideoStreamUrl, warmVideoStreamUrl } from "@/lib/videoStreamCache";
 
 interface StreamUrls {
@@ -154,7 +155,7 @@ export function useVideoStream(
       if (storagePath) params.set("path", storagePath);
 
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/video-stream?${params}`,
+        `${edgeFunctionUrl('video-stream')}?${params}`,
         {
           headers: {
             Authorization: `Bearer ${session.access_token}`,
@@ -270,7 +271,7 @@ export async function getVideoStreamUrl(
     if (storagePath) params.set("path", storagePath);
 
     const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/video-stream?${params}`,
+      `${edgeFunctionUrl('video-stream')}?${params}`,
       {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
