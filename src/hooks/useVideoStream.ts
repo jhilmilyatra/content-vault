@@ -6,6 +6,8 @@ interface StreamUrls {
   url?: string;
   fallbackUrl?: string;
   type?: "cdn" | "vps-direct" | "mp4";
+  /** Quality options returned by the edge function */
+  qualities?: Array<{ label: string; src: string; isOriginal?: boolean }>;
   fileInfo?: {
     id: string;
     name: string;
