@@ -52,12 +52,14 @@ if (!fs.existsSync(STORAGE_PATH)) {
 // NO HLS - Pure MP4 streaming like YouTube
 const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
 
-// Web-compatible 480p transcoding config (H.264 + AAC)
-const WEB_TRANSCODE_CONFIG = {
-  height: 480,
-  videoBitrate: '1400k',
-  audioBitrate: '96k'
+// Multi-quality transcoding configs (H.264 + AAC)
+const TRANSCODE_CONFIGS = {
+  '360p': { height: 360, videoBitrate: '800k', audioBitrate: '64k' },
+  '480p': { height: 480, videoBitrate: '1400k', audioBitrate: '96k' },
 };
+
+// Legacy alias
+const WEB_TRANSCODE_CONFIG = TRANSCODE_CONFIGS['480p'];
 
 /**
  * Get video resolution using ffprobe
