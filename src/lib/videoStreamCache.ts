@@ -6,6 +6,7 @@
  */
 
 import { supabase } from "@/integrations/supabase/client";
+import { edgeFunctionUrl } from "@/lib/config";
 import { setCachedUrl, getCachedUrl } from "./urlCache";
 import { toast } from "@/hooks/use-toast";
 
@@ -56,7 +57,7 @@ export async function warmVideoStreamUrl(
     }
 
     const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/video-stream`,
+      edgeFunctionUrl('video-stream'),
       {
         method: 'POST',
         headers: {

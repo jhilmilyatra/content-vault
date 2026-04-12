@@ -5,6 +5,8 @@
  * Uses HTML5 video element for cross-browser compatibility.
  */
 
+import { edgeFunctionUrl } from "@/lib/config";
+
 export interface VideoMetadata {
   duration: number; // seconds
   width: number;
@@ -154,7 +156,7 @@ export async function uploadThumbnail(
   authToken: string
 ): Promise<string | null> {
   try {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseUrl = ''; // unused now
     
     // Create a thumbnail filename based on the video storage path
     const baseName = storagePath.replace(/\.[^.]+$/, '');
