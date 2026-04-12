@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { PageTransition, staggerContainer, staggerItem } from "@/components/ui/PageTransition";
 import { supabase } from "@/integrations/supabase/client";
-import { edgeFunctionUrl } from "@/lib/config";
+import { edgeFunctionUrl, invalidateVpsConfig } from "@/lib/config";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
 import {
   HardDrive,
   Plus,
@@ -24,6 +25,8 @@ import {
   Database,
   Cpu,
   Activity,
+  Settings,
+  Save,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -486,6 +489,9 @@ const StorageSettings = () => {
             <TabsTrigger value="nodes" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/60">
               Storage Nodes
             </TabsTrigger>
+            <TabsTrigger value="vps-config" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/60">
+              VPS Config
+            </TabsTrigger>
           </TabsList>
 
           {/* Overview Tab */}
@@ -773,6 +779,11 @@ const StorageSettings = () => {
                 </motion.div>
               ))}
             </motion.div>
+          </TabsContent>
+
+          {/* VPS Config Tab */}
+          <TabsContent value="vps-config" className="space-y-6">
+            <VpsConfigPanel />
           </TabsContent>
         </Tabs>
       </PageTransition>
