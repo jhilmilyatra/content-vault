@@ -1336,7 +1336,7 @@ const FileManager = () => {
               })}
 
               {/* Files */}
-              {filteredFiles.map((file) => {
+              {filteredFiles.map((file, index) => {
                 const IconComponent = getFileIconComponent(file.mime_type);
                 const isSelected = selectedFiles.includes(file.id);
                 
