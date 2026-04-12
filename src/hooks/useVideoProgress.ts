@@ -38,7 +38,7 @@ export function useVideoProgress(
   const [isLoading, setIsLoading] = useState(true);
   const lastSaveRef = useRef<number>(0);
   const pendingSaveRef = useRef<{ position: number; duration: number } | null>(null);
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load progress on mount
   useEffect(() => {
@@ -201,7 +201,7 @@ export function useGuestVideoProgress(
   const [isLoading, setIsLoading] = useState(true);
   const lastSaveRef = useRef<number>(0);
   const pendingSaveRef = useRef<{ position: number; duration: number } | null>(null);
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load progress on mount
   useEffect(() => {

@@ -16,9 +16,9 @@ export const useTypingIndicator = ({ chatType, targetId }: TypingIndicatorOption
   const { user } = useAuth();
   const [isTyping, setIsTyping] = useState(false);
   const [remoteTyping, setRemoteTyping] = useState(false);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingUpdateRef = useRef<number>(0);
-  const remoteTypingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const remoteTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const updateTypingStatus = useCallback(async (typing: boolean) => {
     if (!user || !targetId) return;

@@ -19,7 +19,7 @@ const MobileBottomNav = memo(({ items, maxVisibleItems = 5 }: MobileBottomNavPro
   const location = useLocation();
   const [isVisible, setIsVisible] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
-  const scrollTimeoutRef = useRef<NodeJS.Timeout>();
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   // Show/hide on scroll with smooth behavior
   useEffect(() => {

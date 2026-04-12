@@ -62,7 +62,7 @@ export function useVideoStream(
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileInfo, setFileInfo] = useState<StreamUrls["fileInfo"] | null>(null);
-  const keepAliveIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const keepAliveIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastKeepAliveRef = useRef<number>(0);
 
   const { autoFetch = true, enableKeepAlive = true } = options || {};

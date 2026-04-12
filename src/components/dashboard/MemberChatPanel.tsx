@@ -76,7 +76,7 @@ const MemberChatPanel = ({ isOpen, onClose, onOpen }: MemberChatPanelProps) => {
   // Typing indicators
   const [guestTyping, setGuestTyping] = useState(false);
   const [ownerTyping, setOwnerTyping] = useState(false);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);

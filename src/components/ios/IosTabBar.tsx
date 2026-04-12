@@ -20,7 +20,7 @@ const IosTabBar = memo(({ items, maxItems = 5 }: IosTabBarProps) => {
   const location = useLocation();
   const [isVisible, setIsVisible] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
-  const scrollTimeoutRef = useRef<NodeJS.Timeout>();
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   // Auto-hide on scroll down, show on scroll up
   useEffect(() => {
