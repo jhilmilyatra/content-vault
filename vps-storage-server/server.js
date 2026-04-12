@@ -434,6 +434,7 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
           thumbnail: thumbnailResult.thumbnailUrl,
           poster: thumbnailResult.posterUrl,
           animatedPreview: animatedResult.gifUrl,
+          sprite: spriteResult.spriteUrl,
         }
       }));
       
