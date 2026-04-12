@@ -25,6 +25,7 @@ import {
 import { GlassCard, GlassCardHeader } from '@/components/ios/GlassCard';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { edgeFunctionUrl } from '@/lib/config';
 import { getCacheStats, clearThumbnailCache } from '@/lib/thumbnailCache';
 import { broadcastCacheInvalidation } from '@/hooks/useCacheInvalidation';
 import { mediumHaptic, lightHaptic } from '@/lib/haptics';
@@ -258,7 +259,7 @@ const ContentManagement = () => {
       }
 
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/owner-delete-file`,
+        `${edgeFunctionUrl('owner-delete-file')}`,
         {
           method: 'DELETE',
           headers: {
@@ -336,7 +337,7 @@ const ContentManagement = () => {
     
     if (isVps) {
       const vpsPath = file.storage_path.replace('vps://', '');
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vps-file?path=${encodeURIComponent(vpsPath)}`;
+      const url = `${edgeFunctionUrl('vps-file')}?path=${encodeURIComponent(vpsPath)}`;
       setStreamUrl(url);
     } else {
       // For Telegram storage, use the storage path directly
