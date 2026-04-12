@@ -103,6 +103,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
+import { useHoverPrefetch } from "@/hooks/useHoverPrefetch";
 
 // Format duration in seconds to MM:SS or HH:MM:SS
 const formatDuration = (seconds: number): string => {
