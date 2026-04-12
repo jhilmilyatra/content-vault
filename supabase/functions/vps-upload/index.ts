@@ -6,8 +6,8 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const VPS_ENDPOINT = "https://cloudvaults.in/api";
-const VPS_API_KEY = "kARTOOS@007";
+const VPS_ENDPOINT = Deno.env.get("VPS_CDN_URL") || "https://cloudvaults.in";
+const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "kARTOOS@007";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
     vpsFormData.append("file", fileBlob, fileName);
     vpsFormData.append("userId", user.id);
 
-    const vpsResponse = await fetch(`${VPS_ENDPOINT}/upload`, {
+    const vpsResponse = await fetch(`${VPS_ENDPOINT}/api/upload`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${VPS_API_KEY}`,

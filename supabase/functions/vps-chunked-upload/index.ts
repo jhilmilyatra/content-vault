@@ -6,9 +6,9 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// Direct VPS storage - hardcoded for reliable uploads
-const VPS_ENDPOINT = "https://cloudvaults.in";
-const VPS_API_KEY = "kARTOOS@007";
+// VPS credentials from environment (fallback to hardcoded for safety)
+const VPS_ENDPOINT = Deno.env.get("VPS_CDN_URL") || "https://cloudvaults.in";
+const VPS_API_KEY = Deno.env.get("VPS_API_KEY") || "kARTOOS@007";
 
 // Normalize VPS endpoint for API calls - always use /api path
 function getVpsApiUrl(path: string): string {
