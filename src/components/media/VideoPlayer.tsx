@@ -85,7 +85,7 @@ export function VideoPlayer({
   // Double-tap seek
   const lastTapRef = useRef<{ time: number; x: number } | null>(null);
   const [seekIndicator, setSeekIndicator] = useState<{ side: 'left' | 'right' | 'center'; visible: boolean }>({ side: 'left', visible: false });
-  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
 

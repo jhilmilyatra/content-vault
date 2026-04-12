@@ -9,7 +9,7 @@ interface GuestTypingIndicatorOptions {
 export const useGuestTypingIndicator = ({ guestId, memberId }: GuestTypingIndicatorOptions) => {
   const [isTyping, setIsTyping] = useState(false);
   const [remoteTyping, setRemoteTyping] = useState(false);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const updateTypingStatus = useCallback(async (typing: boolean) => {
     if (!guestId || !memberId) return;

@@ -23,9 +23,9 @@ export function useVpsConnection() {
     nextRetryIn: null,
   });
 
-  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const checkIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const checkIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wasOfflineRef = useRef(false);
 
   const clearAllTimers = useCallback(() => {

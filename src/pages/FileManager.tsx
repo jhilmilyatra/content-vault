@@ -180,7 +180,7 @@ const FileManager = () => {
   // Mobile long-press action sheet state
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [actionSheetTarget, setActionSheetTarget] = useState<{ type: 'file' | 'folder'; item: FileItem | FolderItem } | null>(null);
-  const longPressTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const longPressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { user } = useAuth();
   const { toast } = useToast();

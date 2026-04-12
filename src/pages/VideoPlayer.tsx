@@ -82,7 +82,7 @@ export default function VideoPlayer() {
 
   // Auto-hide header after 3 seconds of inactivity
   useEffect(() => {
-    let timeout: NodeJS.Timeout;
+    let timeout: ReturnType<typeof setTimeout>;
     
     const handleMouseMove = () => {
       setShowHeader(true);

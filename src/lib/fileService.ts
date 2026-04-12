@@ -535,156 +535,6 @@ const uploadToVPSWithProgress = (
         return;
       }
 
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("userId", userId);
-
-      const xhr = new XMLHttpRequest();
-      const startTime = Date.now();
-      let lastLoaded = 0;
-      let lastTime = startTime;
-
-      // Track upload progress
-      xhr.upload.addEventListener("progress", (event) => {
-        if (event.lengthComputable && onProgress) {
-          const now = Date.now();
-          const timeDiff = (now - lastTime) / 1000; // seconds
-          const loadedDiff = event.loaded - lastLoaded;
-          
-          // Calculate speed (bytes per second)
-          const speed = timeDiff > 0 ? loadedDiff / timeDiff : 0;
-          
-          // Calculate remaining time
-          const remaining = event.total - event.loaded;
-          const remainingTime = speed > 0 ? remaining / speed : 0;
-          
-          lastLoaded = event.loaded;
-          lastTime = now;
-
-          onProgress({
-            loaded: event.loaded,
-            total: event.total,
-            percentage: Math.round((event.loaded / event.total) * 100),
-            speed,
-            remainingTime,
-            fileName: file.name,
-            status: 'uploading'
-          });
-        }
-      });
-
-      // Handle completion
-      xhr.addEventListener("load", async () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const vpsResult = JSON.parse(xhr.responseText);
-            console.log('📦 VPS upload complete:', vpsResult.path);
-            
-            // Update progress to processing (creating DB record)
-            if (onProgress) {
-              onProgress({
-                loaded: file.size,
-                total: file.size,
-                percentage: 100,
-                speed: 0,
-                remainingTime: 0,
-                fileName: file.name,
-                status: 'processing'
-              });
-            }
-            
-            // Create file record in database
-            const { data: fileRecord, error: dbError } = await supabase
-              .from("files")
-              .insert({
-                user_id: userId,
-                folder_id: folderId,
-                name: vpsResult.fileName,
-                original_name: file.name,
-                mime_type: file.type || "application/octet-stream",
-                size_bytes: file.size,
-                storage_path: vpsResult.path,
-              })
-              .select()
-              .single();
-
-            if (dbError) {
-              console.error("Database error:", dbError);
-              reject(new Error(`Failed to create file record: ${dbError.message}`));
-              return;
-            }
-            
-            const uploadedFile = fileRecord as FileItem;
-            
-            if (onProgress) {
-              onProgress({
-                loaded: file.size,
-                total: file.size,
-                percentage: 100,
-                speed: 0,
-                remainingTime: 0,
-                fileName: file.name,
-                status: 'complete'
-              });
-            }
-            
-            // For video files: extract metadata, generate thumbnail, and warm stream
-            if (isVideoFile(uploadedFile.mime_type, uploadedFile.original_name)) {
-              // Extract metadata and thumbnail in background
-              extractAndUploadVideoMetadata(file, uploadedFile.id, sessionData.session!.access_token)
-                .catch((err) => console.warn('Video metadata extraction failed:', err));
-              
-              // Warm stream URL and CDN edge cache for instant playback
-              warmVideoStreamUrl(uploadedFile.id, uploadedFile.storage_path, { 
-                priority: 'high', 
-                showToast: true,
-                warmEdge: true 
-              })
-                .then(() => console.log('📹 Video stream pre-warmed after upload'))
-                .catch(() => {}); // Silent fail - not critical
-            }
-            
-            // For image files: extract thumbnail in background
-            if (isImage(uploadedFile.mime_type, uploadedFile.original_name)) {
-              extractAndUploadImageMetadata(file, uploadedFile.id, sessionData.session!.access_token)
-                .catch((err) => console.warn('Image metadata extraction failed:', err));
-            }
-            
-            resolve(uploadedFile);
-          } catch (e) {
-            console.error('Parse error:', e);
-            reject(new Error("Failed to parse VPS response"));
-          }
-        } else {
-          try {
-            const errorData = JSON.parse(xhr.responseText);
-            reject(new Error(errorData.error || `Upload failed: ${xhr.status}`));
-          } catch {
-            reject(new Error(`Upload failed: ${xhr.status}`));
-          }
-        }
-      });
-
-      // Handle errors
-      xhr.addEventListener("error", () => {
-        if (onProgress) {
-          onProgress({
-            loaded: 0,
-            total: file.size,
-            percentage: 0,
-            speed: 0,
-            remainingTime: 0,
-            fileName: file.name,
-            status: 'error'
-          });
-        }
-        reject(new Error("Network error during upload"));
-      });
-
-      xhr.addEventListener("abort", () => {
-        reject(new Error("Upload aborted"));
-      });
-
       // Initial progress - preparing
       if (onProgress) {
         onProgress({
@@ -698,14 +548,270 @@ const uploadToVPSWithProgress = (
         });
       }
 
-      // DIRECT VPS UPLOAD - bypasses edge function for maximum speed
-      xhr.open("POST", `${PRIMARY_VPS_CONFIG.endpoint}/upload`);
-      xhr.setRequestHeader("Authorization", `Bearer ${PRIMARY_VPS_CONFIG.apiKey}`);
-      xhr.send(formData);
+      // Try direct VPS upload first, fallback to edge function
+      let vpsResult: { path: string; fileName: string } | null = null;
+      let uploadMethod = 'direct';
+
+      try {
+        vpsResult = await directVPSUpload(file, userId, onProgress);
+      } catch (directError) {
+        console.warn('⚠️ Direct VPS upload failed, trying edge function fallback:', directError);
+        uploadMethod = 'edge-function';
+        
+        try {
+          vpsResult = await edgeFunctionUpload(file, userId, folderId, sessionData.session.access_token, onProgress);
+        } catch (edgeError) {
+          console.error('❌ Edge function upload also failed:', edgeError);
+          if (onProgress) {
+            onProgress({
+              loaded: 0,
+              total: file.size,
+              percentage: 0,
+              speed: 0,
+              remainingTime: 0,
+              fileName: file.name,
+              status: 'error'
+            });
+          }
+          reject(new Error(`Upload failed: ${directError instanceof Error ? directError.message : 'Network error'}. Fallback also failed: ${edgeError instanceof Error ? edgeError.message : 'Unknown'}`));
+          return;
+        }
+      }
+
+      if (!vpsResult) {
+        reject(new Error("Upload returned no result"));
+        return;
+      }
+
+      console.log(`📦 VPS upload complete (${uploadMethod}):`, vpsResult.path);
+
+      // Update progress to processing (creating DB record)
+      if (onProgress) {
+        onProgress({
+          loaded: file.size,
+          total: file.size,
+          percentage: 100,
+          speed: 0,
+          remainingTime: 0,
+          fileName: file.name,
+          status: 'processing'
+        });
+      }
+
+      // If edge function already created the DB record, use that
+      if (uploadMethod === 'edge-function' && (vpsResult as any).fileRecord) {
+        const uploadedFile = (vpsResult as any).fileRecord as FileItem;
+        if (onProgress) {
+          onProgress({
+            loaded: file.size,
+            total: file.size,
+            percentage: 100,
+            speed: 0,
+            remainingTime: 0,
+            fileName: file.name,
+            status: 'complete'
+          });
+        }
+        resolve(uploadedFile);
+        return;
+      }
+
+      // Create file record in database
+      const { data: fileRecord, error: dbError } = await supabase
+        .from("files")
+        .insert({
+          user_id: userId,
+          folder_id: folderId,
+          name: vpsResult.fileName,
+          original_name: file.name,
+          mime_type: file.type || "application/octet-stream",
+          size_bytes: file.size,
+          storage_path: vpsResult.path,
+        })
+        .select()
+        .single();
+
+      if (dbError) {
+        console.error("Database error:", dbError);
+        reject(new Error(`Failed to create file record: ${dbError.message}`));
+        return;
+      }
+
+      const uploadedFile = fileRecord as FileItem;
+
+      if (onProgress) {
+        onProgress({
+          loaded: file.size,
+          total: file.size,
+          percentage: 100,
+          speed: 0,
+          remainingTime: 0,
+          fileName: file.name,
+          status: 'complete'
+        });
+      }
+
+      // For video files: extract metadata, generate thumbnail, and warm stream
+      if (isVideoFile(uploadedFile.mime_type, uploadedFile.original_name)) {
+        extractAndUploadVideoMetadata(file, uploadedFile.id, sessionData.session!.access_token)
+          .catch((err) => console.warn('Video metadata extraction failed:', err));
+        warmVideoStreamUrl(uploadedFile.id, uploadedFile.storage_path, {
+          priority: 'high',
+          showToast: true,
+          warmEdge: true
+        })
+          .then(() => console.log('📹 Video stream pre-warmed after upload'))
+          .catch(() => {});
+      }
+
+      // For image files: extract thumbnail in background
+      if (isImage(uploadedFile.mime_type, uploadedFile.original_name)) {
+        extractAndUploadImageMetadata(file, uploadedFile.id, sessionData.session!.access_token)
+          .catch((err) => console.warn('Image metadata extraction failed:', err));
+      }
+
+      resolve(uploadedFile);
     } catch (error) {
       reject(error);
     }
   });
+};
+
+/**
+ * Direct VPS upload via XHR with progress tracking
+ */
+const directVPSUpload = (
+  file: File,
+  userId: string,
+  onProgress?: (progress: UploadProgress) => void
+): Promise<{ path: string; fileName: string }> => {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("userId", userId);
+
+    const xhr = new XMLHttpRequest();
+    const startTime = Date.now();
+    let lastLoaded = 0;
+    let lastTime = startTime;
+
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && onProgress) {
+        const now = Date.now();
+        const timeDiff = (now - lastTime) / 1000;
+        const loadedDiff = event.loaded - lastLoaded;
+        const speed = timeDiff > 0 ? loadedDiff / timeDiff : 0;
+        const remaining = event.total - event.loaded;
+        const remainingTime = speed > 0 ? remaining / speed : 0;
+
+        lastLoaded = event.loaded;
+        lastTime = now;
+
+        onProgress({
+          loaded: event.loaded,
+          total: event.total,
+          percentage: Math.round((event.loaded / event.total) * 100),
+          speed,
+          remainingTime,
+          fileName: file.name,
+          status: 'uploading'
+        });
+      }
+    });
+
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const result = JSON.parse(xhr.responseText);
+          resolve({ path: result.path, fileName: result.fileName });
+        } catch (e) {
+          reject(new Error("Failed to parse VPS response"));
+        }
+      } else {
+        let errorMsg = `VPS upload failed (${xhr.status})`;
+        try {
+          const errorData = JSON.parse(xhr.responseText);
+          errorMsg = errorData.error || errorMsg;
+        } catch {}
+        console.error(`❌ Direct VPS upload error: ${errorMsg}, status: ${xhr.status}`);
+        reject(new Error(errorMsg));
+      }
+    });
+
+    xhr.addEventListener("error", () => {
+      console.error('❌ Direct VPS upload network error - VPS may be unreachable');
+      reject(new Error("Network error - VPS unreachable"));
+    });
+
+    xhr.addEventListener("abort", () => {
+      reject(new Error("Upload aborted"));
+    });
+
+    // Set timeout to 5 minutes for large files
+    xhr.timeout = 300000;
+    xhr.addEventListener("timeout", () => {
+      reject(new Error("Upload timed out"));
+    });
+
+    xhr.open("POST", `${PRIMARY_VPS_CONFIG.endpoint}/upload`);
+    xhr.setRequestHeader("Authorization", `Bearer ${PRIMARY_VPS_CONFIG.apiKey}`);
+    xhr.send(formData);
+  });
+};
+
+/**
+ * Fallback: Upload via edge function (proxied through Supabase)
+ */
+const edgeFunctionUpload = async (
+  file: File,
+  userId: string,
+  folderId: string | null,
+  authToken: string,
+  onProgress?: (progress: UploadProgress) => void
+): Promise<{ path: string; fileName: string; fileRecord?: FileItem }> => {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("userId", userId);
+  if (folderId) formData.append("folderId", folderId);
+
+  if (onProgress) {
+    onProgress({
+      loaded: 0,
+      total: file.size,
+      percentage: 0,
+      speed: 0,
+      remainingTime: 0,
+      fileName: file.name,
+      status: 'uploading'
+    });
+  }
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/vps-upload`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${authToken}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Edge function upload failed (${response.status}): ${errorText}`);
+  }
+
+  const result = await response.json();
+
+  if (!result.success) {
+    throw new Error(result.error || 'Edge function upload returned error');
+  }
+
+  return {
+    path: result.file?.storage_path || result.storagePath,
+    fileName: result.file?.name || file.name,
+    fileRecord: result.file,
+  };
 };
 
 /**

@@ -58,7 +58,7 @@ export function ContinueWatching() {
   const [videos, setVideos] = useState<VideoWithProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [warmingStatus, setWarmingStatus] = useState<Record<string, boolean>>({});
-  const hoverTimeoutRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const hoverTimeoutRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // Warm a single video URL (used for hover prefetch)
   const warmSingleVideo = useCallback(async (video: VideoWithProgress) => {
