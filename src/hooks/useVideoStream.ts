@@ -174,15 +174,23 @@ export function useVideoStream(
       setFallbackUrl(data.fallbackUrl || null);
       setFileInfo(data.fileInfo || null);
       
-      // Build quality options from response
-      const qualityOptions: VideoQualityOption[] = [];
-      if (data.url) {
-        qualityOptions.push({ label: 'Original', src: data.url, isOriginal: true });
+      // Use quality options from API if available, otherwise build from url/fallback
+      if (data.qualities && data.qualities.length > 0) {
+        setQualities(data.qualities.map(q => ({
+          label: q.label,
+          src: q.src,
+          isOriginal: q.isOriginal,
+        })));
+      } else {
+        const qualityOptions: VideoQualityOption[] = [];
+        if (data.url) {
+          qualityOptions.push({ label: 'Original', src: data.url, isOriginal: true });
+        }
+        if (data.fallbackUrl) {
+          qualityOptions.push({ label: '480p', src: data.fallbackUrl });
+        }
+        setQualities(qualityOptions);
       }
-      if (data.fallbackUrl) {
-        qualityOptions.push({ label: '480p', src: data.fallbackUrl });
-      }
-      setQualities(qualityOptions);
     } catch (err) {
       console.error("Failed to get stream URLs:", err);
       setError(err instanceof Error ? err.message : "Failed to get stream URL");
