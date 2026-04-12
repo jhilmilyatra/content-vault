@@ -441,25 +441,57 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
         console.warn('Sprite strip generation skipped:', e.message);
       }
       
-      // Transcode to 480p web-compatible MP4 if source is larger
+      // === Multi-quality transcode pipeline ===
+      const availableQualities = [];
+      const ext = path.extname(fileName).toLowerCase();
+      
+      // 1. Prepare original quality (remux with faststart)
+      console.log(`📦 Preparing original quality...`);
+      fs.writeFileSync(lockFile, JSON.stringify({ 
+        started: new Date().toISOString(),
+        status: 'preparing_original',
+        progress: 35
+      }));
+      const originalResult = await prepareOriginalQuality(fullPath, processedDir, baseName, ext);
+      if (originalResult) {
+        availableQualities.push({ name: 'original', size: originalResult.size });
+        console.log(`✅ Original quality ready: ${(originalResult.size / 1024 / 1024).toFixed(2)} MB`);
+      }
+      
+      // 2. Transcode to 480p if source is larger than 480p
       let webMp4Result = null;
       if (sourceRes.height > 480) {
-        console.log(`🎯 Transcoding to 480p web-compatible MP4...`);
+        console.log(`🎯 Transcoding to 480p...`);
         fs.writeFileSync(lockFile, JSON.stringify({ 
           started: new Date().toISOString(),
           status: 'transcoding_480p',
-          progress: 40
+          progress: 50
         }));
-        
         try {
-          webMp4Result = await transcodeToWebMp4(fullPath, processedDir, baseName, sourceRes);
+          webMp4Result = await transcodeToQuality(fullPath, processedDir, baseName, sourceRes, '480p');
+          availableQualities.push({ name: '480p', size: webMp4Result.size });
           console.log(`✅ 480p MP4 created: ${(webMp4Result.size / 1024 / 1024).toFixed(2)} MB`);
         } catch (err) {
           console.error(`⚠️ 480p transcode failed:`, err.error);
-          // Continue without 480p - original will be used
         }
-      } else {
-        console.log(`📹 Source is ${sourceRes.height}p - skipping 480p transcode`);
+      }
+      
+      // 3. Transcode to 360p if source is larger than 360p
+      let web360Result = null;
+      if (sourceRes.height > 360) {
+        console.log(`🎯 Transcoding to 360p...`);
+        fs.writeFileSync(lockFile, JSON.stringify({ 
+          started: new Date().toISOString(),
+          status: 'transcoding_360p',
+          progress: 70
+        }));
+        try {
+          web360Result = await transcodeToQuality(fullPath, processedDir, baseName, sourceRes, '360p');
+          availableQualities.push({ name: '360p', size: web360Result.size });
+          console.log(`✅ 360p MP4 created: ${(web360Result.size / 1024 / 1024).toFixed(2)} MB`);
+        } catch (err) {
+          console.error(`⚠️ 360p transcode failed:`, err.error);
+        }
       }
       
       // Remove lock file and create success marker
@@ -470,7 +502,10 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
       fs.writeFileSync(completeMarker, JSON.stringify({
         completed: new Date().toISOString(),
         sourceResolution: `${sourceRes.width}x${sourceRes.height}`,
+        qualities: availableQualities.map(q => q.name),
         has480p: webMp4Result !== null,
+        has360p: web360Result !== null,
+        hasOriginal: originalResult !== null,
         thumbnails: {
           thumbnail: thumbnailResult.thumbnailUrl,
           poster: thumbnailResult.posterUrl,
@@ -479,10 +514,10 @@ function triggerAutoTranscode(userId, fileName, fullPath) {
         }
       }));
       
-      console.log(`🎉 Video processing complete: ${userId}/${baseName}`);
+      console.log(`🎉 Video processing complete: ${userId}/${baseName} (qualities: ${availableQualities.map(q => q.name).join(', ')})`);
       
-      // Send callback to update database with thumbnail URLs
-      await sendThumbnailCallback(userId, fileName, thumbnailResult, animatedResult, webMp4Result ? [{ name: '480p' }] : []);
+      // Send callback to update database with thumbnail URLs and quality info
+      await sendThumbnailCallback(userId, fileName, thumbnailResult, animatedResult, availableQualities);
       
     } catch (error) {
       console.error(`❌ Video processing failed for ${fileName}:`, error.message || error);
