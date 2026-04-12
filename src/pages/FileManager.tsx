@@ -1426,6 +1426,13 @@ const FileManager = () => {
                           className="w-full h-full object-cover"
                           aspectRatio="square"
                           showPlayIndicator={viewMode === "grid"}
+                          priority={index < 6}
+                          highPriority={index < 2}
+                          storagePath={file.storage_path}
+                          fileId={file.id}
+                          enableHoverPreview={viewMode === "grid"}
+                          onHoverStart={() => prefetchOnHover(file.storage_path)}
+                          onHoverEnd={prefetchOnHoverEnd}
                         />
                         {/* Duration Badge */}
                         {file.duration_seconds && file.duration_seconds > 0 && viewMode === "grid" && (
