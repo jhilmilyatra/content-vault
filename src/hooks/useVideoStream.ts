@@ -271,7 +271,7 @@ export async function getVideoStreamUrl(
     if (storagePath) params.set("path", storagePath);
 
     const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/video-stream?${params}`,
+      `${edgeFunctionUrl('video-stream')}?${params}`,
       {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
