@@ -283,29 +283,28 @@ async function sendThumbnailCallback(userId, fileName, thumbnailResult, animated
 }
 
 /**
- * Transcode to web-compatible 480p MP4 (H.264 + AAC)
- * This creates a browser-compatible MP4 for playback fallback
+ * Transcode to a specific quality MP4 (H.264 + AAC)
+ * @param {string} quality - e.g. '360p', '480p'
  */
-function transcodeToWebMp4(fullPath, outputDir, baseName, sourceResolution) {
+function transcodeToQuality(fullPath, outputDir, baseName, sourceResolution, quality) {
+  const config = TRANSCODE_CONFIGS[quality];
+  if (!config) return Promise.reject({ error: `Unknown quality: ${quality}` });
+
   return new Promise((resolve, reject) => {
     const { exec } = require('child_process');
     
-    const outputMp4 = path.join(outputDir, `480p.mp4`);
+    const outputMp4 = path.join(outputDir, `${quality}.mp4`);
     
-    // Calculate width maintaining aspect ratio
-    const targetHeight = Math.min(480, sourceResolution.height);
+    const targetHeight = Math.min(config.height, sourceResolution.height);
     const aspectRatio = sourceResolution.width / sourceResolution.height;
     const targetWidth = Math.round(targetHeight * aspectRatio);
-    // Ensure width is even for h264
     const width = targetWidth % 2 === 0 ? targetWidth : targetWidth + 1;
     
-    // Transcode to web-compatible MP4 (H.264 main profile + AAC)
-    // -movflags +faststart enables progressive download for instant playback
     const ffmpegCmd = `ffmpeg -i "${fullPath}" \
-      -c:v libx264 -preset fast -b:v ${WEB_TRANSCODE_CONFIG.videoBitrate} \
+      -c:v libx264 -preset fast -b:v ${config.videoBitrate} \
       -profile:v main -level 4.0 \
       -vf "scale=${width}:${targetHeight}" \
-      -c:a aac -b:a ${WEB_TRANSCODE_CONFIG.audioBitrate} \
+      -c:a aac -b:a ${config.audioBitrate} \
       -movflags +faststart \
       -y "${outputMp4}" 2>&1`;
     
@@ -316,11 +315,51 @@ function transcodeToWebMp4(fullPath, outputDir, baseName, sourceResolution) {
         const stat = fs.statSync(outputMp4);
         resolve({ 
           path: outputMp4,
-          fileName: '480p.mp4',
+          fileName: `${quality}.mp4`,
+          quality,
           width,
           height: targetHeight,
           size: stat.size
         });
+      }
+    });
+  });
+}
+
+// Legacy wrapper
+function transcodeToWebMp4(fullPath, outputDir, baseName, sourceResolution) {
+  return transcodeToQuality(fullPath, outputDir, baseName, sourceResolution, '480p');
+}
+
+/**
+ * Remux original video to faststart MP4 (no re-encode, just copy streams)
+ * If already MP4 with faststart, just symlink. Otherwise remux.
+ */
+function prepareOriginalQuality(fullPath, outputDir, baseName, ext) {
+  return new Promise((resolve) => {
+    const { exec } = require('child_process');
+    const outputMp4 = path.join(outputDir, `original.mp4`);
+
+    // If source is already .mp4, just remux with faststart (very fast, no re-encode)
+    const ffmpegCmd = `ffmpeg -i "${fullPath}" -c copy -movflags +faststart -y "${outputMp4}" 2>&1`;
+    
+    exec(ffmpegCmd, { maxBuffer: 50 * 1024 * 1024 }, (error) => {
+      if (error) {
+        // Fallback: create symlink to original file
+        try {
+          if (fs.existsSync(outputMp4)) fs.unlinkSync(outputMp4);
+          fs.symlinkSync(fullPath, outputMp4);
+          const stat = fs.statSync(fullPath);
+          console.log(`🔗 Symlinked original: ${(stat.size / 1024 / 1024).toFixed(2)} MB`);
+          resolve({ path: outputMp4, fileName: 'original.mp4', quality: 'original', size: stat.size });
+        } catch (e) {
+          console.warn('Could not prepare original quality:', e.message);
+          resolve(null);
+        }
+      } else {
+        const stat = fs.statSync(outputMp4);
+        console.log(`📦 Original remuxed with faststart: ${(stat.size / 1024 / 1024).toFixed(2)} MB`);
+        resolve({ path: outputMp4, fileName: 'original.mp4', quality: 'original', size: stat.size });
       }
     });
   });
